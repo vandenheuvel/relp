@@ -1,0 +1,10 @@
+[package]
+name = "lp"
+version = "0.0.1"
+authors = ["Bram van den Heuvel <bram@vandenheuvel.online>"]
+license = "MIT"
+repository = "https://github.com/vandenheuvel/rust-lp"
+description = "A solver for linear programs"
+
+[dependencies]
+assert_approx_eq = "1.0.0"
