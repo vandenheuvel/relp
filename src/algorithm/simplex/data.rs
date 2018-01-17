@@ -68,12 +68,16 @@ impl Tableau {
 
         debug_assert_eq!(data.nr_rows(), nr_rows);
         debug_assert_eq!(carry.nr_rows(), 1 + 1 + nr_rows);
-        debug_assert_eq!(carry.nr_columns(), nr_rows + 1);
+        debug_assert_eq!(carry.nr_columns(), 1 + nr_rows);
         debug_assert_eq!(basis_columns.len(), nr_rows);
 
         debug_assert_eq!(data.nr_columns(), nr_columns);
         debug_assert_eq!(real_c.len(), nr_columns);
         debug_assert_eq!(column_info.len(), nr_columns);
+
+        for i in 0..nr_rows {
+            debug_assert!(carry.get_value(1 + 1 + i, 0) > 0f64);
+        }
 
         // The artificial cost vector is always here, regardless of whether it is used
         let mut artificial_c = SparseVector::zeros(nr_columns);
@@ -113,14 +117,18 @@ impl Tableau {
     /// Brings a column into the basis by updating the `self.carry` matrix and updating the
     /// data structures holding the collection of basis columns.
     pub fn bring_into_basis(&mut self, pivot_column: usize) {
+        debug_assert!(pivot_column < self.nr_columns);
+
         let column = self.generate_column(pivot_column);
         let pivot_row = self.find_pivot_row(&column);
 
         self.carry.multiply_row(1 + 1 + pivot_row, 1f64 / column.get_value(1 + 1 + pivot_row));
         for edit_row in 0..self.carry.nr_rows() {
-            if column.get_value(edit_row).abs() > 1e-10 && edit_row != 1 + 1 + pivot_row {
-                let factor = column.get_value(edit_row);
-                self.carry.mul_add_rows(1 + 1 + pivot_row, edit_row, -factor);
+            if edit_row != 1 + 1 + pivot_row {
+                if column.get_value(edit_row).abs() > 1e-10 {
+                    let factor = column.get_value(edit_row);
+                    self.carry.mul_add_rows(1 + 1 + pivot_row, edit_row, -factor);
+                }
             }
         }
 
@@ -131,22 +139,22 @@ impl Tableau {
     fn update_basis_indices(&mut self, pivot_row: usize, pivot_column: usize) {
         debug_assert!(self.basis_columns_map.contains_key(&pivot_row));
 
-        let leaving = *self.basis_columns_map.get(&pivot_row).unwrap();
+        let leaving_column = *self.basis_columns_map.get(&pivot_row).unwrap();
 
-        debug_assert!(self.basis_columns_set.contains(&leaving));
+        debug_assert!(self.basis_columns_set.contains(&leaving_column));
 
-        self.basis_columns_set.remove(&leaving);
+        self.basis_columns_set.remove(&leaving_column);
         self.basis_columns_set.insert(pivot_column);
         self.basis_columns_map.insert(pivot_row, pivot_column);
     }
     /// Generate a column of the tableau as it would look like with the current basis by matrix
     /// multiplying the original column and the carry matrix.
-    fn generate_column(&self, column: usize) -> SparseVector {
+    pub fn generate_column(&self, column: usize) -> SparseVector {
         debug_assert!(column < self.nr_columns);
 
         let mut generated = Vec::with_capacity(1 + 1 + self.nr_rows);
-        generated.push((0, self.relative_cost(ACTUAL_COST, column)));
-        generated.push((1, self.relative_cost(ARTIFICIAL_COST, column)));
+        generated.push((ACTUAL_COST, self.relative_cost(ACTUAL_COST, column)));
+        generated.push((ARTIFICIAL_COST, self.relative_cost(ARTIFICIAL_COST, column)));
         for row in 0..self.nr_rows() {
             let value = self.original_matrix.column(column)
                 .map(|&(j, v)| v * self.carry.get_value(1 + 1 + row, 1 + j))
@@ -155,11 +163,14 @@ impl Tableau {
                 generated.push((1 + 1 + row, value));
             }
         }
+
         SparseVector::from_tuples(generated, 1 + 1 + self.nr_rows())
     }
     /// Determine the row to pivot on, given the column. This is the row with the positive but
     /// minimal ratio between the current constraint vector and the column.
-    fn find_pivot_row(&self, column: &SparseVector) -> usize {
+    pub fn find_pivot_row(&self, column: &SparseVector) -> usize {
+        debug_assert_eq!(column.len(), 1 + 1 + self.nr_rows);
+
         let mut min_index = usize::max_value();
         let mut min_ratio = f64::INFINITY;
 
@@ -181,7 +192,6 @@ impl Tableau {
         min_index - 1 - 1
     }
     /// Find a profitable column.
-    // TODO: Anti cycling algorithm
     pub fn profitable_column(&self, cost_row: usize) -> Option<usize> {
         for column in 0..self.nr_columns() {
             if self.basis_columns_set.contains(&column) {
@@ -195,7 +205,7 @@ impl Tableau {
         None
     }
     /// Calculates the relative cost of a non-basis column to pivot on.
-    fn relative_cost(&self, cost_row: usize, column: usize) -> f64 {
+    pub fn relative_cost(&self, cost_row: usize, column: usize) -> f64 {
         debug_assert!(column < self.nr_columns);
 
         let mut total;
@@ -280,21 +290,22 @@ pub fn create_artificial_tableau(canonical: &CanonicalForm) -> Tableau {
     }
     column_info.extend(canonical.variable_info());
 
-    let mut tableau = Tableau::new(data, cost, carry, basis, column_info);
-    for row in 0..m {
-        tableau.bring_into_basis(row);
-    }
-
-    tableau
+    Tableau::new(data, cost, carry, basis, column_info)
 }
 
 /// Create a carry matrix for a tableau with not yet having had any operations applied to it.
 fn create_carry_matrix(b: DenseVector, basis_inverse: DenseMatrix) -> DenseMatrix {
-    debug_assert_eq!(b.len(), basis_inverse.nr_rows());
-    debug_assert_eq!(basis_inverse.nr_rows(), basis_inverse.nr_columns());
+    let m = b.len();
+    debug_assert_eq!(basis_inverse.nr_rows(), m);
+    debug_assert_eq!(basis_inverse.nr_columns(), m);
 
-    let cost_row = DenseVector::zeros(1 + b.len());
-    let artificial_cost_row = DenseVector::zeros(1 + b.len());
+    let cost_row = DenseVector::zeros(1 + m);
+    let mut artificial_cost_row = DenseVector::zeros(1 + m);
+    for column in 0..m {
+        artificial_cost_row.set_value(1 + column, -1f64);
+    }
+    let minus_cost = - b.iter().sum::<f64>();
+    artificial_cost_row.set_value(0, minus_cost);
     cost_row.vcat(artificial_cost_row.vcat(b.hcat(basis_inverse)))
 }
 
@@ -318,7 +329,7 @@ mod test {
                                             4f64,
                                             1f64]);
 
-        let cost = SparseVector::from_data(vec![1f64, 4f64, 9f64]);
+        let cost = SparseVector::from_data(vec![1f64, 4f64, 9f64, 0f64, 0f64, 0f64, 0f64]);
 
         let column_info = vec![(String::from("XONE"), VariableType::Continuous),
                                (String::from("YTWO"), VariableType::Continuous),

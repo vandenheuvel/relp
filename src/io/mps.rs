@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use data::linear_program::elements::{RowType, VariableType};
+use data::linear_program::elements::{ConstraintType, RowType, VariableType};
 use data::linear_program::general_form::{GeneralForm, GeneralFormConvertable};
 use data::linear_algebra::matrix::{Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
@@ -16,7 +16,7 @@ pub fn parse(program: String) -> Result<Box<GeneralFormConvertable>, String> {
     let mut current_section = MPSSection::Name;
 
     for line in program.lines() {
-        // There should be no data after the ENDATA line
+        // There should be no data after the `ENDATA` line
         if current_section == MPSSection::ENDATA {
             return Err(String::from("Data after ENDATA line"));
         }
@@ -32,11 +32,10 @@ pub fn parse(program: String) -> Result<Box<GeneralFormConvertable>, String> {
             None => if let Err(message) = read_and_set(&mut mps, current_section, line) {
                 return Err(message);
             },
-            Some(MPSSection::IntegerColumns) => {
-                if current_section == MPSSection::RealColumns {
-                    current_section = MPSSection::IntegerColumns;
-                } else if current_section == MPSSection::IntegerColumns {
-                    current_section = MPSSection::RealColumns;
+            Some(MPSSection::Columns(VariableType::Integer)) => {
+                // Toggle the variable type if in the `COLUMNS` section
+                if let MPSSection::Columns(variable_type) = current_section {
+                    current_section = MPSSection::Columns(!variable_type);
                 } else {
                     return Err(format!("Need to be in column section to start integer column section.\
                  Currently in section \"{:?}\"", current_section));
@@ -56,19 +55,15 @@ fn parse_section(line: &str) -> Option<MPSSection> {
     if line.starts_with(" ") {
         // Check for a nested section
         if let Some(word) = line.split_whitespace().nth(1) {
-            // Check for a MARKER section
+            // Check for a `MARKER` section
             if word.starts_with("'") && word.ends_with("'") {
-                Some(MPSSection::IntegerColumns)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+                Some(MPSSection::Columns(VariableType::Integer))
+            } else { None }
+        } else { None }
     }
     else if line.starts_with("NAME") { Some(MPSSection::Name) }
     else if line.starts_with("ROWS") { Some(MPSSection::Rows) }
-    else if line.starts_with("COLUMNS") { Some(MPSSection::RealColumns) }
+    else if line.starts_with("COLUMNS") { Some(MPSSection::Columns(VariableType::Continuous)) }
     else if line.starts_with("RHS") { Some(MPSSection::RHS) }
     else if line.starts_with("BOUNDS") { Some(MPSSection::Bounds) }
     else if line.starts_with("ENDATA") { Some(MPSSection::ENDATA) }
@@ -86,12 +81,12 @@ fn read_and_set(mps: &mut MPS, section: MPSSection, line: &str) -> Result<(), St
             Ok(row) => Ok(mps.add_row(row)),
             Err(message) => Err(message),
         },
-        MPSSection::RealColumns => match read_real_columns(line) {
-            Ok(columns) => Ok(for column in columns.into_iter() { mps.add_real_column(column) }),
+        MPSSection::Columns(VariableType::Continuous) => match read_real_columns(line) {
+            Ok(columns) => Ok(for column in columns.into_iter() { mps.add_column(column) }),
             Err(message) => Err(message),
         },
-        MPSSection::IntegerColumns => match read_integer_columns(line) {
-            Ok(column) => Ok(mps.add_integer_column(column)),
+        MPSSection::Columns(VariableType::Integer) => match read_integer_columns(line) {
+            Ok(column) => Ok(mps.add_column(column)),
             Err(message) => Err(message),
         },
         MPSSection::RHS => match read_rhs(line) {
@@ -114,11 +109,13 @@ fn read_and_set(mps: &mut MPS, section: MPSSection, line: &str) -> Result<(), St
 struct MPS {
     // Name of the linear program
     name: String,
-    // Name
-    rows: Vec<Row>,
-    real_columns: Vec<RealColumn>,
-    integer_columns: Vec<IntegerColumn>,
+    // All named constraints
+    constraints: Vec<Constraint>,
+    // Constraint name and Variable name combinations
+    coefficients: Vec<Coefficient>,
+    // Right-hand side constraint values
     rhs: Vec<RHS>,
+    // Extra bounds on variables
     bounds: Vec<Bound>,
 }
 
@@ -126,9 +123,8 @@ impl MPS {
     fn new() -> MPS {
         MPS {
             name: String::new(),
-            rows: Vec::new(),
-            real_columns: Vec::new(),
-            integer_columns: Vec::new(),
+            constraints: Vec::new(),
+            coefficients: Vec::new(),
             rhs: Vec::new(),
             bounds: Vec::new(),
         }
@@ -136,14 +132,11 @@ impl MPS {
     fn set_name(&mut self, name: String) {
         self.name = name;
     }
-    fn add_row(&mut self, row: Row) {
-        self.rows.push(row);
+    fn add_row(&mut self, row: Constraint) {
+        self.constraints.push(row);
     }
-    fn add_real_column(&mut self, column: RealColumn) {
-        self.real_columns.push(column);
-    }
-    fn add_integer_column(&mut self, column: IntegerColumn) {
-        self.integer_columns.push(column);
+    fn add_column(&mut self, column: Coefficient) {
+        self.coefficients.push(column);
     }
     fn add_rhs(&mut self, new_rhs: RHS) {
         for mut rhs in &mut self.rhs {
@@ -172,15 +165,15 @@ fn read_name(line: &str) -> Result<String, String> {
 }
 
 /// Read a row of a linear program from a string.
-fn read_rows(line: &str) -> Result<Row, String> {
+fn read_rows(line: &str) -> Result<Constraint, String> {
     let mut parts = line.split_whitespace();
 
     // Parse the type of the row
     let row_type = match parts.next() {
         Some("N") => RowType::Cost,
-        Some("L") => RowType::Less,
-        Some("E") => RowType::Equal,
-        Some("G") => RowType::Greater,
+        Some("L") => RowType::Constraint(ConstraintType::Less),
+        Some("E") => RowType::Constraint(ConstraintType::Equal),
+        Some("G") => RowType::Constraint(ConstraintType::Greater),
         Some(word) => return Err(format!("Row type not recognised: type {} on line {}", word, line)),
         None => return Err(format!("No row type: {}", line)),
     };
@@ -190,11 +183,11 @@ fn read_rows(line: &str) -> Result<Row, String> {
         None => return Err(format!("Now row name: {}", line)),
     };
 
-    Ok(Row::new(row_type, String::from(row_name)))
+    Ok(Constraint::new(row_type, String::from(row_name)))
 }
 
 /// Read a continuous variable name, row name and coefficient from a string.
-fn read_real_columns(line: &str) -> Result<Vec<RealColumn>, String> {
+fn read_real_columns(line: &str) -> Result<Vec<Coefficient>, String> {
     let mut parts = line.split_whitespace();
     // Make sure at least one column is read
     let mut columns = Vec::new();
@@ -220,7 +213,7 @@ fn read_real_columns(line: &str) -> Result<Vec<RealColumn>, String> {
             None => return Err(format!("Column coefficient not found: {}", line)),
         };
 
-        columns.push(RealColumn::new(variable_name.clone(), row_name, coefficient));
+        columns.push(Coefficient::new(variable_name.clone(), row_name, VariableType::Continuous, coefficient));
     }
 
     if columns.len() > 0 {
@@ -231,7 +224,7 @@ fn read_real_columns(line: &str) -> Result<Vec<RealColumn>, String> {
 }
 
 /// Read an integer variable name, row name and coefficient from a string.
-fn read_integer_columns(line: &str) -> Result<IntegerColumn, String> {
+fn read_integer_columns(line: &str) -> Result<Coefficient, String> {
     let mut parts = line.split_whitespace();
 
     // Read the variable name
@@ -256,7 +249,7 @@ fn read_integer_columns(line: &str) -> Result<IntegerColumn, String> {
         None => return Err(format!("Column coefficient not found: {}", line)),
     };
 
-    Ok(IntegerColumn::new(variable_name, row_name, coefficient))
+    Ok(Coefficient::new(variable_name, row_name, VariableType::Integer, coefficient))
 }
 
 /// Read a `RHS` or right-hand side from a string.
@@ -336,10 +329,19 @@ fn read_bound(line: &str) -> Result<Bound, String> {
 impl GeneralFormConvertable for MPS {
     fn to_general_lp(&self) -> GeneralForm {
         // TODO: Split up and test the sections this method separately
-        let mut row_names_index = HashMap::new();
+        let nr_rows = {
+            let mut nr_rows = self.constraints.iter().map(|row| row.name.clone()).collect::<Vec<String>>();
+            nr_rows.dedup();
+            // Subtract one for the cost row
+            nr_rows.len() - 1
+        };
+
+        let mut row_names_index = HashMap::with_capacity(nr_rows);
         let mut cost_row_name = None;
-        for row in &self.rows {
-            if row.row_type == RowType::Cost {
+        for row in &self.constraints {
+            if row.constraint_type == RowType::Cost {
+                debug_assert_eq!(cost_row_name, None, "Cost row must be unique. Current name is \
+                \"{:?}\"", cost_row_name);
                 cost_row_name = Some(row.name.clone());
             } else if !row_names_index.contains_key(&row.name) {
                 let size = row_names_index.len();
@@ -348,36 +350,27 @@ impl GeneralFormConvertable for MPS {
         }
         let cost_row_name = cost_row_name.unwrap();
 
-        let mut column_names_index = HashMap::new();
-        for column in &self.real_columns {
-            if !column_names_index.contains_key(&column.variable_name) {
-                let size = column_names_index.len();
-                column_names_index.insert(column.variable_name.clone(), size);
-            }
-        }
-        for column in &self.integer_columns {
-            if !column_names_index.contains_key(&column.variable_name) {
-                let size = column_names_index.len();
-                column_names_index.insert(column.variable_name.clone(), size);
+        let nr_columns = {
+            let mut nr_columns = self.coefficients.iter().map(|column| column.variable_name.clone()).collect::<Vec<String>>();
+            nr_columns.dedup();
+            nr_columns.len()
+        };
+        let mut variable_names_index = HashMap::with_capacity(nr_columns);
+        for column in &self.coefficients {
+            if !variable_names_index.contains_key(&column.variable_name) {
+                let size = variable_names_index.len();
+                variable_names_index.insert(column.variable_name.clone(), size);
             }
         }
 
         // Fill the coefficient matrix
-        let mut data = SparseMatrix::zeros(row_names_index.len() + self.bounds.len(), column_names_index.len());
-        let mut cost = SparseVector::zeros(column_names_index.len());
-        for column in &self.real_columns {
-            if column.row_name == cost_row_name {
-                cost.set_value(*column_names_index.get(&column.variable_name).unwrap(), column.coefficient);
+        let mut data = SparseMatrix::zeros(nr_rows + self.bounds.len(), nr_columns);
+        let mut cost = SparseVector::zeros(nr_columns);
+        for coefficient in &self.coefficients {
+            if coefficient.row_name == cost_row_name {
+                cost.set_value(*variable_names_index.get(&coefficient.variable_name).unwrap(), coefficient.value);
             } else {
-
-                data.set_value(*row_names_index.get(&column.row_name).unwrap(), *column_names_index.get(&column.variable_name).unwrap(), column.coefficient);
-            }
-        }
-        for column in &self.integer_columns {
-            if column.row_name == cost_row_name {
-                cost.set_value(*column_names_index.get(&column.variable_name).unwrap(), column.coefficient);
-            } else {
-                data.set_value(*row_names_index.get(&column.row_name).unwrap(), *column_names_index.get(&column.variable_name).unwrap(), column.coefficient);
+                data.set_value(*row_names_index.get(&coefficient.row_name).unwrap(), *variable_names_index.get(&coefficient.variable_name).unwrap(), coefficient.value);
             }
         }
 
@@ -391,37 +384,38 @@ impl GeneralFormConvertable for MPS {
 
         // Column info
         let mut column_info_map = HashMap::new();
-        for column in &self.real_columns {
-            column_info_map.insert(*column_names_index.get(&column.variable_name).unwrap(), (column.variable_name.clone(), VariableType::Continuous));
-        }
-        for column in &self.integer_columns {
-            column_info_map.insert(*column_names_index.get(&column.variable_name).unwrap(), (column.variable_name.clone(), VariableType::Integer));
+        for column in &self.coefficients {
+            column_info_map.insert(*variable_names_index.get(&column.variable_name).unwrap(), (column.variable_name.clone(), column.variable_type));
         }
         let mut column_info_tuples: Vec<(usize, (String, VariableType))> = column_info_map.into_iter().collect();
         column_info_tuples.sort_by(|ref a, b| a.0.cmp(&b.0));
         let column_info = column_info_tuples.into_iter().map(|t| t.1).collect();
 
         // Row info
-        let mut row_info_map = HashMap::new();
-        for row in &self.rows {
+        let mut row_info_map = HashMap::with_capacity(nr_rows);
+        for row in &self.constraints {
             if row.name != cost_row_name {
-                row_info_map.insert(*row_names_index.get(&row.name).unwrap(), row.row_type);
+                row_info_map.insert(*row_names_index.get(&row.name).unwrap(), match row.constraint_type {
+                    RowType::Cost => panic!("If the row name is not the cost row name, this must a \
+                    constraint"),
+                    RowType::Constraint(constraint_type) => constraint_type,
+                });
             }
         }
-        let mut row_info_tuples: Vec<(usize, RowType)> = row_info_map.into_iter().collect();
+        let mut row_info_tuples: Vec<(usize, ConstraintType)> = row_info_map.into_iter().collect();
         row_info_tuples.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut row_info: Vec<RowType> = row_info_tuples.into_iter().map(|t| t.1).collect();
+        let mut row_info: Vec<ConstraintType> = row_info_tuples.into_iter().map(|t| t.1).collect();
 
         // Bounds as constraints
         for i in 0..self.bounds.len() {
             let bound = &self.bounds[i];
             b.set_value(row_info.len(), bound.value);
             row_info.push(match bound.direction {
-                BoundDirection::Lower => RowType::Greater,
-                BoundDirection::Upper => RowType::Less,
-                BoundDirection::Fixed => RowType::Equal,
+                BoundDirection::Lower => ConstraintType::Greater,
+                BoundDirection::Upper => ConstraintType::Less,
+                BoundDirection::Fixed => ConstraintType::Equal,
             });
-            data.set_value(row_names_index.len() + i, *column_names_index.get(&bound.variable_name).unwrap(), 1f64);
+            data.set_value(row_names_index.len() + i, *variable_names_index.get(&bound.variable_name).unwrap(), 1f64);
         }
 
         GeneralForm::new(data, b, cost, column_info, row_info)
@@ -433,8 +427,7 @@ impl GeneralFormConvertable for MPS {
 enum MPSSection {
     Name,
     Rows,
-    RealColumns,
-    IntegerColumns,
+    Columns(VariableType),
     RHS,
     Bounds,
     ENDATA,
@@ -442,43 +435,31 @@ enum MPSSection {
 
 /// Every `Row` has a name and a `RowType`.
 #[derive(Debug, Eq, PartialEq)]
-struct Row {
+struct Constraint {
     name: String,
-    row_type: RowType,
+    constraint_type: RowType,
 }
 
-impl Row {
+impl Constraint {
     /// Create a new `Row`.
-    pub fn new(row_type: RowType, name: String) -> Row {
-        Row { name, row_type, }
+    pub fn new(row_type: RowType, name: String) -> Constraint {
+        Constraint { name, constraint_type: row_type, }
     }
 }
 
 /// Describes with which coefficient a variable appears in a row. This variable is be a real number.
 #[derive(Debug, PartialEq)]
-struct RealColumn {
+struct Coefficient {
     variable_name: String,
     row_name: String,
-    coefficient: f64,
+    variable_type: VariableType,
+    value: f64,
 }
 
-impl RealColumn {
-    pub fn new(variable_name: String, row_name: String, coefficient: f64) -> RealColumn {
-        RealColumn { variable_name, row_name, coefficient, }
-    }
-}
-
-/// Describes with which coefficient a variable appears in a row. This variable is an integer.
-#[derive(Debug, PartialEq)]
-struct IntegerColumn {
-    variable_name: String,
-    row_name: String,
-    coefficient: f64,
-}
-
-impl IntegerColumn {
-    pub fn new(variable_name: String, row_name: String, coefficient: f64) -> IntegerColumn {
-        IntegerColumn { variable_name, row_name, coefficient, }
+impl Coefficient {
+    pub fn new(variable_name: String, row_name: String, variable_type: VariableType, value: f64)
+        -> Coefficient {
+        Coefficient { variable_name, row_name, variable_type, value, }
     }
 }
 
@@ -548,7 +529,7 @@ mod test {
 
         let line = "COLUMNS";
         let result = parse_section(line);
-        assert_eq!(result, Some(MPSSection::RealColumns));
+        assert_eq!(result, Some(MPSSection::Columns(VariableType::Continuous)));
 
         let line = "RHS     ";
         let result = parse_section(line);
@@ -564,7 +545,7 @@ mod test {
 
         let line = "    MARK0000  'MARKER'                 'INTORG'";
         let result = parse_section(line);
-        assert_eq!(result, Some(MPSSection::IntegerColumns));
+        assert_eq!(result, Some(MPSSection::Columns(VariableType::Integer)));
 
         let line = "DIFFERENT";
         let result = parse_section(line);
@@ -599,22 +580,22 @@ mod test {
         // Cost row
         let line = " N  COST";
         let result = read_rows(line);
-        assert_eq!(result, Ok(Row::new(RowType::Cost, String::from("COST"))));
+        assert_eq!(result, Ok(Constraint::new(RowType::Cost, String::from("COST"))));
 
         // Less-or-equal row
         let line = " L  LIM1";
         let result = read_rows(line);
-        assert_eq!(result, Ok(Row::new(RowType::Less, String::from("LIM1"))));
+        assert_eq!(result, Ok(Constraint::new(RowType::Constraint(ConstraintType::Less), String::from("LIM1"))));
 
         // Equal row
         let line = " E  MYEQN";
         let result = read_rows(line);
-        assert_eq!(result, Ok(Row::new(RowType::Equal, String::from("MYEQN"))));
+        assert_eq!(result, Ok(Constraint::new(RowType::Constraint(ConstraintType::Equal), String::from("MYEQN"))));
 
         // Greater row
         let line = " G  LIM2";
         let result = read_rows(line);
-        assert_eq!(result, Ok(Row::new(RowType::Greater, String::from("LIM2"))));
+        assert_eq!(result, Ok(Constraint::new(RowType::Constraint(ConstraintType::Greater), String::from("LIM2"))));
 
         // Missing row name
         let line = " E ";
@@ -637,23 +618,26 @@ mod test {
         // Correct line, two coefficients
         let line = "    XONE      COST                 1   LIM1                 1";
         let result = read_real_columns(line);
-        assert_eq!(result, Ok(vec![RealColumn {
+        assert_eq!(result, Ok(vec![Coefficient {
             variable_name: String::from("XONE"),
             row_name: String::from("COST"),
-            coefficient: 1f64,
-        }, RealColumn {
+            variable_type: VariableType::Continuous,
+            value: 1f64,
+        }, Coefficient {
             variable_name: String::from("XONE"),
             row_name: String::from("LIM1"),
-            coefficient: 1f64,
+            variable_type: VariableType::Continuous,
+            value: 1f64,
         }]));
 
         // Correct line, one coefficient
         let line = "    ZTHREE    MYEQN                1";
         let result = read_real_columns(line);
-        assert_eq!(result, Ok(vec![RealColumn {
+        assert_eq!(result, Ok(vec![Coefficient {
             variable_name: String::from("ZTHREE"),
             row_name: String::from("MYEQN"),
-            coefficient: 1f64,
+            variable_type: VariableType::Continuous,
+            value: 1f64,
         }]));
 
         // Missing coefficient
@@ -678,10 +662,11 @@ mod test {
         // Correct line
         let line = "    XONE      COST                 1";
         let result = read_integer_columns(line);
-        assert_eq!(result, Ok(IntegerColumn {
+        assert_eq!(result, Ok(Coefficient {
             variable_name: String::from("XONE"),
             row_name: String::from("COST"),
-            coefficient: 1f64,
+            variable_type: VariableType::Integer,
+            value: 1f64,
         }));
 
         // Missing coefficient
@@ -805,20 +790,20 @@ ENDATA";
         let mut mps = MPS::new();
         mps.set_name(String::from("TESTPROB"));
 
-        mps.add_row(Row::new(RowType::Cost, String::from("COST")));
-        mps.add_row(Row::new(RowType::Less, String::from("LIM1")));
-        mps.add_row(Row::new(RowType::Greater, String::from("LIM2")));
-        mps.add_row(Row::new(RowType::Equal, String::from("MYEQN")));
+        mps.add_row(Constraint::new(RowType::Cost, String::from("COST")));
+        mps.add_row(Constraint::new(RowType::Constraint(ConstraintType::Less), String::from("LIM1")));
+        mps.add_row(Constraint::new(RowType::Constraint(ConstraintType::Greater), String::from("LIM2")));
+        mps.add_row(Constraint::new(RowType::Constraint(ConstraintType::Equal), String::from("MYEQN")));
 
-        mps.add_real_column(RealColumn::new(String::from("XONE"), String::from("COST"), 1f64));
-        mps.add_real_column(RealColumn::new(String::from("XONE"), String::from("LIM1"), 1f64));
-        mps.add_real_column(RealColumn::new(String::from("XONE"), String::from("LIM2"), 1f64));
-        mps.add_real_column(RealColumn::new(String::from("YTWO"), String::from("COST"), 4f64));
-        mps.add_real_column(RealColumn::new(String::from("YTWO"), String::from("LIM1"), 1f64));
-        mps.add_real_column(RealColumn::new(String::from("YTWO"), String::from("MYEQN"), -1f64));
-        mps.add_real_column(RealColumn::new(String::from("ZTHREE"), String::from("COST"), 9f64));
-        mps.add_real_column(RealColumn::new(String::from("ZTHREE"), String::from("LIM2"), 1f64));
-        mps.add_real_column(RealColumn::new(String::from("ZTHREE"), String::from("MYEQN"), 1f64));
+        mps.add_column(Coefficient::new(String::from("XONE"), String::from("COST"), VariableType::Continuous, 1f64));
+        mps.add_column(Coefficient::new(String::from("XONE"), String::from("LIM1"), VariableType::Continuous, 1f64));
+        mps.add_column(Coefficient::new(String::from("XONE"), String::from("LIM2"), VariableType::Continuous, 1f64));
+        mps.add_column(Coefficient::new(String::from("YTWO"), String::from("COST"), VariableType::Continuous, 4f64));
+        mps.add_column(Coefficient::new(String::from("YTWO"), String::from("LIM1"), VariableType::Continuous, 1f64));
+        mps.add_column(Coefficient::new(String::from("YTWO"), String::from("MYEQN"), VariableType::Continuous, -1f64));
+        mps.add_column(Coefficient::new(String::from("ZTHREE"), String::from("COST"), VariableType::Continuous, 9f64));
+        mps.add_column(Coefficient::new(String::from("ZTHREE"), String::from("LIM2"), VariableType::Continuous, 1f64));
+        mps.add_column(Coefficient::new(String::from("ZTHREE"), String::from("MYEQN"), VariableType::Continuous, 1f64));
 
         let mut rhs = RHS::new(String::from("RHS1"));
         rhs.add_value(String::from("LIM1"), 5f64);
@@ -864,12 +849,12 @@ ENDATA";
                                (String::from("YTWO"), VariableType::Continuous),
                                (String::from("ZTHREE"), VariableType::Continuous)];
 
-        let row_info = vec![RowType::Less,
-                            RowType::Greater,
-                            RowType::Equal,
-                            RowType::Less,
-                            RowType::Greater,
-                            RowType::Less];
+        let row_info = vec![ConstraintType::Less,
+                            ConstraintType::Greater,
+                            ConstraintType::Equal,
+                            ConstraintType::Less,
+                            ConstraintType::Greater,
+                            ConstraintType::Less];
 
         GeneralForm::new(data, b, cost, column_info, row_info)
     }
