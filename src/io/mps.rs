@@ -348,6 +348,7 @@ impl GeneralFormConvertable for MPS {
                 row_names_index.insert(row.name.clone(), size);
             }
         }
+        debug_assert_eq!(row_names_index.len(), nr_rows);
         let cost_row_name = cost_row_name.unwrap();
 
         let nr_columns = {
@@ -362,40 +363,49 @@ impl GeneralFormConvertable for MPS {
                 variable_names_index.insert(column.variable_name.clone(), size);
             }
         }
+        debug_assert_eq!(variable_names_index.len(), nr_columns);
 
         // Fill the coefficient matrix
         let mut data = SparseMatrix::zeros(nr_rows + self.bounds.len(), nr_columns);
         let mut cost = SparseVector::zeros(nr_columns);
         for coefficient in &self.coefficients {
+            let column_nr = *variable_names_index.get(&coefficient.variable_name).unwrap();
             if coefficient.row_name == cost_row_name {
-                cost.set_value(*variable_names_index.get(&coefficient.variable_name).unwrap(), coefficient.value);
+                cost.set_value(column_nr, coefficient.value);
             } else {
-                data.set_value(*row_names_index.get(&coefficient.row_name).unwrap(), *variable_names_index.get(&coefficient.variable_name).unwrap(), coefficient.value);
+                let row_nr = *row_names_index.get(&coefficient.row_name).unwrap();
+                data.set_value(row_nr, column_nr, coefficient.value);
             }
         }
 
         // TODO: Don't just get the first RHS
         let b_tuples: Vec<(usize, f64)> = self.rhs[0].values.iter()
-            .map(|&(ref row_name, value)| (*row_names_index.get(&row_name.to_owned()).unwrap(), value)).collect();
-        let mut b = DenseVector::zeros(row_names_index.len() + self.bounds.len());
+            .map(|&(ref row_name, value)| {
+                let row_nr = *row_names_index.get(&row_name.to_owned()).unwrap();
+                (row_nr, value)
+            }).collect();
+        let mut b = DenseVector::zeros(nr_rows + self.bounds.len());
         for (index, value) in b_tuples {
             b.set_value(index, value);
         }
 
         // Column info
-        let mut column_info_map = HashMap::new();
+        let mut column_info_map = HashMap::with_capacity(nr_columns);
         for column in &self.coefficients {
-            column_info_map.insert(*variable_names_index.get(&column.variable_name).unwrap(), (column.variable_name.clone(), column.variable_type));
+            let column_nr = *variable_names_index.get(&column.variable_name).unwrap();
+            column_info_map.insert(column_nr, (column.variable_name.clone(), column.variable_type));
         }
         let mut column_info_tuples: Vec<(usize, (String, VariableType))> = column_info_map.into_iter().collect();
         column_info_tuples.sort_by(|ref a, b| a.0.cmp(&b.0));
-        let column_info = column_info_tuples.into_iter().map(|t| t.1).collect();
+        let column_info = column_info_tuples.into_iter().map(|t| t.1).collect::<Vec<(String, VariableType)>>();
+        debug_assert_eq!(column_info.len(), nr_columns);
 
         // Row info
         let mut row_info_map = HashMap::with_capacity(nr_rows);
         for row in &self.constraints {
             if row.name != cost_row_name {
-                row_info_map.insert(*row_names_index.get(&row.name).unwrap(), match row.constraint_type {
+                let row_nr = *row_names_index.get(&row.name).unwrap();
+                row_info_map.insert(row_nr, match row.constraint_type {
                     RowType::Cost => panic!("If the row name is not the cost row name, this must a \
                     constraint"),
                     RowType::Constraint(constraint_type) => constraint_type,
@@ -405,6 +415,7 @@ impl GeneralFormConvertable for MPS {
         let mut row_info_tuples: Vec<(usize, ConstraintType)> = row_info_map.into_iter().collect();
         row_info_tuples.sort_by(|a, b| a.0.cmp(&b.0));
         let mut row_info: Vec<ConstraintType> = row_info_tuples.into_iter().map(|t| t.1).collect();
+        debug_assert_eq!(row_info.len(), nr_rows);
 
         // Bounds as constraints
         for i in 0..self.bounds.len() {
@@ -415,7 +426,8 @@ impl GeneralFormConvertable for MPS {
                 BoundDirection::Upper => ConstraintType::Less,
                 BoundDirection::Fixed => ConstraintType::Equal,
             });
-            data.set_value(row_names_index.len() + i, *variable_names_index.get(&bound.variable_name).unwrap(), 1f64);
+            let column_nr = *variable_names_index.get(&bound.variable_name).unwrap();
+            data.set_value(row_names_index.len() + i, column_nr, 1f64);
         }
 
         GeneralForm::new(data, b, cost, column_info, row_info)

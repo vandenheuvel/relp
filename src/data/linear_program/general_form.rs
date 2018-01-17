@@ -49,11 +49,13 @@ impl GeneralForm {
                 ConstraintType::Equal => (),
                 ConstraintType::Greater => {
                     data.set_value(index, new_column_index, -1f64);
-                    column_info.push((format!("SLACK{}", new_column_index - self.column_info.len()), VariableType::Continuous));
+                    column_info.push((format!("SLACK{}", new_column_index - self.column_info.len()),
+                                      VariableType::Continuous));
                 }
                 ConstraintType::Less => {
                     data.set_value(index, new_column_index, 1f64);
-                    column_info.push((format!("SLACK{}", new_column_index - self.column_info.len()), VariableType::Continuous));
+                    column_info.push((format!("SLACK{}", new_column_index - self.column_info.len()),
+                                      VariableType::Continuous));
                 }
             }
         }
