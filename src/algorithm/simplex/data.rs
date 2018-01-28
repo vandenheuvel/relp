@@ -193,16 +193,9 @@ impl Tableau {
     }
     /// Find a profitable column.
     pub fn profitable_column(&self, cost_row: usize) -> Option<usize> {
-        for column in 0..self.nr_columns() {
-            if self.basis_columns_set.contains(&column) {
-                continue
-            }
-
-            if self.relative_cost(cost_row, column) < 0f64 {
-                return Some(column)
-            }
-        }
-        None
+        (0..self.nr_columns())
+            .filter(|column| !self.basis_columns_set.contains(&column))
+            .find(|column| self.relative_cost(cost_row, *column) < 0f64)
     }
     /// Calculates the relative cost of a non-basis column to pivot on.
     pub fn relative_cost(&self, cost_row: usize, column: usize) -> f64 {

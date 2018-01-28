@@ -11,16 +11,6 @@ use data::linear_program::general_form::GeneralFormConvertable;
 
 /// The `read` function takes a file path and returns, if successful, a struct which can be
 /// converted to a linear program in general form.
-///
-/// # Examples
-///
-/// ```
-/// use std::path::Path;
-/// use lp::io::read;
-///
-/// let path = Path::new("./path/to/my/lp.mps");
-/// let lp = read(path);
-/// ```
 pub fn read(file_path: &Path) -> Result<Box<GeneralFormConvertable>, String> {
     // Open the file
     let mut file = match File::open(&file_path) {
