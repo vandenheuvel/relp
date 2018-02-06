@@ -6,9 +6,9 @@ use std::collections::{HashMap, HashSet};
 use std::f64;
 
 use data::linear_program::canonical_form::CanonicalForm;
+use data::linear_program::elements::VariableType;
 use data::linear_algebra::matrix::{DenseMatrix, Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
-use data::linear_program::elements::VariableType;
 
 
 pub const ARTIFICIAL: &str = "ARTIFICIAL";

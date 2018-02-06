@@ -6,7 +6,7 @@
 use std::iter::Iterator;
 use std::slice::Iter;
 
-use data::linear_algebra::vector::{DenseVector, Vector};
+use data::linear_algebra::vector::Vector;
 
 /// Defines basic ways to create or change a matrix, regardless of back-end.
 pub trait Matrix {

@@ -1,12 +1,5 @@
 use std::ops::Not;
 
-/// A `Row` is either a cost row or has one of the three equation types.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum RowType {
-    Cost,
-    Constraint(ConstraintType),
-}
-
 /// A `Constraint` is a type of (in)equality.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ConstraintType {

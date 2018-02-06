@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use data::linear_algebra::matrix::{Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use data::linear_program::canonical_form::CanonicalForm;
-use data::linear_program::elements::{ConstraintType, RowType, VariableType};
+use data::linear_program::elements::{ConstraintType, VariableType};
 
 
 /// A linear program in general form.

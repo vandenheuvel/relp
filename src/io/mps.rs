@@ -3,50 +3,263 @@
 //! Reading of `.mps` files, or files of the Mathematical Programming System format.
 
 use std::collections::HashMap;
+use std::iter::Iterator;
+use std::str::Lines;
 
-use data::linear_program::elements::{ConstraintType, RowType, VariableType};
+use data::linear_program::elements::{ConstraintType, VariableType};
 use data::linear_program::general_form::{GeneralForm, GeneralFormConvertable};
 use data::linear_algebra::matrix::{Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 
+
 /// Takes as argument a string in which the linear program is encoded following the
 /// [MPS format](https://en.wikipedia.org/wiki/MPS_(format)).
-pub fn parse(program: String) -> Result<Box<GeneralFormConvertable>, String> {
-    let mut mps = MPS::new();
-    let mut current_section = MPSSection::Name;
+pub fn parse(mut lines: Lines) -> Result<Box<GeneralFormConvertable>, String> {
+    let name = read_name(lines.next())?;
+    lines.next();
+    let (cost_row_name, constraints) = parse_rows(&mut lines)?;
+    let columns = parse_columns(&mut lines)?;
+    let rhs = parse_rhs(&mut lines)?;
+    let bounds = parse_bounds(&mut lines)?;
 
-    for line in program.lines() {
-        // There should be no data after the `ENDATA` line
-        if current_section == MPSSection::ENDATA {
-            return Err(String::from("Data after ENDATA line"));
-        }
+    Ok(Box::new(MPS { name, cost_row_name, rows: constraints, columns, RHSs: rhs, bounds, }))
+}
 
-        // Update the current section if a new one is reached, else parse the line
+/// Read the name
+fn read_name(line: Option<&str>) -> Result<String, String> {
+    match line {
+        Some(string) => {
+            let parts = string.split_whitespace().collect::<Vec<&str>>();
+            if parts.len() != 2 || parts[0] != "NAME" {
+                Err(format!("This is not a \"NAME\" line: {}", string))
+            } else {
+                Ok(String::from(parts[1]))
+            }
+        },
+        None => Err(String::from("Empty line")),
+    }
+}
+
+/// Read the ROWS section
+fn parse_rows(lines: &mut Lines) -> Result<(String, Vec<Constraint>), String> {
+    let mut constraints: Vec<Constraint> = Vec::new();
+    let mut cost_row_name = None;
+
+    for line in lines {
         match parse_section(line) {
-            Some(MPSSection::Name) => {
-                current_section = MPSSection::Name;
-                if let Err(message) = read_and_set(&mut mps, current_section, line) {
-                    return Err(message);
-                }
-            },
-            None => if let Err(message) = read_and_set(&mut mps, current_section, line) {
-                return Err(message);
-            },
-            Some(MPSSection::Columns(VariableType::Integer)) => {
-                // Toggle the variable type if in the `COLUMNS` section
-                if let MPSSection::Columns(variable_type) = current_section {
-                    current_section = MPSSection::Columns(!variable_type);
-                } else {
-                    return Err(format!("Need to be in column section to start integer column section.\
-                 Currently in section \"{:?}\"", current_section));
-                }
-            },
-            Some(section) => current_section = section,
+            Some(MPSSection::Columns(VariableType::Continuous)) => break,
+            Some(section) => return Err(format!("Didn't expect section \"{:?}\"", section)),
+            None => {
+                let mut parts = line.split_whitespace();
+                let constraint_type = match parts.next() {
+                    Some("N") => {
+                        cost_row_name = match parts.next() {
+                            Some(name) => Some(String::from(name)),
+                            None => return Err(format!("No row name: {}", line)),
+                        };
+                        continue;
+                    },
+                    Some("L") => ConstraintType::Less,
+                    Some("E") => ConstraintType::Equal,
+                    Some("G") => ConstraintType::Greater,
+                    _ => return Err(format!("No row type: {}", line)),
+                };
+                let row_name = match parts.next() {
+                    Some(name) => String::from(name),
+                    None => return Err(format!("No row name: {}", line)),
+                };
+
+                let constraint = Constraint::new(row_name, constraint_type);
+                constraints.push(constraint);
+            }
         }
     }
 
-    Ok(Box::new(mps))
+    match cost_row_name {
+        Some(name) => Ok((name, constraints)),
+        None => Err(format!("Did not read cost row name")),
+    }
 }
+
+/// Read the column values
+fn parse_columns(lines: &mut Lines) -> Result<Vec<Variable>, String> {
+    let mut columns = Vec::new();
+    let mut variable_type = VariableType::Continuous;
+
+    let mut previous_variable_name = None;
+    let mut coefficients = Vec::new();
+    for line in lines {
+        match parse_section(line) {
+            Some(MPSSection::Columns(new_type)) => {
+                variable_type = new_type;
+                continue;
+            },
+            Some(MPSSection::RHS) => break,
+            Some(section) => return Err(format!("Section \"{:?}\" not expected", section)),
+            None => (),
+        }
+
+        let mut parts = line.split_whitespace();
+        match parts.next() {
+            Some("RHS") => {
+                break;
+            },
+            None => return Err(format!("Empty line")),
+            variable_name => {
+                if variable_name != previous_variable_name {
+                    if previous_variable_name != None {
+                        columns.push(Variable {
+                            variable_name: String::from(previous_variable_name.unwrap()),
+                            variable_type,
+                            coefficients,
+                        });
+                        coefficients = Vec::new();
+                    }
+                    previous_variable_name = variable_name;
+                }
+
+                for _ in 0..2 {
+                    let row_name = match parts.next() {
+                        Some(name) => String::from(name),
+                        None => continue,
+                    };
+                    let value = match parts.next() {
+                        Some(number) => match number.parse::<f64>() {
+                            Ok(f) => f,
+                            Err(message) => return Err(format!("Column value \"{}\" could not be \
+                        parsed from line \"{}\" : {}", number, line, message)),
+                        },
+                        None => return Err(format!("Column value not found: {}", line)),
+                    };
+                    coefficients.push((row_name, value));
+                }
+            },
+        }
+    }
+
+    if coefficients.len() > 0 {
+        columns.push(Variable {
+            variable_name: match previous_variable_name {
+                Some(name) => String::from(name),
+                None => return Err(format!("No column values read")),
+            },
+            variable_type,
+            coefficients,
+        });
+    }
+
+    Ok(columns)
+}
+
+/// Read a `RHS` or right-hand side
+fn parse_rhs(lines: &mut Lines) -> Result<Vec<RHS>, String> {
+    let mut RHSs = Vec::new();
+
+    let mut previous_rhs_name = None;
+    let mut values = Vec::new();
+    for line in lines {
+        match parse_section(line) {
+            // The next section is starting
+            Some(MPSSection::Bounds) => {
+                match previous_rhs_name {
+                    Some(name) => RHSs.push(RHS {
+                        name: String::from(name),
+                        values: values.clone(),
+                    }),
+                    None => return Err(format!("Reached RHS section, no RHS found")),
+                };
+                break;
+            },
+            // An unexpected section
+            Some(other_section) => {
+                return Err(format!("Didn't expect section {:?}", other_section));
+            },
+            // No new section, we expect one or two RHS values
+            None => {
+                let mut parts = line.split_whitespace();
+                match parts.next() {
+                    None => return Err(format!("No RHS name on line \"{}\"", line)),
+                    rhs_name => {
+                        if rhs_name != previous_rhs_name {
+                            if previous_rhs_name != None {
+                                RHSs.push(RHS {
+                                    name: String::from(rhs_name.unwrap()),
+                                    values: values.clone(),
+                                });
+                                values = Vec::new();
+                            }
+                            previous_rhs_name = rhs_name;
+                        }
+
+                        for _ in 0..2 {
+                            let row_name = match parts.next() {
+                                Some(name) => String::from(name),
+                                None => continue,
+                            };
+                            let value = match parts.next() {
+                                Some(number) => match number.parse::<f64>() {
+                                    Ok(f) => f,
+                                    Err(message) => return Err(format!("Column value \"{}\" could not be \
+                        parsed from line \"{}\" : {}", number, line, message)),
+                                },
+                                None => return Err(format!("Column value not found: {}", line)),
+                            };
+                            values.push((row_name, value));
+                        }
+                    },
+                }
+            },
+        }
+    }
+
+    Ok(RHSs)
+}
+
+/// Read a `Bound` from a string
+fn parse_bounds(lines: &mut Lines) -> Result<Vec<Bound>, String> {
+    let mut bounds = Vec::new();
+
+    for line in lines {
+        match parse_section(&line) {
+            Some(MPSSection::ENDATA) => break,
+            Some(section) => return Err(format!("Did not expect section \"{:?}\"", section)),
+            None => {
+                let mut parts = line.split_whitespace();
+
+                let direction = match parts.next() {
+                    Some("UP") => BoundDirection::Upper,
+                    Some("LO") => BoundDirection::Lower,
+                    Some("FX") => BoundDirection::Fixed,
+                    Some(word) => return Err(format!("Bound type \"{}\" not recognised: {}", word, line)),
+                    None => return Err(format!("Bound direction and type not found: {}", line)),
+                };
+
+                let name = match parts.next() {
+                    Some(name) => String::from(name),
+                    None => return Err(format!("Bound name not found: {}", line)),
+                };
+
+                let variable_name = match parts.next() {
+                    Some(name) => String::from(name),
+                    None => return Err(format!("Column name not found: {}", line)),
+                };
+
+                let value = match parts.next() {
+                    Some(number) => match number.parse::<f64>() {
+                        Ok(f) => f,
+                        Err(message) => return Err(format!("Bound value \"{}\" could not be parsed \
+                from line \"{}\": {}", number, line, message)),
+                    },
+                    None => return Err(format!("Bound value not found: {}", line)),
+                };
+                bounds.push(Bound { name, direction, variable_name, value, });
+            }
+        }
+    }
+
+    Ok(bounds)
+}
+
 
 /// Determines, it possible, which section of the MPS file the line announces.
 ///
@@ -54,11 +267,14 @@ pub fn parse(program: String) -> Result<Box<GeneralFormConvertable>, String> {
 fn parse_section(line: &str) -> Option<MPSSection> {
     if line.starts_with(" ") {
         // Check for a nested section
-        if let Some(word) = line.split_whitespace().nth(1) {
-            // Check for a `MARKER` section
-            if word.starts_with("'") && word.ends_with("'") {
-                Some(MPSSection::Columns(VariableType::Integer))
-            } else { None }
+        let mut parts = line.split_whitespace();
+        parts.next();
+        if let Some("'MARKER'") = parts.next() {
+            match parts.next() {
+                Some("'INTORG'") => Some(MPSSection::Columns(VariableType::Integer)),
+                Some("'INTEND'") => Some(MPSSection::Columns(VariableType::Continuous)),
+                _ => panic!("Marker not recognized on line {}", line),
+            }
         } else { None }
     }
     else if line.starts_with("NAME") { Some(MPSSection::Name) }
@@ -70,37 +286,6 @@ fn parse_section(line: &str) -> Option<MPSSection> {
     else { None }
 }
 
-/// Parses a line and adds collects the result in an `MPS`.
-fn read_and_set(mps: &mut MPS, section: MPSSection, line: &str) -> Result<(), String> {
-    match section {
-        MPSSection::Name => match read_name(line) {
-            Ok(name) => Ok(mps.set_name(name)),
-            Err(message) => Err(message),
-        },
-        MPSSection::Rows => match read_rows(line) {
-            Ok(row) => Ok(mps.add_row(row)),
-            Err(message) => Err(message),
-        },
-        MPSSection::Columns(VariableType::Continuous) => match read_real_columns(line) {
-            Ok(columns) => Ok(for column in columns.into_iter() { mps.add_column(column) }),
-            Err(message) => Err(message),
-        },
-        MPSSection::Columns(VariableType::Integer) => match read_integer_columns(line) {
-            Ok(column) => Ok(mps.add_column(column)),
-            Err(message) => Err(message),
-        },
-        MPSSection::RHS => match read_rhs(line) {
-            Ok(rhs) => Ok(mps.add_rhs(rhs)),
-            Err(message) => Err(message),
-        },
-        MPSSection::Bounds => match read_bound(line) {
-            Ok(bound) => Ok(mps.add_bound(bound)),
-            Err(message) => Err(message),
-        },
-        MPSSection::ENDATA => Ok(()),
-    }
-}
-
 /// Represents the contents of an MPS file.
 ///
 /// Information on variables is spread throughout the `rows`, `real_columns`, `integer_columns`,
@@ -109,325 +294,116 @@ fn read_and_set(mps: &mut MPS, section: MPSSection, line: &str) -> Result<(), St
 struct MPS {
     // Name of the linear program
     name: String,
+    // Name of the cost row
+    cost_row_name: String,
     // All named constraints
-    constraints: Vec<Constraint>,
+    rows: Vec<Constraint>,
     // Constraint name and Variable name combinations
-    coefficients: Vec<Coefficient>,
+    columns: Vec<Variable>,
     // Right-hand side constraint values
-    rhs: Vec<RHS>,
+    RHSs: Vec<RHS>,
     // Extra bounds on variables
     bounds: Vec<Bound>,
 }
 
 impl MPS {
-    fn new() -> MPS {
-        MPS {
-            name: String::new(),
-            constraints: Vec::new(),
-            coefficients: Vec::new(),
-            rhs: Vec::new(),
-            bounds: Vec::new(),
-        }
+    fn get_rows_map(&self) -> (HashMap<String, usize>, usize) {
+        let rows_map = self.rows
+            .iter()
+            .map(|row| row.name.clone())
+            .enumerate()
+            .map(|(index, name)| (name, index))
+            .collect::<HashMap<String, usize>>();
+        let nr_rows = rows_map.len();
+        (rows_map, nr_rows)
     }
-    fn set_name(&mut self, name: String) {
-        self.name = name;
+    fn get_columns_map(&self) -> (HashMap<String, usize>, usize) {
+        let columns_map = self.columns
+            .iter()
+            .map(|variable| variable.variable_name.clone())
+            .enumerate()
+            .map(|(index, name)| (name, index))
+            .collect::<HashMap<String, usize>>();
+        let nr_columns = columns_map.len();
+        (columns_map, nr_columns)
     }
-    fn add_row(&mut self, row: Constraint) {
-        self.constraints.push(row);
-    }
-    fn add_column(&mut self, column: Coefficient) {
-        self.coefficients.push(column);
-    }
-    fn add_rhs(&mut self, new_rhs: RHS) {
-        for mut rhs in &mut self.rhs {
-            if rhs.name == new_rhs.name {
-                for (row, value) in new_rhs.values() {
-                    rhs.add_value(row, value);
+    fn get_data_and_cost(&self,
+                         rows_map: &HashMap<String, usize>,
+                         columns_map: &HashMap<String, usize>) -> (SparseMatrix, SparseVector) {
+        let (nr_rows, nr_columns) = (rows_map.len(), columns_map.len());
+        let mut data = SparseMatrix::zeros(nr_rows + self.bounds.len(), nr_columns);
+        let mut cost = SparseVector::zeros(nr_columns);
+
+        for column in &self.columns {
+            let column_index = *columns_map.get(&column.variable_name).unwrap();
+            for coefficient in &column.coefficients {
+                let value = coefficient.1;
+
+                if coefficient.0 == self.cost_row_name {
+                    cost.set_value(column_index, value);
+                } else {
+                    let row_index = *rows_map.get(&coefficient.0).unwrap();
+                    data.set_value(row_index, column_index, value);
                 }
-                return;
             }
         }
-        self.rhs.push(new_rhs);
+
+        (data, cost)
     }
-    fn add_bound(&mut self, bound: Bound) {
-        self.bounds.push(bound);
+    fn get_b(&self, rows_map: &HashMap<String, usize>) -> DenseVector {
+        // TODO: Don't just get the first RHS
+        let rhs = &self.RHSs[0];
+        let nr_rows = rows_map.len();
+        let b_tuples: Vec<(usize, f64)> = rhs.values.iter()
+            .map(|&(ref row_name, value)| {
+                let row_nr = *rows_map.get(row_name).unwrap();
+                (row_nr, value)
+            }).collect();
+
+        let mut b = DenseVector::zeros(nr_rows + self.bounds.len());
+        for (index, value) in b_tuples {
+            b.set_value(index, value);
+        }
+        b
     }
-}
-
-/// Read the name of a linear program from a string.
-fn read_name(line: &str) -> Result<String, String> {
-    let parts = line.split_whitespace().collect::<Vec<&str>>();
-    if parts.len() != 2 || parts[0] != "NAME" {
-        Err(format!("This is not a \"NAME\" line: {}", line))
-    } else {
-        Ok(String::from(parts[1]))
+    fn get_row_info(&self, rows_map: &HashMap<String, usize>) -> Vec<ConstraintType> {
+        let mut row_info = self.rows.clone();
+        row_info.sort_by_key(|row| *rows_map.get(&row.name).unwrap());
+        let row_info = row_info.into_iter()
+            .map(|row| row.constraint_type)
+            .collect::<Vec<ConstraintType>>();
+        row_info
     }
-}
-
-/// Read a row of a linear program from a string.
-fn read_rows(line: &str) -> Result<Constraint, String> {
-    let mut parts = line.split_whitespace();
-
-    // Parse the type of the row
-    let row_type = match parts.next() {
-        Some("N") => RowType::Cost,
-        Some("L") => RowType::Constraint(ConstraintType::Less),
-        Some("E") => RowType::Constraint(ConstraintType::Equal),
-        Some("G") => RowType::Constraint(ConstraintType::Greater),
-        Some(word) => return Err(format!("Row type not recognised: type {} on line {}", word, line)),
-        None => return Err(format!("No row type: {}", line)),
-    };
-
-    let row_name = match parts.next() {
-        Some(name) => name,
-        None => return Err(format!("Now row name: {}", line)),
-    };
-
-    Ok(Constraint::new(row_type, String::from(row_name)))
-}
-
-/// Read a continuous variable name, row name and coefficient from a string.
-fn read_real_columns(line: &str) -> Result<Vec<Coefficient>, String> {
-    let mut parts = line.split_whitespace();
-    // Make sure at least one column is read
-    let mut columns = Vec::new();
-
-    // Parse the variable name
-    let variable_name = match parts.next() {
-        Some(name) => String::from(name),
-        None => return Err(format!("Column name not found: {}", line)),
-    };
-
-    // Try to read two pairs of row-coefficient combinations
-    for _ in 0..2 {
-        let row_name = match parts.next() {
-            Some(name) => String::from(name),
-            None => continue,
-        };
-        let coefficient = match parts.next() {
-            Some(number) => match number.parse::<f64>() {
-                Ok(f) => f,
-                Err(message) => return Err(format!("Column coefficient \"{}\"\
-                    could not be parsed from line \"{}\" : {}", number, line, message)),
-            },
-            None => return Err(format!("Column coefficient not found: {}", line)),
-        };
-
-        columns.push(Coefficient::new(variable_name.clone(), row_name, VariableType::Continuous, coefficient));
+    fn get_column_info(&self, columns_map: &HashMap<String, usize>) -> Vec<(String, VariableType)> {
+        let mut column_info = self.columns.iter()
+            .map(|column| (column.variable_name.clone(), column.variable_type))
+            .collect::<Vec<(String, VariableType)>>();
+        column_info.sort_by_key(|(name, _)| *columns_map.get(&name.to_owned()).unwrap());
+        column_info
     }
-
-    if columns.len() > 0 {
-        Ok(columns)
-    } else {
-        Err(format!("Failed to read at least one column: {}", line))
-    }
-}
-
-/// Read an integer variable name, row name and coefficient from a string.
-fn read_integer_columns(line: &str) -> Result<Coefficient, String> {
-    let mut parts = line.split_whitespace();
-
-    // Read the variable name
-    let variable_name = match parts.next() {
-        Some(name) => String::from(name),
-        None => return Err(format!("Column name not found: {}", line)),
-    };
-
-    // Read the row name
-    let row_name = match parts.next() {
-        Some(name) => String::from(name),
-        None => return Err(format!("Failed to read row name: {}", line)),
-    };
-
-    // Read the value
-    let coefficient = match parts.next() {
-        Some(number) => match number.parse::<f64>() {
-            Ok(f) => f,
-            Err(message) => return Err(format!("Column coefficient \"{}\"\
-                    could not be parsed from line \"{}\" : {}", number, line, message)),
-        },
-        None => return Err(format!("Column coefficient not found: {}", line)),
-    };
-
-    Ok(Coefficient::new(variable_name, row_name, VariableType::Integer, coefficient))
-}
-
-/// Read a `RHS` or right-hand side from a string.
-fn read_rhs(line: &str) -> Result<RHS, String> {
-    let mut parts = line.split_whitespace();
-
-    // Parse the RHS vector name
-    let vector_name = match parts.next() {
-        Some(name) => String::from(name),
-        None => return Err(format!("RHS vector name not found: {}", line)),
-    };
-
-    let mut rhs_vector = RHS::new(vector_name);
-    // Try to read two pairs of row-coefficient combinations
-    for _ in 0..2 {
-        let row_name = match parts.next() {
-            Some(name) => String::from(name),
-            None => continue,
-        };
-        let coefficient = match parts.next() {
-            Some(number) => match number.parse::<f64>() {
-                Ok(f) => f,
-                Err(message) => return Err(format!("RHS vector coefficient \"{}\"\
-                    could not be parsed from line \"{}\": {}", number, line, message)),
-            },
-            None => return Err(format!("RHS vector coefficient not found: {}", line)),
-        };
-
-        rhs_vector.add_value(row_name, coefficient);
-    }
-
-    // Make sure at least column is read
-    if rhs_vector.len() > 0 {
-        Ok(rhs_vector)
-    } else {
-        Err(format!("Failed to add at least one RHS value: {}", line))
-    }
-}
-
-/// Read a `Bound` from a string
-fn read_bound(line: &str) -> Result<Bound, String> {
-    let mut parts = line.split_whitespace();
-
-    let (direction, variable_type) = match parts.next() {
-        Some("UP") => (BoundDirection::Upper, VariableType::Continuous),
-        Some("LO") => (BoundDirection::Lower, VariableType::Continuous),
-        Some("UI") => (BoundDirection::Upper, VariableType::Integer),
-        Some("LI") => (BoundDirection::Lower, VariableType::Integer),
-        Some("FX") => (BoundDirection::Fixed, VariableType::Continuous),
-        Some(word) => return Err(format!("Bound type \"{}\" not recognised: {}", word, line)),
-        None => return Err(format!("Bound direction and type not found: {}", line)),
-    };
-
-    let name = match parts.next() {
-        Some(name) => String::from(name),
-        None => return Err(format!("Bound name not found: {}", line)),
-    };
-
-    let variable_name = match parts.next() {
-        Some(name) => String::from(name),
-        None => return Err(format!("Column name not found: {}", line)),
-    };
-
-    let value = match parts.next() {
-        Some(number) => match number.parse::<f64>() {
-            Ok(f) => f,
-            Err(message) => return Err(format!("Bound value \"{}\" could not be parsed \
-                from line \"{}\": {}", number, line, message)),
-        },
-        None => return Err(format!("Bound value not found: {}", line)),
-    };
-
-    Ok(Bound::new(name, direction, variable_name, variable_type, value))
 }
 
 /// Describes how to convert an `MPS` to a `GeneralForm`, or linear program in general form.
 impl GeneralFormConvertable for MPS {
     fn to_general_lp(&self) -> GeneralForm {
-        // TODO: Split up and test the sections this method separately
-        let nr_rows = {
-            let mut nr_rows = self.constraints.iter().map(|row| row.name.clone()).collect::<Vec<String>>();
-            nr_rows.dedup();
-            // Subtract one for the cost row
-            nr_rows.len() - 1
-        };
+        let (rows_map, nr_rows) = self.get_rows_map();
+        let (columns_map, nr_columns) = self.get_columns_map();
+        let (mut data, cost) = self.get_data_and_cost(&rows_map, &columns_map);
+        let mut b = self.get_b(&rows_map);
+        let mut row_info = self.get_row_info(&rows_map);
+        let column_info = self.get_column_info(&columns_map);
 
-        let mut row_names_index = HashMap::with_capacity(nr_rows);
-        let mut cost_row_name = None;
-        for row in &self.constraints {
-            if row.constraint_type == RowType::Cost {
-                debug_assert_eq!(cost_row_name, None, "Cost row must be unique. Current name is \
-                \"{:?}\"", cost_row_name);
-                cost_row_name = Some(row.name.clone());
-            } else if !row_names_index.contains_key(&row.name) {
-                let size = row_names_index.len();
-                row_names_index.insert(row.name.clone(), size);
-            }
-        }
-        debug_assert_eq!(row_names_index.len(), nr_rows);
-        let cost_row_name = cost_row_name.unwrap();
-
-        let nr_columns = {
-            let mut nr_columns = self.coefficients.iter().map(|column| column.variable_name.clone()).collect::<Vec<String>>();
-            nr_columns.dedup();
-            nr_columns.len()
-        };
-        let mut variable_names_index = HashMap::with_capacity(nr_columns);
-        for column in &self.coefficients {
-            if !variable_names_index.contains_key(&column.variable_name) {
-                let size = variable_names_index.len();
-                variable_names_index.insert(column.variable_name.clone(), size);
-            }
-        }
-        debug_assert_eq!(variable_names_index.len(), nr_columns);
-
-        // Fill the coefficient matrix
-        let mut data = SparseMatrix::zeros(nr_rows + self.bounds.len(), nr_columns);
-        let mut cost = SparseVector::zeros(nr_columns);
-        for coefficient in &self.coefficients {
-            let column_nr = *variable_names_index.get(&coefficient.variable_name).unwrap();
-            if coefficient.row_name == cost_row_name {
-                cost.set_value(column_nr, coefficient.value);
-            } else {
-                let row_nr = *row_names_index.get(&coefficient.row_name).unwrap();
-                data.set_value(row_nr, column_nr, coefficient.value);
-            }
-        }
-
-        // TODO: Don't just get the first RHS
-        let b_tuples: Vec<(usize, f64)> = self.rhs[0].values.iter()
-            .map(|&(ref row_name, value)| {
-                let row_nr = *row_names_index.get(&row_name.to_owned()).unwrap();
-                (row_nr, value)
-            }).collect();
-        let mut b = DenseVector::zeros(nr_rows + self.bounds.len());
-        for (index, value) in b_tuples {
-            b.set_value(index, value);
-        }
-
-        // Column info
-        let mut column_info_map = HashMap::with_capacity(nr_columns);
-        for column in &self.coefficients {
-            let column_nr = *variable_names_index.get(&column.variable_name).unwrap();
-            column_info_map.insert(column_nr, (column.variable_name.clone(), column.variable_type));
-        }
-        let mut column_info_tuples: Vec<(usize, (String, VariableType))> = column_info_map.into_iter().collect();
-        column_info_tuples.sort_by(|ref a, b| a.0.cmp(&b.0));
-        let column_info = column_info_tuples.into_iter().map(|t| t.1).collect::<Vec<(String, VariableType)>>();
-        debug_assert_eq!(column_info.len(), nr_columns);
-
-        // Row info
-        let mut row_info_map = HashMap::with_capacity(nr_rows);
-        for row in &self.constraints {
-            if row.name != cost_row_name {
-                let row_nr = *row_names_index.get(&row.name).unwrap();
-                row_info_map.insert(row_nr, match row.constraint_type {
-                    RowType::Cost => panic!("If the row name is not the cost row name, this must a \
-                    constraint"),
-                    RowType::Constraint(constraint_type) => constraint_type,
-                });
-            }
-        }
-        let mut row_info_tuples: Vec<(usize, ConstraintType)> = row_info_map.into_iter().collect();
-        row_info_tuples.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut row_info: Vec<ConstraintType> = row_info_tuples.into_iter().map(|t| t.1).collect();
-        debug_assert_eq!(row_info.len(), nr_rows);
-
-        // Bounds as constraints
-        for i in 0..self.bounds.len() {
-            let bound = &self.bounds[i];
-            b.set_value(row_info.len(), bound.value);
+        let nr_ordinary_constraints = nr_rows;
+        for (bound_number, bound) in self.bounds.iter().enumerate() {
+            let row_index = nr_ordinary_constraints + bound_number;
+            b.set_value(row_index, bound.value);
             row_info.push(match bound.direction {
                 BoundDirection::Lower => ConstraintType::Greater,
                 BoundDirection::Upper => ConstraintType::Less,
                 BoundDirection::Fixed => ConstraintType::Equal,
             });
-            let column_nr = *variable_names_index.get(&bound.variable_name).unwrap();
-            data.set_value(row_names_index.len() + i, column_nr, 1f64);
+            let column_index = *columns_map.get(&bound.variable_name).unwrap();
+            data.set_value(row_index, column_index, 1f64);
         }
 
         GeneralForm::new(data, b, cost, column_info, row_info)
@@ -446,32 +422,30 @@ enum MPSSection {
 }
 
 /// Every `Row` has a name and a `RowType`.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct Constraint {
     name: String,
-    constraint_type: RowType,
+    constraint_type: ConstraintType,
 }
 
 impl Constraint {
-    /// Create a new `Row`.
-    pub fn new(row_type: RowType, name: String) -> Constraint {
-        Constraint { name, constraint_type: row_type, }
+    /// Create a new `Constraint`.
+    pub fn new(name: String, constraint_type: ConstraintType) -> Constraint {
+        Constraint { name, constraint_type, }
     }
 }
 
-/// Describes with which coefficient a variable appears in a row. This variable is be a real number.
 #[derive(Debug, PartialEq)]
-struct Coefficient {
+struct Variable {
     variable_name: String,
-    row_name: String,
     variable_type: VariableType,
-    value: f64,
+    coefficients: Vec<(String, f64)>,
 }
 
-impl Coefficient {
-    pub fn new(variable_name: String, row_name: String, variable_type: VariableType, value: f64)
-        -> Coefficient {
-        Coefficient { variable_name, row_name, variable_type, value, }
+impl Variable {
+    /// Create a new `Column`
+    pub fn new(variable_name: String, variable_type: VariableType, coefficients: Vec<(String, f64)>) -> Variable {
+        Variable { variable_name, variable_type, coefficients, }
     }
 }
 
@@ -483,21 +457,6 @@ struct RHS {
     values: Vec<(String, f64)>,
 }
 
-impl RHS {
-    pub fn new(name: String) -> RHS {
-        RHS { name, values: Vec::new() }
-    }
-    pub fn add_value(&mut self, name: String, value: f64) {
-        self.values.push((name, value));
-    }
-    pub fn values(&self) -> Vec<(String, f64)>  {
-        self.values.clone()
-    }
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-}
-
 /// A `Bound` gives a bound on a variable. The variable can either be continuous or integer, while
 /// the bound can have any direction.
 #[derive(Debug, PartialEq)]
@@ -505,13 +464,12 @@ struct Bound {
     name: String,
     direction: BoundDirection,
     variable_name: String,
-    variable_type: VariableType,
     value: f64,
 }
 
 impl Bound {
-    pub fn new(name: String, direction: BoundDirection, variable_name: String, variable_type: VariableType, value: f64) -> Bound {
-        Bound { name, direction, variable_name, variable_type, value, }
+    pub fn new(name: String, direction: BoundDirection, variable_name: String, value: f64) -> Bound {
+        Bound { name, direction, variable_name, value, }
     }
 }
 
@@ -567,208 +525,161 @@ mod test {
     #[test]
     fn test_read_name() {
         // Correct line
-        let line = "NAME          TESTPROB";
-        let result = read_name(line);
+        let name = Some("NAME          TESTPROB");
+        let result = read_name(name);
         assert_eq!(result, Ok(String::from("TESTPROB")));
 
         // Incorrect indicator
-        let line = "X TESTPROB";
-        let result = read_name(line);
+        let name = Some("X TESTPROB");
+        let result = read_name(name);
         assert!(result.is_err());
 
         // Missing name
-        let line = "NAME          ";
-        let result = read_name(line);
+        let name = Some("NAME          ");
+        let result = read_name(name);
         assert!(result.is_err());
 
         // Empty line
-        let line = "";
-        let result = read_name(line);
+        let name = Some("");
+        let result = read_name(name);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_read_rows() {
+    fn test_parse_rows() {
         // Cost row
-        let line = " N  COST";
-        let result = read_rows(line);
-        assert_eq!(result, Ok(Constraint::new(RowType::Cost, String::from("COST"))));
-
-        // Less-or-equal row
-        let line = " L  LIM1";
-        let result = read_rows(line);
-        assert_eq!(result, Ok(Constraint::new(RowType::Constraint(ConstraintType::Less), String::from("LIM1"))));
-
-        // Equal row
-        let line = " E  MYEQN";
-        let result = read_rows(line);
-        assert_eq!(result, Ok(Constraint::new(RowType::Constraint(ConstraintType::Equal), String::from("MYEQN"))));
-
-        // Greater row
-        let line = " G  LIM2";
-        let result = read_rows(line);
-        assert_eq!(result, Ok(Constraint::new(RowType::Constraint(ConstraintType::Greater), String::from("LIM2"))));
+        let rows = " N  COST\n L  LIM1\n E  MYEQN\n G  LIM2";
+        let result = parse_rows(&mut rows.lines());
+        let expected = Ok((String::from("COST"),
+                           vec![Constraint::new(String::from("LIM1"), ConstraintType::Less),
+                                Constraint::new(String::from("MYEQN"), ConstraintType::Equal),
+                                Constraint::new(String::from("LIM2"), ConstraintType::Greater)]));
+        assert_eq!(result, expected);
 
         // Missing row name
-        let line = " E ";
-        let result = read_rows(line);
+        let rows = " E ";
+        let result = parse_rows(&mut rows.lines());
         assert!(result.is_err());
 
         // Unknown row type
-        let line = " X  ROWNAME";
-        let result = read_rows(line);
+        let rows = " X  ROWNAME";
+        let result = parse_rows(&mut rows.lines());
         assert!(result.is_err());
 
         // Empty line
-        let line = "";
-        let result = read_rows(line);
+        let rows = "";
+        let result = parse_rows(&mut rows.lines());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_read_columns() {
         // Correct line, two coefficients
-        let line = "    XONE      COST                 1   LIM1                 1";
-        let result = read_real_columns(line);
-        assert_eq!(result, Ok(vec![Coefficient {
-            variable_name: String::from("XONE"),
-            row_name: String::from("COST"),
-            variable_type: VariableType::Continuous,
-            value: 1f64,
-        }, Coefficient {
-            variable_name: String::from("XONE"),
-            row_name: String::from("LIM1"),
-            variable_type: VariableType::Continuous,
-            value: 1f64,
-        }]));
+        let columns = "    XONE      COST                 1   LIM1                 1";
+        let result = parse_columns(&mut columns.lines());
+        let expected = Ok(vec![Variable::new(String::from("XONE"),
+                               VariableType::Continuous,
+                               vec![(String::from("COST"), 1f64),
+                                    (String::from("LIM1"), 1f64)])]);
+        assert_eq!(result, expected);
 
         // Correct line, one coefficient
-        let line = "    ZTHREE    MYEQN                1";
-        let result = read_real_columns(line);
-        assert_eq!(result, Ok(vec![Coefficient {
-            variable_name: String::from("ZTHREE"),
-            row_name: String::from("MYEQN"),
-            variable_type: VariableType::Continuous,
-            value: 1f64,
-        }]));
+        let columns = "    ZTHREE    MYEQN                1";
+        let result = parse_columns(&mut columns.lines());
+        let expected = Ok(vec![Variable::new(String::from("ZTHREE"),
+                               VariableType::Continuous,
+                               vec![(String::from("MYEQN"), 1f64)])]);
+        assert_eq!(result, expected);
 
         // Missing coefficient
-        let line = "    XONE      COST                 1   LIM1                 ";
-        let result = read_real_columns(line);
+        let columns = "    XONE      COST                 1   LIM1                 ";
+        let result = parse_columns(&mut columns.lines());
         assert!(result.is_err());
 
         // Missing row name
-        let line = "    XONE      COST                 1           1";
-        let result = read_real_columns(line);
+        let columns = "    XONE      COST                 1           1";
+        let result = parse_columns(&mut columns.lines());
 
         assert!(result.is_err());
 
         // Missing variable name
-        let line = "      COST                 1   LIM1                 1";
-        let result = read_real_columns(line);
+        let columns = "      COST                 1   LIM1                 1";
+        let result = parse_columns(&mut columns.lines());
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_read_integer_columns() {
-        // Correct line
-        let line = "    XONE      COST                 1";
-        let result = read_integer_columns(line);
-        assert_eq!(result, Ok(Coefficient {
-            variable_name: String::from("XONE"),
-            row_name: String::from("COST"),
-            variable_type: VariableType::Integer,
-            value: 1f64,
-        }));
-
-        // Missing coefficient
-        let line = "    XONE      COST            ";
-        let result = read_integer_columns(line);
-        assert!(result.is_err());
-
-        // Missing row name
-        let line = "    XONE                     1       ";
-        let result = read_integer_columns(line);
-
-        assert!(result.is_err());
-
-        // Missing variable name
-        let line = "      COST                 1";
-        let result = read_integer_columns(line);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_read_rhs() {
+    fn test_parse_rhs() {
         // Correct line, two coefficients
-        let line = "    RHS1      LIM1                 5   LIM2                10";
-        let result = read_rhs(line);
-        assert_eq!(result, Ok(RHS {
+        let rhs = "    RHS1      LIM1                 5   LIM2                10\nBOUNDS";
+        let result = parse_rhs(&mut rhs.lines());
+        let expected = Ok(vec![RHS {
             name: String::from("RHS1"),
             values: vec![(String::from("LIM1"), 5f64),
                          (String::from("LIM2"), 10f64)],
-        }));
+        }]);
+        assert_eq!(result, expected);
 
         // Correct line, one coefficient
-        let line = "    RHS1      MYEQN                7";
-        let result = read_rhs(line);
-        assert_eq!(result, Ok(RHS {
+        let rhs = "    RHS1      MYEQN                7\nBOUNDS";
+        let result = parse_rhs(&mut rhs.lines());
+        let expected = Ok(vec![RHS {
             name: String::from("RHS1"),
             values: vec![(String::from("MYEQN"), 7f64)],
-        }));
+        }]);
+        assert_eq!(result, expected);
 
         // Missing coefficient
-        let line = "    RHS1      LIM1                 5   LIM2           ";
-        let result = read_rhs(line);
+        let rhs = "    RHS1      LIM1                 5   LIM2           ";
+        let result = parse_rhs(&mut rhs.lines());
         assert!(result.is_err());
 
         // Missing row name
-        let line = "    RHS1      LIM1                 5                  10";
-        let result = read_rhs(line);
+        let rhs = "    RHS1      LIM1                 5                  10";
+        let result = parse_rhs(&mut rhs.lines());
         assert!(result.is_err());
 
         // Missing rhs name
-        let line = "         LIM1                 5   LIM2                10";
-        let result = read_rhs(line);
+        let rhs = "         LIM1                 5   LIM2                10";
+        let result = parse_rhs(&mut rhs.lines());
         assert!(result.is_err());
 
         // Missing coefficient
-        let line = "    RHS1      LIM1   ";
-        let result = read_rhs(line);
+        let rhs = "    RHS1      LIM1   ";
+        let result = parse_rhs(&mut rhs.lines());
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_read_bounds() {
+    fn test_parse_bounds() {
         // Correct bound
-        let line = " UP BND1      XONE                 4";
-        let result = read_bound(line);
-        assert_eq!(result, Ok(Bound {
+        let bound = " UP BND1      XONE                 4\nENDATA";
+        let result = parse_bounds(&mut bound.lines());
+        assert_eq!(result, Ok(vec![Bound {
             name: String::from("BND1"),
             direction: BoundDirection::Upper,
             variable_name: String::from("XONE"),
-            variable_type: VariableType::Continuous,
             value: 4f64,
-        }));
+        }]));
 
         // Missing coefficient
-        let line = " UP BND1      XONE            ";
-        let result = read_bound(line);
+        let bound = " UP BND1      XONE            ";
+        let result = parse_bounds(&mut bound.lines());
         assert!(result.is_err());
 
         // Missing variable name
-        let line = " UP BND1                       4";
-        let result = read_bound(line);
+        let bound = " UP BND1                       4";
+        let result = parse_bounds(&mut bound.lines());
         assert!(result.is_err());
 
         // Missing bound name
-        let line = " UP     XONE                 4";
-        let result = read_bound(line);
+        let bound = " UP     XONE                 4";
+        let result = parse_bounds(&mut bound.lines());
         assert!(result.is_err());
 
         // Missing bound direction
-        let line = "  BND1      XONE                 4";
-        let result = read_bound(line);
+        let bound = "  BND1      XONE                 4";
+        let result = parse_bounds(&mut bound.lines());
         assert!(result.is_err());
     }
 
@@ -799,40 +710,47 @@ ENDATA";
 
     #[allow(unused)]
     fn lp_mps() -> MPS {
-        let mut mps = MPS::new();
-        mps.set_name(String::from("TESTPROB"));
+        let name = String::from("TESTPROB");
+        let cost_row_name = String::from("COST");
+        let rows = vec![Constraint::new(String::from("LIM1"), ConstraintType::Less),
+                        Constraint::new(String::from("LIM2"), ConstraintType::Greater),
+                        Constraint::new(String::from("MYEQN"), ConstraintType::Equal)];
 
-        mps.add_row(Constraint::new(RowType::Cost, String::from("COST")));
-        mps.add_row(Constraint::new(RowType::Constraint(ConstraintType::Less), String::from("LIM1")));
-        mps.add_row(Constraint::new(RowType::Constraint(ConstraintType::Greater), String::from("LIM2")));
-        mps.add_row(Constraint::new(RowType::Constraint(ConstraintType::Equal), String::from("MYEQN")));
+        let columns = vec![Variable::new(String::from("XONE"),
+                                         VariableType::Continuous,
+                                         vec![(String::from("COST"), 1f64),
+                                              (String::from("LIM1"), 1f64),
+                                              (String::from("LIM2"), 1f64)]),
+                           Variable::new(String::from("YTWO"),
+                                         VariableType::Continuous,
+                                         vec![(String::from("COST"), 4f64),
+                                              (String::from("LIM1"), 1f64),
+                                              (String::from("MYEQN"), -1f64)]),
+                           Variable::new(String::from("ZTHREE"),
+                                         VariableType::Continuous,
+                                         vec![(String::from("COST"), 9f64),
+                                              (String::from("LIM2"), 1f64),
+                                              (String::from("MYEQN"), 1f64)])];
 
-        mps.add_column(Coefficient::new(String::from("XONE"), String::from("COST"), VariableType::Continuous, 1f64));
-        mps.add_column(Coefficient::new(String::from("XONE"), String::from("LIM1"), VariableType::Continuous, 1f64));
-        mps.add_column(Coefficient::new(String::from("XONE"), String::from("LIM2"), VariableType::Continuous, 1f64));
-        mps.add_column(Coefficient::new(String::from("YTWO"), String::from("COST"), VariableType::Continuous, 4f64));
-        mps.add_column(Coefficient::new(String::from("YTWO"), String::from("LIM1"), VariableType::Continuous, 1f64));
-        mps.add_column(Coefficient::new(String::from("YTWO"), String::from("MYEQN"), VariableType::Continuous, -1f64));
-        mps.add_column(Coefficient::new(String::from("ZTHREE"), String::from("COST"), VariableType::Continuous, 9f64));
-        mps.add_column(Coefficient::new(String::from("ZTHREE"), String::from("LIM2"), VariableType::Continuous, 1f64));
-        mps.add_column(Coefficient::new(String::from("ZTHREE"), String::from("MYEQN"), VariableType::Continuous, 1f64));
 
-        let mut rhs = RHS::new(String::from("RHS1"));
-        rhs.add_value(String::from("LIM1"), 5f64);
-        rhs.add_value(String::from("LIM2"), 10f64);
-        rhs.add_value(String::from("MYEQN"), 7f64);
-        mps.add_rhs(rhs);
+        let RHSs = vec![RHS {
+            name: String::from("RHS1"),
+            values: vec![(String::from("LIM1"), 5f64),
+                         (String::from("LIM2"), 10f64),
+                         (String::from("MYEQN"), 7f64)],
+        }];
 
-        mps.add_bound(Bound::new(String::from("BND1"), BoundDirection::Upper, String::from("XONE"), VariableType::Continuous, 4f64));
-        mps.add_bound(Bound::new(String::from("BND1"), BoundDirection::Lower, String::from("YTWO"), VariableType::Continuous, -1f64));
-        mps.add_bound(Bound::new(String::from("BND1"), BoundDirection::Upper, String::from("YTWO"), VariableType::Continuous, 1f64));
 
-        mps
+        let bounds = vec![Bound::new(String::from("BND1"), BoundDirection::Upper, String::from("XONE"), 4f64),
+                          Bound::new(String::from("BND1"), BoundDirection::Lower, String::from("YTWO"), -1f64),
+                          Bound::new(String::from("BND1"), BoundDirection::Upper, String::from("YTWO"), 1f64)];
+
+        MPS { name, cost_row_name, rows, columns, RHSs, bounds, }
     }
 
     #[test]
     fn read() {
-        let result = parse(lp_string());
+        let result = parse(lp_string().lines());
         let expected = lp_mps();
 
         assert!(result.is_ok());
@@ -881,7 +799,7 @@ ENDATA";
 
     #[test]
     fn parse_and_convert() {
-        let result = parse(lp_string()).ok().unwrap().to_general_lp();
+        let result = parse(lp_string().lines()).ok().unwrap().to_general_lp();
         let expected = lp_general();
 
         assert_eq!(format!("{:?}", result), format!("{:?}", expected));

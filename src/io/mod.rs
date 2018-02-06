@@ -19,15 +19,16 @@ pub fn read(file_path: &Path) -> Result<Box<GeneralFormConvertable>, String> {
     };
 
     // Read the file
-    let mut file_contents = String::new();
-    if let Err(_) = file.read_to_string(&mut file_contents) {
+    let mut program = String::new();
+    if let Err(_) = file.read_to_string(&mut program) {
         return Err(String::from("Error reading data file"));
-    };
+    }
+    let lines = program.lines();
 
     // Choose the right parser
     match file_path.extension() {
         Some(extension) => match extension.to_str() {
-            Some("mps") => mps::parse(file_contents),
+            Some("mps") => mps::parse(lines),
             Some(extension_string) => Err(format!("Could not recognise file extension \"{}\" of \
             file {:?}", extension_string, file_path)),
             None => Err(format!("Could not convert OsStr to &str, probably invalid unicode: {:?}",
