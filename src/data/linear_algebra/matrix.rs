@@ -9,7 +9,7 @@ use std::slice::Iter;
 use data::linear_algebra::vector::Vector;
 
 /// Defines basic ways to create or change a matrix, regardless of back-end.
-pub trait Matrix {
+pub trait Matrix: Clone {
     fn from_data(data: Vec<Vec<f64>>) -> Self;
     fn identity(size: usize) -> Self;
     fn zeros(rows: usize, columns: usize) -> Self;
@@ -361,132 +361,100 @@ mod test {
 
     use super::*;
 
-    macro_rules! test_matrix {
-            ( $matrix_type:ident ) => {
-                $matrix_type::from_data(vec![vec![1f64, 2f64, 0f64],
-                                             vec![0f64, 5f64, 6f64]])
-            }
-        }
+    fn test_matrix<T>() -> T where T: Matrix {
+        T::from_data(vec![vec![1f64, 2f64, 0f64],
+                          vec![0f64, 5f64, 6f64]])
+    }
+    
+    fn from_data<T>() where T: Matrix {
+        let m = test_matrix::<T>();
 
-    macro_rules! create {
-            ( $matrix_type:ident ) => {
-                from_data!($matrix_type);
-                zeros!($matrix_type);
-                identity!($matrix_type);
-            }
-        }
+        assert_approx_eq!(m.get_value(0, 0), 1f64);
+        assert_approx_eq!(m.get_value(1, 2), 6f64);
+    }
+    
+    fn create<T>() where T: Matrix {
+        from_data::<T>();
+        zeros::<T>();
+        identity::<T>();
+    }
 
-    macro_rules! from_data {
-            ( $matrix_type:ident ) => {
-                {
-                    let m = test_matrix!($matrix_type);
+    fn zeros<T>() where T: Matrix {
+        let (rows, columns) = (299, 482);
+        let m = T::zeros(rows, columns);
 
-                    assert_approx_eq!(m.get_value(0, 0), 1f64);
-                    assert_approx_eq!(m.get_value(1, 2), 6f64);
-                }
-            }
-        }
+        assert_approx_eq!(m.get_value(0, 0), 0f64);
+        assert_approx_eq!(m.get_value(rows - 1, columns - 1), 0f64);
+    }
 
-    macro_rules! zeros {
-            ( $matrix_type:ident ) => {
-                {
-                    let (rows, columns) = (299, 482);
-                    let m = $matrix_type::zeros(rows, columns);
+    fn identity<T>() where T: Matrix {
+        let size = 133;
+        let m = T::identity(size);
 
-                    assert_approx_eq!(m.get_value(0, 0), 0f64);
-                    assert_approx_eq!(m.get_value(rows - 1, columns - 1), 0f64);
-                }
-            }
-        }
+        assert_approx_eq!(m.get_value(0, 0), 1f64);
+        assert_approx_eq!(m.get_value(size - 1, size - 1), 1f64);
+        assert_approx_eq!(m.get_value(0, 1), 0f64);
+        assert_approx_eq!(m.get_value(1, 0), 0f64);
+        assert_approx_eq!(m.get_value(0, size - 1), 0f64);
+        assert_approx_eq!(m.get_value(size - 1, size - 1 - 1), 0f64);
+    }
 
-    macro_rules! identity {
-            ( $matrix_type:ident ) => {
-                {
-                    let size = 133;
-                    let m = $matrix_type::identity(size);
+    fn get_set<T>() where T: Matrix {
+        let mut m = test_matrix::<T>();
 
-                    assert_approx_eq!(m.get_value(0, 0), 1f64);
-                    assert_approx_eq!(m.get_value(size - 1, size - 1), 1f64);
-                    assert_approx_eq!(m.get_value(0, 1), 0f64);
-                    assert_approx_eq!(m.get_value(1, 0), 0f64);
-                    assert_approx_eq!(m.get_value(0, size - 1), 0f64);
-                    assert_approx_eq!(m.get_value(size - 1, size - 1 - 1), 0f64);
-                }
-            }
-        }
+        // Getting a zero value
+        assert_approx_eq!(m.get_value(0, 2), 0f64);
 
-    macro_rules! get_set {
-            ( $matrix_type:ident ) => {
-                {
-                    let mut m = test_matrix!($matrix_type);
+        // Getting a nonzero value
+        assert_approx_eq!(m.get_value(0, 1), 2f64);
 
-                    // Getting a zero value
-                    assert_approx_eq!(m.get_value(0, 2), 0f64);
+        // Setting to the same value doesn't change
+        let v = m.get_value(0, 1);
+        m.set_value(0, 1, v);
+        assert_approx_eq!(m.get_value(0, 1), v);
 
-                    // Getting a nonzero value
-                    assert_approx_eq!(m.get_value(0, 1), 2f64);
+        // Changing a value
+        let v = 3f64;
+        m.set_value(1, 1, v);
+        assert_approx_eq!(m.get_value(1, 1), v);
+    }
 
-                    // Setting to the same value doesn't change
-                    let v = m.get_value(0, 1);
-                    m.set_value(0, 1, v);
-                    assert_approx_eq!(m.get_value(0, 1), v);
+    fn out_of_bounds_get<T>() where T: Matrix {
+        let m = test_matrix::<T>();
 
-                    // Changing a value
-                    let v = 3f64;
-                    m.set_value(1, 1, v);
-                    assert_approx_eq!(m.get_value(1, 1), v);
-                }
-            }
-        }
+        m.get_value(2, 0);
+    }
 
-    macro_rules! out_of_bounds_get {
-            ( $matrix_type:ident ) => {
-                {
-                    let m = test_matrix!($matrix_type);
+    fn out_of_bounds_set<T>() where T: Matrix {
+        let mut m = test_matrix::<T>();
 
-                    m.get_value(2, 0);
-                }
-            }
-        }
+        m.set_value(2, 0, 4f64);
+    }
+    
+    fn multiply_row<T>() where T: Matrix {
+        // Multiply by one
+        let mut m = test_matrix::<T>();
+        let m_copy = m.clone();
+        m.multiply_row(0, 1f64);
+        assert_approx_eq!(m.get_value(0, 1), m_copy.get_value(0, 1));
 
-    macro_rules! out_of_bounds_set {
-            ( $matrix_type:ident ) => {
-                {
-                    let mut m = test_matrix!($matrix_type);
+        // Multiply by zero
+        let mut m = test_matrix::<T>();
+        m.multiply_row(1, 0f64);
+        assert_approx_eq!(m.get_value(1, 2), 0f64);
 
-                    m.set_value(2, 0, 4f64);
-                }
-            }
-        }
+        // Multiply by minus one
+        let mut m = test_matrix::<T>();
+        let m_copy = m.clone();
+        m.multiply_row(0, -1f64);
+        assert_approx_eq!(m.get_value(0, 1), -m_copy.get_value(0, 1));
 
-    macro_rules! multiply_row {
-            ( $matrix_type:ident ) => {
-                {
-                    // Multiply by one
-                    let mut m = test_matrix!($matrix_type);
-                    let m_copy = m.clone();
-                    m.multiply_row(0, 1f64);
-                    assert_approx_eq!(m.get_value(0, 1), m_copy.get_value(0, 1));
-
-                    // Multiply by zero
-                    let mut m = test_matrix!($matrix_type);
-                    m.multiply_row(1, 0f64);
-                    assert_approx_eq!(m.get_value(1, 2), 0f64);
-
-                    // Multiply by minus one
-                    let mut m = test_matrix!($matrix_type);
-                    let m_copy = m.clone();
-                    m.multiply_row(0, -1f64);
-                    assert_approx_eq!(m.get_value(0, 1), -m_copy.get_value(0, 1));
-
-                    let mut m = test_matrix!($matrix_type);
-                    let m_copy = m.clone();
-                    let factor = 4.56f64;
-                    m.multiply_row(0, factor);
-                    assert_approx_eq!(m.get_value(0, 2), factor * m_copy.get_value(0, 2));
-                }
-            }
-        }
+        let mut m = test_matrix::<T>();
+        let m_copy = m.clone();
+        let factor = 4.56f64;
+        m.multiply_row(0, factor);
+        assert_approx_eq!(m.get_value(0, 2), factor * m_copy.get_value(0, 2));
+    }
 
     #[cfg(test)]
     mod dense_matrix {
@@ -494,30 +462,30 @@ mod test {
         use super::*;
 
         #[test]
-        fn create() {
-            create!(DenseMatrix);
+        fn test_create() {
+            create::<DenseMatrix>();
         }
 
         #[test]
-        fn get_set() {
-            get_set!(DenseMatrix);
-        }
-
-        #[test]
-        #[should_panic]
-        fn out_of_bounds_get() {
-            out_of_bounds_get!(DenseMatrix);
+        fn test_get_set() {
+            get_set::<DenseMatrix>();
         }
 
         #[test]
         #[should_panic]
-        fn out_of_bounds_set() {
-            out_of_bounds_set!(DenseMatrix);
+        fn test_out_of_bounds_get() {
+            out_of_bounds_get::<DenseMatrix>();
         }
 
         #[test]
-        fn row_column() {
-            let m = test_matrix!(DenseMatrix);
+        #[should_panic]
+        fn test_out_of_bounds_set() {
+            out_of_bounds_set::<DenseMatrix>();
+        }
+
+        #[test]
+        fn test_row_column() {
+            let m = test_matrix::<DenseMatrix>();
 
             assert_approx_eq!(m.column(2)[0], 0f64);
             assert_approx_eq!(m.column(1).iter().sum::<f64>(), 2f64 + 5f64);
@@ -527,9 +495,9 @@ mod test {
         }
 
         #[test]
-        fn test_mul_add_rows() {
+        fn test_test_mul_add_rows() {
             // On arbitrary matrix
-            let mut m = test_matrix!(DenseMatrix);
+            let mut m = test_matrix::<DenseMatrix>();
 
             let read_row = 0;
             let edit_row = 1;
@@ -543,7 +511,7 @@ mod test {
 
 
             // On matrix with a 1f64 value, resulting in a 0f64 on the row being changed
-            let mut m = test_matrix!(DenseMatrix);
+            let mut m = test_matrix::<DenseMatrix>();
 
             let pivot_row = 1;
             let pivot_column = 2;
@@ -566,30 +534,30 @@ mod test {
         use super::*;
 
         #[test]
-        fn new() {
-            create!(SparseMatrix);
+        fn test_new() {
+            create::<SparseMatrix>();
         }
 
         #[test]
-        fn get_set() {
-            get_set!(SparseMatrix);
-        }
-
-        #[test]
-        #[should_panic]
-        fn out_of_bounds_get() {
-            out_of_bounds_get!(SparseMatrix);
+        fn test_get_set() {
+            get_set::<SparseMatrix>();
         }
 
         #[test]
         #[should_panic]
-        fn out_of_bounds_set() {
-            out_of_bounds_set!(SparseMatrix);
+        fn test_out_of_bounds_get() {
+            out_of_bounds_get::<SparseMatrix>();
         }
 
         #[test]
-        fn row_column() {
-            let m = test_matrix!(SparseMatrix);
+        #[should_panic]
+        fn test_out_of_bounds_set() {
+            out_of_bounds_set::<SparseMatrix>();
+        }
+
+        #[test]
+        fn test_row_column() {
+            let m = test_matrix::<SparseMatrix>();
 
             assert_eq!(m.column(2).nth(0).unwrap(), &(1 as usize, 6f64));
             assert_approx_eq!(m.column(1).map(|&(_, value)| value).sum::<f64>(), 2f64 + 5f64);
@@ -599,8 +567,8 @@ mod test {
         }
 
         #[test]
-        fn multiply_row() {
-            multiply_row!(SparseMatrix);
+        fn test_multiply_row() {
+            multiply_row::<SparseMatrix>();
         }
     }
 }
