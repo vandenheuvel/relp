@@ -14,8 +14,6 @@ use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 
 
 pub const ARTIFICIAL: &str = "ARTIFICIAL";
-pub const ACTUAL_COST: usize = 0;
-pub const ARTIFICIAL_COST: usize = 1;
 
 /// Holds all information necessary to execute the Simplex algorithm.
 ///
@@ -46,6 +44,12 @@ pub struct Tableau {
 
     /// Contains the names of all variables. Used only for outputting the result of a computation.
     column_info: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CostRow {
+    Actual = 0,
+    Artificial = 1,
 }
 
 impl Tableau {
@@ -146,8 +150,8 @@ impl Tableau {
         debug_assert!(column < self.nr_columns);
 
         let mut generated = Vec::with_capacity(1 + 1 + self.nr_rows);
-        generated.push((ACTUAL_COST, self.relative_cost(ACTUAL_COST, column)));
-        generated.push((ARTIFICIAL_COST, self.relative_cost(ARTIFICIAL_COST, column)));
+        generated.push((CostRow::Actual as usize, self.relative_cost(CostRow::Actual, column)));
+        generated.push((CostRow::Artificial as usize, self.relative_cost(CostRow::Artificial, column)));
         for row in 0..self.nr_rows() {
             let value = self.original_matrix.column(column)
                 .map(|&(j, v)| v * self.carry.get_value(1 + 1 + row, 1 + j))
@@ -168,18 +172,18 @@ impl Tableau {
         let mut min_ratio = f64::INFINITY;
         let mut min_leaving_column = usize::max_value();
 
-        for (row, xij) in column.values() {
-            if *row == ACTUAL_COST || *row == ARTIFICIAL_COST {
+        for &(row, xij) in column.values() {
+            if row == CostRow::Actual as usize || row == CostRow::Artificial as usize {
                 continue;
             }
-            if *xij > EPSILON {
-                let ratio = self.carry.get_value(*row, 0) / xij;
-                let leaving_column = *self.basis_columns_map.get(&(*row - (1 + 1))).unwrap();
+            if xij > EPSILON {
+                let ratio = self.carry.get_value(row, 0) / xij;
+                let leaving_column = *self.basis_columns_map.get(&(row - (1 + 1))).unwrap();
                 if (ratio - min_ratio).abs() < EPSILON && leaving_column < min_leaving_column {
-                    min_index = *row;
+                    min_index = row;
                     min_leaving_column = leaving_column;
                 } else if ratio < min_ratio {
-                    min_index = *row;
+                    min_index = row;
                     min_ratio = ratio;
                     min_leaving_column = leaving_column;
                 }
@@ -192,23 +196,22 @@ impl Tableau {
         min_index - 1 - 1
     }
     /// Find a profitable column.
-    pub fn profitable_column(&self, cost_row: usize) -> Option<usize> {
+    pub fn profitable_column(&self, cost_row: CostRow) -> Option<usize> {
         (0..self.nr_columns())
             .filter(|column| !self.basis_columns_set.contains(&column))
             .find(|column| self.relative_cost(cost_row, *column) < -EPSILON)
     }
     /// Calculates the relative cost of a non-basis column to pivot on.
-    pub fn relative_cost(&self, cost_row: usize, column: usize) -> f64 {
+    pub fn relative_cost(&self, cost_row: CostRow, column: usize) -> f64 {
         debug_assert!(column < self.nr_columns);
 
-        let mut total;
-        if cost_row == ACTUAL_COST {
-            total = self.real_c.get_value(column);
-        } else {
-            total = self.artificial_c.get_value(column);
-        }
+        let mut total = match cost_row {
+            CostRow::Actual => self.real_c.get_value(column),
+            CostRow::Artificial => self.artificial_c.get_value(column),
+        };
+
         for (column, value) in self.original_matrix.column(column) {
-            total += *value * self.carry.get_value(cost_row, 1 + column);
+            total += *value * self.carry.get_value(cost_row as usize, 1 + column);
         }
         total
     }
@@ -246,8 +249,8 @@ impl Tableau {
         SparseVector::from_tuples(data, self.nr_columns)
     }
     /// Get the cost of the current solution.
-    pub fn cost(&self, cost_row: usize) -> f64 {
-        -self.carry.get_value(cost_row, 0)
+    pub fn cost(&self, cost_row: CostRow) -> f64 {
+        -self.carry.get_value(cost_row as usize, 0)
     }
     /// Get the number of variables
     pub fn nr_columns(&self) -> usize {
@@ -454,26 +457,26 @@ mod test {
     #[test]
     fn test_cost() {
         let artificial_tableau = artificial_tableau();
-        assert_approx_eq!(artificial_tableau.cost(ARTIFICIAL_COST), 8f64);
-        assert_approx_eq!(artificial_tableau.cost(ACTUAL_COST), 0f64);
+        assert_approx_eq!(artificial_tableau.cost(CostRow::Artificial), 8f64);
+        assert_approx_eq!(artificial_tableau.cost(CostRow::Actual), 0f64);
 
         let tableau = tableau();
-        assert_approx_eq!(tableau.cost(ACTUAL_COST), 6f64);
+        assert_approx_eq!(tableau.cost(CostRow::Actual), 6f64);
     }
 
     #[test]
     fn test_relative_cost() {
         let artificial_tableau = artificial_tableau();
-        assert_approx_eq!(artificial_tableau.relative_cost(ARTIFICIAL_COST, 0), 0f64);
-        assert_approx_eq!(artificial_tableau.relative_cost(ARTIFICIAL_COST, 3), -10f64);
+        assert_approx_eq!(artificial_tableau.relative_cost(CostRow::Artificial, 0), 0f64);
+        assert_approx_eq!(artificial_tableau.relative_cost(CostRow::Artificial, 3), -10f64);
 
-        assert_approx_eq!(artificial_tableau.relative_cost(ACTUAL_COST, 0), 0f64);
-        assert_approx_eq!(artificial_tableau.relative_cost(ACTUAL_COST, 3), 1f64);
+        assert_approx_eq!(artificial_tableau.relative_cost(CostRow::Actual, 0), 0f64);
+        assert_approx_eq!(artificial_tableau.relative_cost(CostRow::Actual, 3), 1f64);
 
         let tableau = tableau();
-        assert_approx_eq!(tableau.relative_cost(ACTUAL_COST, 0), -3f64);
-        assert_approx_eq!(tableau.relative_cost(ACTUAL_COST, 1), -3f64);
-        assert_approx_eq!(tableau.relative_cost(ACTUAL_COST, 2), 0f64);
+        assert_approx_eq!(tableau.relative_cost(CostRow::Actual, 0), -3f64);
+        assert_approx_eq!(tableau.relative_cost(CostRow::Actual, 1), -3f64);
+        assert_approx_eq!(tableau.relative_cost(CostRow::Actual, 2), 0f64);
     }
 
     #[test]
@@ -491,7 +494,7 @@ mod test {
         let expected = SparseVector::from_data(vec![-3f64, f64::NAN, 3f64, 2f64, -1f64]);
 
         for row in 0..column.len() {
-            if row != ARTIFICIAL_COST {
+            if row != CostRow::Artificial as usize {
                 assert_approx_eq!(column.get_value(row), expected.get_value(row));
             }
         }
@@ -501,7 +504,7 @@ mod test {
     fn test_find_profitable_column() {
         let artificial_tableau = artificial_tableau();
         let expected = 3;
-        if let Some(column) = artificial_tableau.profitable_column(ARTIFICIAL_COST) {
+        if let Some(column) = artificial_tableau.profitable_column(CostRow::Artificial) {
             assert_eq!(column, expected);
         } else {
             assert!(false, format!("Column {} should be profitable", expected));
@@ -509,7 +512,7 @@ mod test {
 
         let tableau = tableau();
         let expected = 0;
-        if let Some(column) = tableau.profitable_column(ACTUAL_COST) {
+        if let Some(column) = tableau.profitable_column(CostRow::Actual) {
             assert_eq!(column, expected);
         } else {
             assert!(false, format!("Column {} should be profitable", expected));
@@ -542,8 +545,8 @@ mod test {
         artificial_tableau.bring_into_basis(row, column, &column_data);
 
         assert!(artificial_tableau.is_in_basis(column));
-        assert_approx_eq!(artificial_tableau.cost(ARTIFICIAL_COST), 14f64 / 3f64);
-        assert_approx_eq!(artificial_tableau.cost(ACTUAL_COST), 1f64 / 3f64);
+        assert_approx_eq!(artificial_tableau.cost(CostRow::Artificial), 14f64 / 3f64);
+        assert_approx_eq!(artificial_tableau.cost(CostRow::Actual), 1f64 / 3f64);
 
         let mut tableau = tableau();
         let column = 1;
@@ -552,7 +555,7 @@ mod test {
         tableau.bring_into_basis(row, column, &column_data);
 
         assert!(tableau.is_in_basis(column));
-        assert_approx_eq!(tableau.cost(ACTUAL_COST), 9f64 / 2f64);
+        assert_approx_eq!(tableau.cost(CostRow::Actual), 9f64 / 2f64);
     }
 
     fn bfs_tableau() -> Tableau {
@@ -584,7 +587,7 @@ mod test {
     #[test]
     fn test_create_tableau() {
         let bfs_tableau = bfs_tableau();
-        assert!(bfs_tableau.profitable_column(ARTIFICIAL_COST).is_none());
+        assert!(bfs_tableau.profitable_column(CostRow::Artificial).is_none());
 
         let without_artificials = Tableau::create_from(&canonical_small(),
         bfs_tableau.carry(),

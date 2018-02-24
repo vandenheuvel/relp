@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use algorithm::simplex::data::{ARTIFICIAL_COST, ACTUAL_COST, create_artificial_tableau, Tableau};
+use algorithm::simplex::data::{CostRow, create_artificial_tableau, Tableau};
 use algorithm::simplex::EPSILON;
 use data::linear_algebra::matrix::{DenseMatrix, Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
@@ -47,13 +47,13 @@ fn phase_one(canonical: &CanonicalForm) -> PhaseOneResult {
     let mut i = 0;
 
     let lp_category = loop {
-        match tableau.profitable_column(ARTIFICIAL_COST) {
+        match tableau.profitable_column(CostRow::Artificial) {
             Some(column_nr) => {
                 let column = tableau.generate_column(column_nr);
                 let pivot_row = tableau.find_pivot_row(&column);
                 tableau.bring_into_basis(pivot_row, column_nr, &column)
             },
-            None => break LPCategory::FiniteOptimum(tableau.cost(ARTIFICIAL_COST)),
+            None => break LPCategory::FiniteOptimum(tableau.cost(CostRow::Artificial)),
         }
         i += 1;
     };
@@ -77,7 +77,7 @@ fn remove_artificial(tableau: &mut Tableau) {
     artificials.retain(|&v| v < tableau.nr_rows());
 
     for artificial in artificials.into_iter() {
-        debug_assert!(tableau.relative_cost(ARTIFICIAL_COST, artificial).abs() < EPSILON);
+        debug_assert!(tableau.relative_cost(CostRow::Artificial, artificial).abs() < EPSILON);
 
         let artificial_column = tableau.generate_column(artificial);
         let pivot_row = artificial_column.values()
@@ -86,7 +86,7 @@ fn remove_artificial(tableau: &mut Tableau) {
 
         for nonartificial in tableau.nr_rows()..tableau.nr_columns() {
             if !tableau.is_in_basis(nonartificial) {
-                if tableau.relative_cost(ARTIFICIAL_COST, nonartificial).abs() < EPSILON {
+                if tableau.relative_cost(CostRow::Artificial, nonartificial).abs() < EPSILON {
                     let column = tableau.generate_column(nonartificial);
                     tableau.bring_into_basis(pivot_row, nonartificial, &column);
                     break;
@@ -105,13 +105,13 @@ fn phase_two(canonical: &CanonicalForm, carry: DenseMatrix, basis: HashMap<usize
     let mut tableau = Tableau::create_from(canonical, carry, basis);
 
     let lp_category = loop {
-        match tableau.profitable_column(ACTUAL_COST) {
+        match tableau.profitable_column(CostRow::Actual) {
             Some(column_nr) => {
                 let column = tableau.generate_column(column_nr);
                 let pivot_row = tableau.find_pivot_row(&column);
                 tableau.bring_into_basis(pivot_row, column_nr, &column);
             },
-            None => break LPCategory::FiniteOptimum(tableau.cost(ACTUAL_COST)),
+            None => break LPCategory::FiniteOptimum(tableau.cost(CostRow::Actual)),
         }
     };
 
@@ -190,13 +190,13 @@ mod test {
     fn test_simplex() {
         let mut tableau = tableau();
         if let LPCategory::FiniteOptimum(cost) = loop {
-            match tableau.profitable_column(ACTUAL_COST) {
+            match tableau.profitable_column(CostRow::Actual) {
                 Some(column_nr) => {
                     let column = tableau.generate_column(column_nr);
                     let pivot_row = tableau.find_pivot_row(&column);
                     tableau.bring_into_basis(pivot_row, column_nr, &column)
                 },
-                None => break LPCategory::FiniteOptimum(tableau.cost(ACTUAL_COST)),
+                None => break LPCategory::FiniteOptimum(tableau.cost(CostRow::Actual)),
             }
         } {
             assert_approx_eq!(cost, 9f64 / 2f64);
