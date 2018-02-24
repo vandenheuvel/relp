@@ -3,13 +3,16 @@
 //! The `Matrix` trait defines a set of operations available for all matrix types defined in this
 //! module.
 
+use std::fmt::Debug;
 use std::iter::Iterator;
 use std::slice::Iter;
 
 use data::linear_algebra::vector::Vector;
 
+const EPSILON: f64 = 1e-6;
+
 /// Defines basic ways to create or change a matrix, regardless of back-end.
-pub trait Matrix: Clone {
+pub trait Matrix: Clone + Debug + Eq {
     fn from_data(data: Vec<Vec<f64>>) -> Self;
     fn identity(size: usize) -> Self;
     fn zeros(rows: usize, columns: usize) -> Self;
@@ -22,7 +25,7 @@ pub trait Matrix: Clone {
 }
 
 /// Uses a Vec<Vec<f64>> as underlying data structure. Dimensions are fixed at creation.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct DenseMatrix {
     data: Vec<Vec<f64>>,
     nr_rows: usize,
@@ -142,9 +145,29 @@ impl Matrix for DenseMatrix {
     }
 }
 
+impl PartialEq for DenseMatrix {
+    fn eq(&self, other: &DenseMatrix) -> bool {
+        if !(self.nr_columns() == other.nr_columns() && self.nr_rows() == other.nr_rows()) {
+            return false;
+        }
+
+        for i in 0..self.nr_rows() {
+            for j in 0..self.nr_columns() {
+                if !((self.get_value(i, j) - other.get_value(i, j)).abs() < EPSILON) {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+}
+
+impl Eq for DenseMatrix {}
+
 /// Uses a two indices as underlying data structures: a row-major Vec<Vec<f64>> as well as a
 /// column-major Vec<Vec<f64>>. Indices start at `0`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct SparseMatrix {
     rows: Vec<Vec<(usize, f64)>>,
     columns: Vec<Vec<(usize, f64)>>,
@@ -218,6 +241,62 @@ impl SparseMatrix {
         debug_assert!(if let Some(maximum) = self.rows[i].iter().map(|(column, _)| *column).max() {
             maximum < self.nr_columns
         } else { true });
+    }
+    /// Remove row `i`.
+    pub fn remove_row(&mut self, i: usize) {
+        // TODO: This method is slow, removed rows could possibly be maintained as differences
+        // We don't allow empty matrices
+        debug_assert!(self.nr_rows() > 1);
+        debug_assert!(i < self.nr_rows());
+
+        let mut removed = false;
+        for j in 0..self.nr_columns() {
+            let mut index = 0;
+            while index < self.columns[j].len() {
+                if self.columns[j][index].0 == i && !removed {
+                    self.columns[j].remove(index);
+                    removed = true;
+                } else if self.columns[j][index].0 > i {
+                    self.columns[j][index].0 -= 1;
+                    index += 1;
+                } else {
+                    index += 1;
+                }
+            }
+        }
+
+        self.rows.remove(i);
+        self.nr_rows -= 1;
+    }
+    /// Remove columns `j`.
+    pub fn remove_column(&mut self, j: usize) {
+        // TODO: This method is slow, removed columns could possibly be maintained as differences
+        debug_assert!(self.nr_columns() > 0);
+        debug_assert!(j < self.nr_columns());
+
+        for i in 0..self.nr_rows() {
+            let mut index = 0;
+            let mut removed = false;
+            while index < self.rows[i].len() {
+                if self.rows[i][index].0 == j && !removed {
+                    self.rows[i].remove(index);
+                    removed = true;
+                } else if self.rows[i][index].0 >= j {
+                    self.rows[i][index].0 -= 1;
+                    index += 1;
+                } else {
+                    index += 1;
+                }
+            }
+        }
+
+        self.columns.remove(j);
+        self.nr_columns -= 1;
+    }
+    /// Add a column on the side of high indices
+    pub fn push_zero_column(&mut self) {
+        self.columns.push(Vec::new());
+        self.nr_columns += 1;
     }
 }
 
@@ -341,6 +420,26 @@ impl Clone for SparseMatrix {
     }
 }
 
+impl PartialEq for SparseMatrix {
+    fn eq(&self, other: &SparseMatrix) -> bool {
+        if !(self.nr_columns() == other.nr_columns() && self.nr_rows() == other.nr_rows()) {
+            return false;
+        }
+
+        for i in 0..self.nr_rows() {
+            for j in 0..self.nr_columns() {
+                if !((self.get_value(i, j) - other.get_value(i, j)).abs() < EPSILON) {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+}
+
+impl Eq for SparseMatrix {}
+
 /// If all column sizes agree, return the dimensions of the vector `data`.
 fn get_data_dimensions(data: &Vec<Vec<f64>>) -> (usize, usize) {
     let nr_rows = data.len();
@@ -377,6 +476,21 @@ mod test {
         from_data::<T>();
         zeros::<T>();
         identity::<T>();
+    }
+
+    fn eq<T>() where T: Matrix {
+        let x = 4f64;
+        let deviation = 0.5f64 * EPSILON;
+        let data = vec![vec![x]];
+        let m1 = T::from_data(data);
+        let data = vec![vec![x + deviation]];
+        let m2 = T::from_data(data);
+        assert_eq!(m1, m2);
+
+        let deviation = 3f64 * EPSILON;
+        let data = vec![vec![x + deviation]];
+        let m2 = T::from_data(data);
+        assert_ne!(m1, m2);
     }
 
     fn zeros<T>() where T: Matrix {
@@ -467,6 +581,11 @@ mod test {
         }
 
         #[test]
+        fn test_eq() {
+            eq::<DenseMatrix>();
+        }
+
+        #[test]
         fn test_get_set() {
             get_set::<DenseMatrix>();
         }
@@ -539,6 +658,11 @@ mod test {
         }
 
         #[test]
+        fn test_eq() {
+            eq::<SparseMatrix>();
+        }
+
+        #[test]
         fn test_get_set() {
             get_set::<SparseMatrix>();
         }
@@ -569,6 +693,72 @@ mod test {
         #[test]
         fn test_multiply_row() {
             multiply_row::<SparseMatrix>();
+        }
+
+        #[test]
+        fn test_remove_row() {
+            fn remove_row(remove_row: usize) {
+                let mut data = vec![vec![1f64, 2f64, 3f64, 4f64],
+                                    vec![5f64, 6f64, 7f64, 8f64],
+                                    vec![9f64, 10f64, 11f64, 12f64]];
+                let mut m = SparseMatrix::from_data(data.clone());
+                data.remove(remove_row);
+                let expected = SparseMatrix::from_data(data);
+
+                m.remove_row(remove_row);
+                let result = m;
+
+                assert_eq!(result, expected);
+            }
+
+            for i in 0..3 {
+                remove_row(i);
+            }
+        }
+
+        #[test]
+        fn test_remove_column() {
+            // Remove a middle column
+            let mut data = vec![vec![1f64, 2f64, 3f64, 4f64],
+                                vec![5f64, 6f64, 7f64, 8f64],
+                                vec![9f64, 10f64, 11f64, 12f64]];
+            let mut m = SparseMatrix::from_data(data);
+            let mut data = vec![vec![1f64, 3f64, 4f64],
+                                vec![5f64, 7f64, 8f64],
+                                vec![9f64, 11f64, 12f64]];
+            let expected = SparseMatrix::from_data(data);
+            m.remove_column(1);
+            let result = m;
+
+            assert_eq!(result, expected);
+
+            // Remove the last column
+            let data = vec![vec![1f64, 2f64, 3f64, 4f64],
+                            vec![5f64, 6f64, 7f64, 8f64],
+                            vec![9f64, 10f64, 11f64, 12f64]];
+            let mut m = SparseMatrix::from_data(data);
+            let data = vec![vec![2f64, 3f64, 4f64],
+                            vec![6f64, 7f64, 8f64],
+                            vec![10f64, 11f64, 12f64]];
+            let expected = SparseMatrix::from_data(data);
+            m.remove_column(0);
+            let result = m;
+
+            assert_eq!(result, expected);
+
+            // Remove the first column
+            let data = vec![vec![1f64, 2f64, 3f64, 4f64],
+                                vec![5f64, 6f64, 7f64, 8f64],
+                                vec![9f64, 10f64, 11f64, 12f64]];
+            let mut m = SparseMatrix::from_data(data);
+            let data = vec![vec![1f64, 2f64, 3f64],
+                            vec![5f64, 6f64, 7f64],
+                            vec![9f64, 10f64, 11f64]];
+            let expected = SparseMatrix::from_data(data);
+            m.remove_column(3);
+            let result = m;
+
+            assert_eq!(result, expected);
         }
     }
 }

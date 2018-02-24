@@ -5,8 +5,10 @@
 use std::collections::{HashMap, HashSet};
 use std::f64;
 
+use algorithm::simplex::EPSILON;
+
 use data::linear_program::canonical_form::CanonicalForm;
-use data::linear_program::elements::VariableType;
+use data::linear_program::elements::{Variable, VariableType};
 use data::linear_algebra::matrix::{DenseMatrix, Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 
@@ -21,9 +23,6 @@ pub const ARTIFICIAL_COST: usize = 1;
 /// being mutated during the lifetime of the tableau. The same holds from the cost rows. The carry
 /// matrix is used to represent the different changes in basis, while the current basis columns are
 /// maintained in a map and set.
-///
-///
-///
 #[derive(Debug, PartialEq)]
 pub struct Tableau {
     /// Immutable coefficient data of dimension m x n.
@@ -75,10 +74,6 @@ impl Tableau {
         debug_assert_eq!(real_c.len(), nr_columns);
         debug_assert_eq!(column_info.len(), nr_columns);
 
-        for i in 0..nr_rows {
-            debug_assert!(carry.get_value(1 + 1 + i, 0) > 0f64);
-        }
-
         // The artificial cost vector is always here, regardless of whether it is used
         let mut artificial_c = SparseVector::zeros(nr_columns);
         for i in 0..nr_rows {
@@ -116,23 +111,21 @@ impl Tableau {
     }
     /// Brings a column into the basis by updating the `self.carry` matrix and updating the
     /// data structures holding the collection of basis columns.
-    pub fn bring_into_basis(&mut self, pivot_column: usize) {
-        debug_assert!(pivot_column < self.nr_columns);
+    pub fn bring_into_basis(&mut self, pivot_row_nr: usize, pivot_column_nr: usize, column: &SparseVector) {
+        debug_assert!(pivot_column_nr < self.nr_columns);
+        debug_assert!(pivot_row_nr < self.nr_rows());
 
-        let column = self.generate_column(pivot_column);
-        let pivot_row = self.find_pivot_row(&column);
-
-        self.carry.multiply_row(1 + 1 + pivot_row, 1f64 / column.get_value(1 + 1 + pivot_row));
+        self.carry.multiply_row(1 + 1 + pivot_row_nr, 1f64 / column.get_value(1 + 1 + pivot_row_nr));
         for edit_row in 0..self.carry.nr_rows() {
-            if edit_row != 1 + 1 + pivot_row {
+            if edit_row != 1 + 1 + pivot_row_nr {
                 if column.get_value(edit_row).abs() > 1e-10 {
                     let factor = column.get_value(edit_row);
-                    self.carry.mul_add_rows(1 + 1 + pivot_row, edit_row, -factor);
+                    self.carry.mul_add_rows(1 + 1 + pivot_row_nr, edit_row, -factor);
                 }
             }
         }
 
-        self.update_basis_indices(pivot_row, pivot_column);
+        self.update_basis_indices(pivot_row_nr, pivot_column_nr);
     }
     /// Removes the index of the variable leaving the basis from the `basis_column_map` and
     /// `basis_column_set` data structures, while inserting the entering variable index.
@@ -173,21 +166,28 @@ impl Tableau {
 
         let mut min_index = usize::max_value();
         let mut min_ratio = f64::INFINITY;
+        let mut min_leaving_column = usize::max_value();
 
         for (row, xij) in column.values() {
             if *row == ACTUAL_COST || *row == ARTIFICIAL_COST {
                 continue;
             }
-            if *xij > 0f64 {
+            if *xij > EPSILON {
                 let ratio = self.carry.get_value(*row, 0) / xij;
-                if ratio < min_ratio {
+                let leaving_column = *self.basis_columns_map.get(&(*row - (1 + 1))).unwrap();
+                if (ratio - min_ratio).abs() < EPSILON && leaving_column < min_leaving_column {
+                    min_index = *row;
+                    min_leaving_column = leaving_column;
+                } else if ratio < min_ratio {
                     min_index = *row;
                     min_ratio = ratio;
+                    min_leaving_column = leaving_column;
                 }
-            }
+                }
         }
 
         debug_assert_ne!(min_index, usize::max_value());
+        debug_assert_ne!(min_leaving_column, usize::max_value());
 
         min_index - 1 - 1
     }
@@ -195,7 +195,7 @@ impl Tableau {
     pub fn profitable_column(&self, cost_row: usize) -> Option<usize> {
         (0..self.nr_columns())
             .filter(|column| !self.basis_columns_set.contains(&column))
-            .find(|column| self.relative_cost(cost_row, *column) < 0f64)
+            .find(|column| self.relative_cost(cost_row, *column) < -EPSILON)
     }
     /// Calculates the relative cost of a non-basis column to pivot on.
     pub fn relative_cost(&self, cost_row: usize, column: usize) -> f64 {
@@ -217,10 +217,15 @@ impl Tableau {
         self.carry.clone()
     }
     /// Checks whether a column is in the basis.
-    pub fn in_basis(&self, column: usize) -> bool {
+    pub fn is_in_basis(&self, column: usize) -> bool {
         debug_assert!(column < self.nr_columns);
 
         self.basis_columns_set.contains(&column)
+    }
+    /// Determines whether there are any artificial columns in the basis of an artificially
+    /// augmented tableau.
+    pub fn has_artificial_in_basis(&self) -> bool {
+        self.basis_columns_set.iter().map(|&column| column).min().unwrap() < self.nr_rows()
     }
     /// Gets the current basis columns as a set.
     pub fn basis_columns(&self) -> HashSet<usize> {
@@ -324,15 +329,15 @@ mod test {
 
         let cost = SparseVector::from_data(vec![1f64, 4f64, 9f64, 0f64, 0f64, 0f64, 0f64]);
 
-        let column_info = vec![(String::from("XONE"), VariableType::Continuous),
-                               (String::from("YTWO"), VariableType::Continuous),
-                               (String::from("ZTHREE"), VariableType::Continuous),
-                               (String::from("SLACK0"), VariableType::Continuous),
-                               (String::from("SLACK1"), VariableType::Continuous),
-                               (String::from("SLACK2"), VariableType::Continuous),
-                               (String::from("SLACK3"), VariableType::Continuous)];
+        let column_info = vec![Variable::new(String::from("XONE"), VariableType::Continuous, 0f64),
+                               Variable::new(String::from("YTWO"), VariableType::Continuous, 0f64),
+                               Variable::new(String::from("ZTHREE"), VariableType::Continuous, 0f64),
+                               Variable::new(String::from("SLACK0"), VariableType::Continuous, 0f64),
+                               Variable::new(String::from("SLACK1"), VariableType::Continuous, 0f64),
+                               Variable::new(String::from("SLACK2"), VariableType::Continuous, 0f64),
+                               Variable::new(String::from("SLACK3"), VariableType::Continuous, 0f64)];
 
-        CanonicalForm::new(data, b, cost, column_info)
+        CanonicalForm::new(data, b, cost, 0f64, column_info, Vec::new())
     }
 
     #[test]
@@ -379,13 +384,13 @@ mod test {
                                                 vec![2f64, 5f64, 1f64, 0f64, 1f64]]);
         let b = DenseVector::from_data(vec![1f64, 3f64, 4f64]);
         let cost = SparseVector::from_data(vec![1f64, 1f64, 1f64, 1f64, 1f64]);
-        let column_info = vec![(String::from("X1"), VariableType::Continuous),
-                               (String::from("X2"), VariableType::Continuous),
-                               (String::from("X3"), VariableType::Continuous),
-                               (String::from("X4"), VariableType::Continuous),
-                               (String::from("X5"), VariableType::Continuous)];
+        let column_info = vec![Variable::new(String::from("X1"), VariableType::Continuous, 0f64),
+                               Variable::new(String::from("X2"), VariableType::Continuous, 0f64),
+                               Variable::new(String::from("X3"), VariableType::Continuous, 0f64),
+                               Variable::new(String::from("X4"), VariableType::Continuous, 0f64),
+                               Variable::new(String::from("X5"), VariableType::Continuous, 0f64)];
 
-        CanonicalForm::new(data, b, cost, column_info)
+        CanonicalForm::new(data, b, cost, 0f64, column_info, Vec::new())
     }
 
     fn artificial_tableau() -> Tableau {
@@ -532,17 +537,21 @@ mod test {
     fn test_bring_into_basis() {
         let mut artificial_tableau = artificial_tableau();
         let column = 3;
-        artificial_tableau.bring_into_basis(3);
+        let column_data = artificial_tableau.generate_column(column);
+        let row = artificial_tableau.find_pivot_row(&column_data);
+        artificial_tableau.bring_into_basis(row, column, &column_data);
 
-        assert!(artificial_tableau.in_basis(column));
+        assert!(artificial_tableau.is_in_basis(column));
         assert_approx_eq!(artificial_tableau.cost(ARTIFICIAL_COST), 14f64 / 3f64);
         assert_approx_eq!(artificial_tableau.cost(ACTUAL_COST), 1f64 / 3f64);
 
         let mut tableau = tableau();
         let column = 1;
-        tableau.bring_into_basis(column);
+        let column_data = tableau.generate_column(column);
+        let row = tableau.find_pivot_row(&column_data);
+        tableau.bring_into_basis(row, column, &column_data);
 
-        assert!(tableau.in_basis(column));
+        assert!(tableau.is_in_basis(column));
         assert_approx_eq!(tableau.cost(ACTUAL_COST), 9f64 / 2f64);
     }
 

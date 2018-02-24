@@ -1,4 +1,4 @@
-use data::linear_program::elements::VariableType;
+use data::linear_program::elements::{Variable, VariableType};
 use data::linear_algebra::matrix::{Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 
@@ -9,13 +9,15 @@ pub struct CanonicalForm {
     data: SparseMatrix,
     b: DenseVector,
     cost: SparseVector,
+    fixed_cost: f64,
 
-    variable_info: Vec<(String, VariableType)>,
+    variables: Vec<Variable>,
 }
 
 impl CanonicalForm {
     /// Create a new linear program in canonical form.
-    pub fn new(data: SparseMatrix, b: DenseVector, cost: SparseVector, variable_info: Vec<(String, VariableType)>) -> CanonicalForm {
+    pub fn new(data: SparseMatrix, b: DenseVector, cost: SparseVector, fixed_cost: f64,
+               variable_info: Vec<Variable>, solution_values: Vec<(String, f64)>) -> CanonicalForm {
         let m = b.len();
         debug_assert_eq!(b.len(), m);
         debug_assert_eq!(data.nr_rows(), m);
@@ -25,11 +27,7 @@ impl CanonicalForm {
         debug_assert_eq!(data.nr_columns(), n);
         debug_assert_eq!(variable_info.len(), n);
 
-        for i in 0..m {
-            debug_assert!(b.get_value(i) > 0f64);
-        }
-
-        CanonicalForm { data, b, cost, variable_info, }
+        CanonicalForm { data, b, cost, fixed_cost, variables: variable_info, }
     }
     /// Get the constraint vector `b`.
     pub fn b(&self) -> DenseVector {
@@ -39,11 +37,15 @@ impl CanonicalForm {
     pub fn cost(&self) -> SparseVector {
         self.cost.clone()
     }
+    /// Get the fixed cost value.
+    pub fn fixed_cost(&self) -> f64 {
+        self.fixed_cost
+    }
     /// Get all variable names.
     pub fn variable_info(&self) -> Vec<String> {
-        self.variable_info.clone()
+        self.variables.clone()
             .into_iter()
-            .map(|(name, _)| name)
+            .map(|variable| variable.name)
             .collect()
     }
     /// Get a copy of the underlying data.

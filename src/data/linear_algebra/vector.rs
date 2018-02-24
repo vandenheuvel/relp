@@ -46,6 +46,13 @@ impl DenseVector {
     pub fn iter(&self) -> Iter<f64> {
         self.data.iter()
     }
+    /// Remove the value at index `i`.
+    pub fn remove_value(&mut self, i: usize) {
+        debug_assert!(i < self.len());
+
+        self.data.remove(i);
+        self.len -= 1;
+    }
 }
 
 impl Vector for DenseVector {
@@ -154,6 +161,31 @@ impl SparseVector {
 
         total
     }
+    /// Append a zero value
+    pub fn push_zero(&mut self) {
+        self.len += 1;
+    }
+    /// Remove the value at row `i`.
+    pub fn remove_value(&mut self, i: usize) {
+        debug_assert!(self.len > 1);
+        debug_assert!(i < self.len);
+
+        self.len -= 1;
+
+        let mut index = 0;
+        let mut removed = false;
+        while index < self.data.len() {
+            if self.data[index].0 == i && !removed {
+                self.data.remove(index);
+                removed = true;
+            } else if self.data[index].0 >= i {
+                self.data[index].0 -= 1;
+                index += 1;
+            } else {
+                index += 1;
+            }
+        }
+    }
 }
 
 impl Vector for SparseVector {
@@ -240,111 +272,75 @@ mod test {
 
     use super::*;
 
-    macro_rules! test_data {
-            () => {
-                {
-                    vec![0f64, 5f64, 6f64]
-                }
-            }
-        }
+    fn test_data() -> Vec<f64> {
+        vec![0f64, 5f64, 6f64]
+    }
 
-    macro_rules! test_vector {
-            ( $vector_type:ident ) => {
-                $vector_type::from_data(vec![0f64, 5f64, 6f64])
-            }
-        }
+    fn test_vector<T>() -> T where T: Vector {
+        return T::from_data(test_data())
+    }
 
-    macro_rules! create {
-            ( $vector_type:ident ) => {
-                from_data!($vector_type);
-                zeros!($vector_type);
-                ones!($vector_type);
-            }
-        }
+    fn create<T>() where T: Vector {
+        from_data::<T>();
+        zeros::<T>();
+        ones::<T>();
+    }
 
-    macro_rules! from_data {
-            ( $vector_type:ident ) => {
-                let d = test_data!();
-                let v = $vector_type::from_data(d);
+    fn from_data<T>() where T: Vector {
+        let d = test_data();
+        let v = T::from_data(d);
 
-                assert_approx_eq!(v.get_value(0), 0f64);
-            }
-        }
+        assert_approx_eq!(v.get_value(0), 0f64);
+    }
 
-    macro_rules! zeros {
-            ( $vector_type:ident ) => {
-                let size = 533;
-                let v= $vector_type::zeros(size);
+    fn zeros<T>() where T: Vector {
+        let size = 533;
+        let v= T::zeros(size);
 
-                assert_approx_eq!(v.get_value(0), 0f64);
-                assert_approx_eq!(v.get_value(size - 1), 0f64);
-            }
-        }
+        assert_approx_eq!(v.get_value(0), 0f64);
+        assert_approx_eq!(v.get_value(size - 1), 0f64);
+    }
 
-    macro_rules! ones {
-            ( $vector_type:ident ) => {
-                let size = 593;
-                let v = $vector_type::ones(size);
+    fn ones<T>() where T: Vector {
+        let size = 593;
+        let v = T::ones(size);
 
-                assert_approx_eq!(v.get_value(0), 1f64);
-                assert_approx_eq!(v.get_value(size - 1), 1f64);
-            }
-        }
+        assert_approx_eq!(v.get_value(0), 1f64);
+        assert_approx_eq!(v.get_value(size - 1), 1f64);
+    }
 
-    macro_rules! get_set {
-            ( $vector_type:ident ) => {
-                {
-                    let mut v = test_vector!($vector_type);
+    fn get_set<T>() where T: Vector {
+        let mut v = test_vector::<T>();
 
 
-                    // Getting a zero value
-                    assert_approx_eq!(v.get_value(0), 0f64);
+        // Getting a zero value
+        assert_approx_eq!(v.get_value(0), 0f64);
 
-                    // Getting a nonzero value
-                    assert_approx_eq!(v.get_value(1), 5f64);
+        // Getting a nonzero value
+        assert_approx_eq!(v.get_value(1), 5f64);
 
-                    // Setting to the same value doesn't change
-                    let value = v.get_value(2);
-                    v.set_value(2, value);
-                    assert_approx_eq!(v.get_value(2), value);
+        // Setting to the same value doesn't change
+        let value = v.get_value(2);
+        v.set_value(2, value);
+        assert_approx_eq!(v.get_value(2), value);
 
-                    // Changing a value
-                    let value = 3f64;
-                    v.set_value(1, value);
-                    assert_approx_eq!(v.get_value(1), value);
-                }
-            }
-        }
+        // Changing a value
+        let value = 3f64;
+        v.set_value(1, value);
+        assert_approx_eq!(v.get_value(1), value);
+    }
 
-    macro_rules! out_of_bounds_get {
-            ( $vector_type:ident ) => {
-                {
-                    let v = test_vector!($vector_type);
-                    v.get_value(400);
-                }
-            }
-        }
+    fn out_of_bounds_get<T>() where T: Vector {
+        let v = test_vector::<T>();
 
-    macro_rules! out_of_bounds_set {
-            ( $vector_type:ident ) => {
-                {
-                    let mut v = test_vector!($vector_type);
+        v.get_value(400);
+    }
 
-                    v.set_value(400, 45f64);
-                }
-            }
-        }
+    fn out_of_bounds_set<T>() where T: Vector {
+        let mut v = test_vector::<T>();
 
-    macro_rules! inner_product {
-        ( $vector_type:ident ) => {
-            {
-                let v = test_vector!($vector_type);
-                let u = test_vector!($vector_type);
-
-                assert_approx_eq!(v.inner_product(&u), 25f64 + 36f64);
-            }
-        }
-        }
+        v.set_value(400, 45f64);
+    }
 
     #[cfg(test)]
     mod dense_vector {
@@ -352,25 +348,25 @@ mod test {
         use super::*;
 
         #[test]
-        fn create() {
-            create!(DenseVector);
+        fn test_create() {
+            create::<DenseVector>();
         }
 
         #[test]
-        fn get_set() {
-            get_set!(DenseVector);
-        }
-
-        #[test]
-        #[should_panic]
-        fn out_of_bounds_get() {
-            out_of_bounds_get!(DenseVector);
+        fn test_get_set() {
+            get_set::<DenseVector>();
         }
 
         #[test]
         #[should_panic]
-        fn out_of_bounds_set() {
-            out_of_bounds_set!(DenseVector);
+        fn test_out_of_bounds_get() {
+            out_of_bounds_get::<DenseVector>();
+        }
+
+        #[test]
+        #[should_panic]
+        fn test_out_of_bounds_set() {
+            out_of_bounds_set::<DenseVector>();
         }
     }
 
@@ -380,30 +376,33 @@ mod test {
         use super::*;
 
         #[test]
-        fn create() {
-            create!(SparseVector);
+        fn test_create() {
+            create::<SparseVector>();
         }
 
         #[test]
-        fn get_set() {
-            get_set!(SparseVector);
-        }
-
-        #[test]
-        #[should_panic]
-        fn out_of_bounds_get() {
-            out_of_bounds_get!(SparseVector);
+        fn test_get_set() {
+            get_set::<SparseVector>();
         }
 
         #[test]
         #[should_panic]
-        fn out_of_bounds_set() {
-            out_of_bounds_set!(SparseVector);
+        fn test_out_of_bounds_get() {
+            out_of_bounds_get::<SparseVector>();
         }
 
         #[test]
-        fn inner_product() {
-            inner_product!(SparseVector);
+        #[should_panic]
+        fn test_out_of_bounds_set() {
+            out_of_bounds_set::<SparseVector>();
+        }
+
+        #[test]
+        fn test_inner_product() {
+            let v = test_vector::<SparseVector>();
+            let u = test_vector::<SparseVector>();
+
+            assert_approx_eq!(v.inner_product(&u), 25f64 + 36f64);
         }
     }
 }

@@ -33,3 +33,20 @@ pub enum LPCategory {
     Unbounded,
     Infeasible,
 }
+
+/// A variable is named, of continuous or integer type and may be shifted.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Variable {
+    pub name: String,
+    pub variable_type: VariableType,
+    pub offset: f64,
+}
+
+impl Variable {
+    pub fn new(name: String, variable_type: VariableType, offset: f64) -> Variable {
+        Variable { name, variable_type, offset, }
+    }
+    pub fn set_shift(&mut self, value: f64) {
+        self.offset = value;
+    }
+}

@@ -6,3 +6,5 @@
 
 pub mod data;
 pub mod logic;
+
+pub const EPSILON: f64 = 1e-6f64;

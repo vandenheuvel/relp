@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::iter::Iterator;
 use std::str::Lines;
 
-use data::linear_program::elements::{ConstraintType, VariableType};
+use data::linear_program::elements::{ConstraintType, Variable as ShiftedVariable, VariableType};
 use data::linear_program::general_form::{GeneralForm, GeneralFormConvertable};
 use data::linear_algebra::matrix::{Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
@@ -20,9 +20,12 @@ pub fn parse(mut lines: Lines) -> Result<Box<GeneralFormConvertable>, String> {
     let (cost_row_name, constraints) = parse_rows(&mut lines)?;
     let columns = parse_columns(&mut lines)?;
     let rhs = parse_rhs(&mut lines)?;
-    let bounds = parse_bounds(&mut lines)?;
+    let bounds = match parse_bounds(&mut lines) {
+        Ok(bounds) => bounds,
+        Err(e) => Vec::new(),
+    };
 
-    Ok(Box::new(MPS { name, cost_row_name, rows: constraints, columns, RHSs: rhs, bounds, }))
+    Ok(Box::new(MPS { name, cost_row_name, rows: constraints, columns, rhss: rhs, bounds, }))
 }
 
 /// Read the name
@@ -152,7 +155,7 @@ fn parse_columns(lines: &mut Lines) -> Result<Vec<Variable>, String> {
 }
 
 /// Read a `RHS` or right-hand side
-fn parse_rhs(lines: &mut Lines) -> Result<Vec<RHS>, String> {
+fn parse_rhs(lines: &mut Lines) -> Result<Vec<Rhs>, String> {
     let mut RHSs = Vec::new();
 
     let mut previous_rhs_name = None;
@@ -160,9 +163,9 @@ fn parse_rhs(lines: &mut Lines) -> Result<Vec<RHS>, String> {
     for line in lines {
         match parse_section(line) {
             // The next section is starting
-            Some(MPSSection::Bounds) => {
+            Some(MPSSection::Bounds) | Some(MPSSection::ENDATA) => {
                 match previous_rhs_name {
-                    Some(name) => RHSs.push(RHS {
+                    Some(name) => RHSs.push(Rhs {
                         name: String::from(name),
                         values: values.clone(),
                     }),
@@ -182,7 +185,7 @@ fn parse_rhs(lines: &mut Lines) -> Result<Vec<RHS>, String> {
                     rhs_name => {
                         if rhs_name != previous_rhs_name {
                             if previous_rhs_name != None {
-                                RHSs.push(RHS {
+                                RHSs.push(Rhs {
                                     name: String::from(rhs_name.unwrap()),
                                     values: values.clone(),
                                 });
@@ -301,7 +304,7 @@ struct MPS {
     // Constraint name and Variable name combinations
     columns: Vec<Variable>,
     // Right-hand side constraint values
-    RHSs: Vec<RHS>,
+    rhss: Vec<Rhs>,
     // Extra bounds on variables
     bounds: Vec<Bound>,
 }
@@ -352,7 +355,7 @@ impl MPS {
     }
     fn get_b(&self, rows_map: &HashMap<String, usize>) -> DenseVector {
         // TODO: Don't just get the first RHS
-        let rhs = &self.RHSs[0];
+        let rhs = &self.rhss[0];
         let nr_rows = rows_map.len();
         let b_tuples: Vec<(usize, f64)> = rhs.values.iter()
             .map(|&(ref row_name, value)| {
@@ -374,12 +377,14 @@ impl MPS {
             .collect::<Vec<ConstraintType>>();
         row_info
     }
-    fn get_column_info(&self, columns_map: &HashMap<String, usize>) -> Vec<(String, VariableType)> {
+    fn get_column_info(&self, columns_map: &HashMap<String, usize>) -> Vec<ShiftedVariable> {
         let mut column_info = self.columns.iter()
             .map(|column| (column.variable_name.clone(), column.variable_type))
             .collect::<Vec<(String, VariableType)>>();
         column_info.sort_by_key(|(name, _)| *columns_map.get(&name.to_owned()).unwrap());
-        column_info
+        column_info.into_iter()
+            .map(|(name, variable_type)| ShiftedVariable::new(name, variable_type, 0f64))
+            .collect()
     }
 }
 
@@ -387,7 +392,7 @@ impl MPS {
 impl GeneralFormConvertable for MPS {
     fn to_general_lp(&self) -> GeneralForm {
         let (rows_map, nr_rows) = self.get_rows_map();
-        let (columns_map, nr_columns) = self.get_columns_map();
+        let (columns_map, _) = self.get_columns_map();
         let (mut data, cost) = self.get_data_and_cost(&rows_map, &columns_map);
         let mut b = self.get_b(&rows_map);
         let mut row_info = self.get_row_info(&rows_map);
@@ -406,7 +411,7 @@ impl GeneralFormConvertable for MPS {
             data.set_value(row_index, column_index, 1f64);
         }
 
-        GeneralForm::new(data, b, cost, column_info, row_info)
+        GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info)
     }
 }
 
@@ -435,6 +440,7 @@ impl Constraint {
     }
 }
 
+/// A `Variable` is either continuous or integer, and has for some rows a coefficient.
 #[derive(Debug, PartialEq)]
 struct Variable {
     variable_name: String,
@@ -452,7 +458,7 @@ impl Variable {
 /// A `RHS` is a constraint. A single linear program defined in MPS can have multiple right-hand
 /// sides. It relates a row name to a real constant.
 #[derive(Debug, PartialEq)]
-struct RHS {
+struct Rhs {
     name: String,
     values: Vec<(String, f64)>,
 }
@@ -613,7 +619,7 @@ mod test {
         // Correct line, two coefficients
         let rhs = "    RHS1      LIM1                 5   LIM2                10\nBOUNDS";
         let result = parse_rhs(&mut rhs.lines());
-        let expected = Ok(vec![RHS {
+        let expected = Ok(vec![Rhs {
             name: String::from("RHS1"),
             values: vec![(String::from("LIM1"), 5f64),
                          (String::from("LIM2"), 10f64)],
@@ -623,7 +629,7 @@ mod test {
         // Correct line, one coefficient
         let rhs = "    RHS1      MYEQN                7\nBOUNDS";
         let result = parse_rhs(&mut rhs.lines());
-        let expected = Ok(vec![RHS {
+        let expected = Ok(vec![Rhs {
             name: String::from("RHS1"),
             values: vec![(String::from("MYEQN"), 7f64)],
         }]);
@@ -733,7 +739,7 @@ ENDATA";
                                               (String::from("MYEQN"), 1f64)])];
 
 
-        let RHSs = vec![RHS {
+        let rhss = vec![Rhs {
             name: String::from("RHS1"),
             values: vec![(String::from("LIM1"), 5f64),
                          (String::from("LIM2"), 10f64),
@@ -745,7 +751,7 @@ ENDATA";
                           Bound::new(String::from("BND1"), BoundDirection::Lower, String::from("YTWO"), -1f64),
                           Bound::new(String::from("BND1"), BoundDirection::Upper, String::from("YTWO"), 1f64)];
 
-        MPS { name, cost_row_name, rows, columns, RHSs, bounds, }
+        MPS { name, cost_row_name, rows, columns, rhss, bounds, }
     }
 
     #[test]
@@ -775,9 +781,9 @@ ENDATA";
 
         let cost = SparseVector::from_data(vec![1f64, 4f64, 9f64]);
 
-        let column_info = vec![(String::from("XONE"), VariableType::Continuous),
-                               (String::from("YTWO"), VariableType::Continuous),
-                               (String::from("ZTHREE"), VariableType::Continuous)];
+        let column_info = vec![ShiftedVariable::new(String::from("XONE"), VariableType::Continuous, 0f64),
+                               ShiftedVariable::new(String::from("YTWO"), VariableType::Continuous, 0f64),
+                               ShiftedVariable::new(String::from("ZTHREE"), VariableType::Continuous, 0f64)];
 
         let row_info = vec![ConstraintType::Less,
                             ConstraintType::Greater,
@@ -786,7 +792,7 @@ ENDATA";
                             ConstraintType::Greater,
                             ConstraintType::Less];
 
-        GeneralForm::new(data, b, cost, column_info, row_info)
+        GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info)
     }
 
     #[test]

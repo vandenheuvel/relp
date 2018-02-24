@@ -12,3 +12,6 @@ pub mod algorithm;
 pub mod io;
 
 mod data;
+
+#[cfg(test)]
+mod test;
