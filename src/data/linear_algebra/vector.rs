@@ -1,6 +1,7 @@
 use std::slice::Iter;
 
 use data::linear_algebra::matrix::{DenseMatrix, Matrix};
+use algorithm::simplex::EPSILON;
 
 /// Defines basic ways to create or change a vector, regardless of back-end.
 pub trait Vector {
@@ -102,7 +103,7 @@ impl Vector for DenseVector {
 
 /// A sparse vector using a `Vec<>` with (row, value) combinations as back-end. Indices start at
 /// `0`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct SparseVector {
     data: Vec<(usize, f64)>,
     len: usize,
@@ -265,6 +266,24 @@ impl Clone for SparseVector {
         }
     }
 }
+
+impl PartialEq for SparseVector {
+    fn eq(&self, other: &SparseVector) -> bool {
+        if !(self.len() == other.len()) {
+            return false;
+        }
+
+        for i in 0..self.len() {
+            if !((self.get_value(i) - other.get_value(i)).abs() < EPSILON) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+impl Eq for SparseVector {}
 
 
 #[cfg(test)]

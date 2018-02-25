@@ -2,29 +2,31 @@ use std::collections::{HashMap, HashSet};
 
 use algorithm::simplex::data::{CostRow, create_artificial_tableau, Tableau};
 use algorithm::simplex::EPSILON;
+use algorithm::simplex::tableau_provider::TableauProvider;
+use algorithm::simplex::tableau_provider::matrix_data::MatrixData;
 use data::linear_algebra::matrix::{DenseMatrix, Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use data::linear_program::canonical_form::CanonicalForm;
-use data::linear_program::elements::{LPCategory, Variable, VariableType};
-
+use data::linear_program::elements::{LinearProgramType, Variable, VariableType};
 
 /// Solves a linear program in `CanonicalForm` using the Simplex method.
 pub fn solve(canonical: &CanonicalForm) -> Result<(Vec<(String, f64)>, f64), String> {
-    let result = match phase_one(canonical) {
-        PhaseOneResult::FoundBFS(carry, basis) => phase_two(&canonical, carry, basis),
+    let (carry, basis) = match phase_one(canonical) {
+        PhaseOneResult::FoundBFS(carry, basis) => (carry, basis),
         PhaseOneResult::Infeasible => return Err(format!("LP not feasible")),
-        PhaseOneResult::ArtificialRemain(tableau) => {
-            let mut tableau = tableau;
+        PhaseOneResult::ArtificialRemain(tableau, artificial_basis_columns) => {
+            let mut tableau: Tableau<MatrixData> = tableau;
             // TODO: MIPLIB problem 50v-10 doesn't work with this line.
-//            remove_artificial(&mut tableau);
-
-            phase_two(&canonical, tableau.carry(), tableau.basis_columns_map())
-        }
+//            remove_artificial(&mut tableau, artificial_basis_columns)
+            (tableau.carry(), tableau.basis_columns())
+        },
     };
 
-    match result {
-        PhaseTwoResult::FoundOptimum(optimum, cost) => Ok((combine_column_names(optimum, canonical), cost)),
-        PhaseTwoResult::Unbounded => Err(format!("LP unbounded")),
+    match phase_two(&canonical, carry, basis) {
+        LinearProgramType::FiniteOptimum(optimum, cost) =>
+            Ok((combine_column_names(optimum, canonical), cost)),
+        LinearProgramType::Infeasible => Err(format!("LP infeasible")),
+        LinearProgramType::Unbounded => Err(format!("LP unbounded")),
     }
 }
 
@@ -32,113 +34,92 @@ pub fn solve(canonical: &CanonicalForm) -> Result<(Vec<(String, f64)>, f64), Str
 fn combine_column_names(bfs: SparseVector, canonical: &CanonicalForm) -> Vec<(String, f64)> {
     debug_assert_eq!(bfs.len(), canonical.variable_info().len());
 
-    let mut combined = Vec::new();
     let column_info = canonical.variable_info();
-    for i in 0..column_info.len() {
-        combined.push((column_info[i].clone(), bfs.get_value(i)));
-    }
-    combined
+    (0..column_info.len()).map(|i| (column_info[i].clone(), bfs.get_value(i))).collect::<Vec<_>>()
 }
 
 /// Reduces the artificial cost of the basic feasible solution to zero, if possible. In doing so, a
 /// basic feasible solution to the `CanonicalForm` linear program is found.
-fn phase_one(canonical: &CanonicalForm) -> PhaseOneResult {
+fn phase_one(canonical: &CanonicalForm) -> PhaseOneResult<MatrixData> {
     let mut tableau = create_artificial_tableau(canonical);
-    let mut i = 0;
+    let mut artificial_basis_columns = (0..tableau.nr_rows()).collect::<HashSet<_>>();
 
-    let lp_category = loop {
-        match tableau.profitable_column(CostRow::Artificial) {
+    loop {
+        match (0..tableau.nr_columns())
+            .filter(|column| !tableau.is_in_basis(column) || artificial_basis_columns.contains(column))
+            .find(|column| tableau.relative_cost(CostRow::Artificial, *column) < -EPSILON) {
             Some(column_nr) => {
                 let column = tableau.generate_column(column_nr);
                 let pivot_row = tableau.find_pivot_row(&column);
+                artificial_basis_columns.remove(tableau.get_basis_column(&pivot_row).unwrap());
                 tableau.bring_into_basis(pivot_row, column_nr, &column)
             },
-            None => break LPCategory::FiniteOptimum(tableau.cost(CostRow::Artificial)),
+            None => break if tableau.cost(CostRow::Artificial) < EPSILON {
+                if artificial_basis_columns.is_empty() {
+                    PhaseOneResult::FoundBFS(tableau.carry(), tableau.basis_columns())
+                } else {
+                    PhaseOneResult::ArtificialRemain(tableau, artificial_basis_columns)
+                }
+            } else {
+                PhaseOneResult::Infeasible
+            },
         }
-        i += 1;
-    };
-    match lp_category {
-        LPCategory::Unbounded => PhaseOneResult::Infeasible,
-        LPCategory::Infeasible => PhaseOneResult::Infeasible,
-        LPCategory::FiniteOptimum(cost) if {
-            cost < EPSILON && !tableau.has_artificial_in_basis()
-        } => {
-            PhaseOneResult::FoundBFS(tableau.carry(), tableau.basis_columns_map())
-        },
-        LPCategory::FiniteOptimum(cost) if cost >= EPSILON => PhaseOneResult::Infeasible,
-        LPCategory::FiniteOptimum(_) => PhaseOneResult::ArtificialRemain(tableau),
     }
 }
 
 /// Removes all artificial variables from the tableau by making a basis change "at zero level", or
 /// without change of cost of the current solution.
-fn remove_artificial(tableau: &mut Tableau) {
-    let mut artificials = tableau.basis_columns();
-    artificials.retain(|&v| v < tableau.nr_rows());
-
+fn remove_artificial<T>(tableau: &mut Tableau<T>, artificials: HashSet<usize>) -> (DenseMatrix, HashMap<usize, usize>)
+    where T: TableauProvider {
     for artificial in artificials.into_iter() {
         debug_assert!(tableau.relative_cost(CostRow::Artificial, artificial).abs() < EPSILON);
 
-        let artificial_column = tableau.generate_column(artificial);
+        let artificial_column = tableau.generate_artificial_column(artificial);
         let pivot_row = artificial_column.values()
             .find(|(_, v)| (1f64 - v).abs() < EPSILON)
             .unwrap().0 - 1 - 1;
 
-        for nonartificial in tableau.nr_rows()..tableau.nr_columns() {
-            if !tableau.is_in_basis(nonartificial) {
-                if tableau.relative_cost(CostRow::Artificial, nonartificial).abs() < EPSILON {
-                    let column = tableau.generate_column(nonartificial);
-                    tableau.bring_into_basis(pivot_row, nonartificial, &column);
+        for non_artificial in tableau.nr_rows()..tableau.nr_columns() {
+            if !tableau.is_in_basis(&non_artificial) {
+                if tableau.relative_cost(CostRow::Artificial, non_artificial).abs() < EPSILON {
+                    let column = tableau.generate_column(non_artificial);
+                    tableau.bring_into_basis(pivot_row, non_artificial, &column);
                     break;
                 }
             }
         }
 
-        debug_assert!(!tableau.is_in_basis(artificial));
+        debug_assert!(!tableau.is_in_basis(&artificial));
     }
 
-    debug_assert!(!tableau.has_artificial_in_basis());
+    (tableau.carry(), tableau.basis_columns())
 }
 
 /// Reduces the cost of the basic feasible solution to the minimum.
-fn phase_two(canonical: &CanonicalForm, carry: DenseMatrix, basis: HashMap<usize, usize>) -> PhaseTwoResult {
+fn phase_two(canonical: &CanonicalForm, carry: DenseMatrix, basis: HashMap<usize, usize>) -> LinearProgramType {
     let mut tableau = Tableau::create_from(canonical, carry, basis);
 
-    let lp_category = loop {
+    loop {
+        // TODO: when is an LP unbounded?
         match tableau.profitable_column(CostRow::Actual) {
             Some(column_nr) => {
                 let column = tableau.generate_column(column_nr);
                 let pivot_row = tableau.find_pivot_row(&column);
                 tableau.bring_into_basis(pivot_row, column_nr, &column);
             },
-            None => break LPCategory::FiniteOptimum(tableau.cost(CostRow::Actual)),
+            None => break LinearProgramType::FiniteOptimum(tableau.current_bfs(),
+                                                           tableau.cost(CostRow::Actual)),
         }
-    };
-
-    match lp_category {
-        LPCategory::FiniteOptimum(cost) => {
-            let values = tableau.current_bfs();
-            PhaseTwoResult::FoundOptimum(values, cost)
-        },
-        LPCategory::Unbounded => PhaseTwoResult::Unbounded,
-        LPCategory::Infeasible => panic!("We should have a bfs in phase two."),
     }
 }
 
 /// After the first phase, a basic feasible solution is found, the problem is found to be
 /// infeasible, or artificial variables remain in the basis.
 #[derive(Debug)]
-enum PhaseOneResult {
+enum PhaseOneResult<T> where T: TableauProvider {
     FoundBFS(DenseMatrix, HashMap<usize, usize>),
     Infeasible,
-    ArtificialRemain(Tableau),
-}
-
-/// After the second phase, either an optimum is found or the problem is determined to be unbounded.
-#[derive(Debug)]
-enum PhaseTwoResult {
-    FoundOptimum(SparseVector, f64),
-    Unbounded,
+    ArtificialRemain(Tableau<T>, HashSet<usize>),
 }
 
 #[cfg(test)]
@@ -146,11 +127,12 @@ mod test {
 
     use super::*;
 
-    fn tableau() -> Tableau {
+    fn tableau() -> Tableau<MatrixData> {
         let data = SparseMatrix::from_data(vec![vec![3f64, 2f64, 1f64, 0f64, 0f64],
                                                 vec![5f64, 1f64, 1f64, 1f64, 0f64],
                                                 vec![2f64, 5f64, 1f64, 0f64, 1f64]]);
         let original_c = SparseVector::from_data(vec![1f64, 1f64, 1f64, 1f64, 1f64]);
+        let data = MatrixData::new(data, original_c);
         let carry = DenseMatrix::from_data(vec![vec![-6f64, 1f64, -1f64, -1f64],
                                                 vec![0f64, 1f64, 1f64, 1f64],
                                                 vec![1f64, 1f64, 0f64, 0f64],
@@ -166,7 +148,7 @@ mod test {
                                String::from("X4"),
                                String::from("X5")];
 
-        Tableau::new(data, original_c, carry, basis_columns, column_info)
+        Tableau::new(data, carry, basis_columns, column_info)
     }
 
     fn lp_canonical() -> CanonicalForm {
@@ -189,14 +171,15 @@ mod test {
     #[test]
     fn test_simplex() {
         let mut tableau = tableau();
-        if let LPCategory::FiniteOptimum(cost) = loop {
+        if let LinearProgramType::FiniteOptimum(_, cost) = loop {
             match tableau.profitable_column(CostRow::Actual) {
                 Some(column_nr) => {
                     let column = tableau.generate_column(column_nr);
                     let pivot_row = tableau.find_pivot_row(&column);
                     tableau.bring_into_basis(pivot_row, column_nr, &column)
                 },
-                None => break LPCategory::FiniteOptimum(tableau.cost(CostRow::Actual)),
+                None => break LinearProgramType::FiniteOptimum(tableau.current_bfs(),
+                                                               tableau.cost(CostRow::Actual)),
             }
         } {
             assert_approx_eq!(cost, 9f64 / 2f64);
@@ -212,13 +195,13 @@ mod test {
         match phase_one(&canonical) {
             PhaseOneResult::FoundBFS(_, map) => {
                 let mut expected = HashMap::new();
-                expected.insert(0, 4);
-                expected.insert(1, 6);
-                expected.insert(2, 7);
+                expected.insert(0, 1);
+                expected.insert(1, 3);
+                expected.insert(2, 4);
                 assert_eq!(map, expected);
             },
             PhaseOneResult::Infeasible => assert!(false),
-            PhaseOneResult::ArtificialRemain(_) => assert!(false),
+            PhaseOneResult::ArtificialRemain(_, _) => assert!(false),
         }
     }
 

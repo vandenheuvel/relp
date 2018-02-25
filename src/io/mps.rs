@@ -156,7 +156,7 @@ fn parse_columns(lines: &mut Lines) -> Result<Vec<Variable>, String> {
 
 /// Read a `RHS` or right-hand side
 fn parse_rhs(lines: &mut Lines) -> Result<Vec<Rhs>, String> {
-    let mut RHSs = Vec::new();
+    let mut rhss = Vec::new();
 
     let mut previous_rhs_name = None;
     let mut values = Vec::new();
@@ -165,7 +165,7 @@ fn parse_rhs(lines: &mut Lines) -> Result<Vec<Rhs>, String> {
             // The next section is starting
             Some(MPSSection::Bounds) | Some(MPSSection::ENDATA) => {
                 match previous_rhs_name {
-                    Some(name) => RHSs.push(Rhs {
+                    Some(name) => rhss.push(Rhs {
                         name: String::from(name),
                         values: values.clone(),
                     }),
@@ -185,7 +185,7 @@ fn parse_rhs(lines: &mut Lines) -> Result<Vec<Rhs>, String> {
                     rhs_name => {
                         if rhs_name != previous_rhs_name {
                             if previous_rhs_name != None {
-                                RHSs.push(Rhs {
+                                rhss.push(Rhs {
                                     name: String::from(rhs_name.unwrap()),
                                     values: values.clone(),
                                 });
@@ -215,7 +215,7 @@ fn parse_rhs(lines: &mut Lines) -> Result<Vec<Rhs>, String> {
         }
     }
 
-    Ok(RHSs)
+    Ok(rhss)
 }
 
 /// Read a `Bound` from a string

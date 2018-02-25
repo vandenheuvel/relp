@@ -1,5 +1,7 @@
 use std::ops::Not;
 
+use data::linear_algebra::vector::SparseVector;
+
 /// A `Constraint` is a type of (in)equality.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ConstraintType {
@@ -26,12 +28,12 @@ impl Not for VariableType {
     }
 }
 
-/// An LP either has a finite optimum, is unbounded or has no basic feasible solution.
-#[derive(Debug, Copy, Clone)]
-pub enum LPCategory {
-    FiniteOptimum(f64),
-    Unbounded,
+/// After the second phase, either an optimum is found or the problem is determined to be unbounded.
+#[derive(Debug)]
+pub enum LinearProgramType {
+    FiniteOptimum(SparseVector, f64),
     Infeasible,
+    Unbounded,
 }
 
 /// A variable is named, of continuous or integer type and may be shifted.

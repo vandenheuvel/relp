@@ -13,5 +13,8 @@ fn test_50v() {
     let mut general = result.to_general_lp();
     let canonical = general.to_canonical();
 
-    assert_approx_eq!(solve(&canonical).ok().unwrap().1, 2879.065687f64);
+    let result = solve(&canonical);
+    let result = result.ok().unwrap();
+
+    assert_approx_eq!(result.1, 2879.065687f64);
 }
