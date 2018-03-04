@@ -6,10 +6,9 @@
 use std::fmt::Debug;
 use std::iter::Iterator;
 use std::slice::Iter;
+use data::linear_algebra::EPSILON;
 
-use data::linear_algebra::vector::Vector;
-
-const EPSILON: f64 = 1e-6;
+const MAX_DELTA: f64 = 1e-6;
 
 /// Defines basic ways to create or change a matrix, regardless of back-end.
 pub trait Matrix: Clone + Debug + Eq {
@@ -153,7 +152,7 @@ impl PartialEq for DenseMatrix {
 
         for i in 0..self.nr_rows() {
             for j in 0..self.nr_columns() {
-                if !((self.get_value(i, j) - other.get_value(i, j)).abs() < EPSILON) {
+                if !((self.get_value(i, j) - other.get_value(i, j)).abs() < MAX_DELTA) {
                     return false;
                 }
             }
@@ -308,7 +307,7 @@ impl Matrix for SparseMatrix {
         let rows: Vec<Vec<(usize, f64)>> = data.iter()
             .map(|v| v.into_iter()
                 .enumerate()
-                .filter(|&(_, &value)| value != 0f64)
+                .filter(|&(_, &value)| value.abs() >= EPSILON)
                 .map(|(column, &value)| (column, value))
                 .collect())
             .collect();
@@ -321,7 +320,7 @@ impl Matrix for SparseMatrix {
                     columns.push(Vec::new());
                 }
 
-                if value != 0f64 {
+                if value.abs() >= EPSILON {
                     columns[column].push((row, value));
                 }
             }
@@ -428,7 +427,7 @@ impl PartialEq for SparseMatrix {
 
         for i in 0..self.nr_rows() {
             for j in 0..self.nr_columns() {
-                if !((self.get_value(i, j) - other.get_value(i, j)).abs() < EPSILON) {
+                if !((self.get_value(i, j) - other.get_value(i, j)).abs() < MAX_DELTA) {
                     return false;
                 }
             }
@@ -480,14 +479,14 @@ mod test {
 
     fn eq<T>() where T: Matrix {
         let x = 4f64;
-        let deviation = 0.5f64 * EPSILON;
+        let deviation = 0.5f64 * MAX_DELTA;
         let data = vec![vec![x]];
         let m1 = T::from_data(data);
         let data = vec![vec![x + deviation]];
         let m2 = T::from_data(data);
         assert_eq!(m1, m2);
 
-        let deviation = 3f64 * EPSILON;
+        let deviation = 3f64 * MAX_DELTA;
         let data = vec![vec![x + deviation]];
         let m2 = T::from_data(data);
         assert_ne!(m1, m2);

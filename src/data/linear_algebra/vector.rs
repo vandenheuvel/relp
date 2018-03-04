@@ -198,7 +198,7 @@ impl Vector for SparseVector {
         SparseVector {
             data: data.into_iter()
                 .enumerate()
-                .filter(|(_, v)| *v != 0f64)
+                .filter(|(_, v)| v.abs() >= EPSILON)
                 .collect(),
             len: size,
         }
