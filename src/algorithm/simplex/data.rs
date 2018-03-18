@@ -266,7 +266,6 @@ fn create_carry_matrix(b: DenseVector, basis_inverse: DenseMatrix) -> DenseMatri
     cost_row.vcat(artificial_cost_row.vcat(b.hcat(basis_inverse)))
 }
 
-
 #[cfg(test)]
 mod test {
 
@@ -288,13 +287,13 @@ mod test {
 
         let cost = SparseVector::from_data(vec![1f64, 4f64, 9f64, 0f64, 0f64, 0f64, 0f64]);
 
-        let column_info = vec![Variable::new(String::from("XONE"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("YTWO"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("ZTHREE"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("SLACK0"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("SLACK1"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("SLACK2"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("SLACK3"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "XONE".to_string(),   variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "YTWO".to_string(),   variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "ZTHREE".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "SLACK0".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "SLACK1".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "SLACK2".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "SLACK3".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
 
         CanonicalForm::new(data, b, cost, 0f64, column_info, Vec::new())
     }
@@ -339,11 +338,11 @@ mod test {
                                                 vec![2f64, 5f64, 1f64, 0f64, 1f64]]);
         let b = DenseVector::from_data(vec![1f64, 3f64, 4f64]);
         let cost = SparseVector::from_data(vec![1f64, 1f64, 1f64, 1f64, 1f64]);
-        let column_info = vec![Variable::new(String::from("X1"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("X2"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("X3"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("X4"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("X5"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "X1".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "X2".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "X3".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "X4".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "X5".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
 
         CanonicalForm::new(data, b, cost, 0f64, column_info, Vec::new())
     }

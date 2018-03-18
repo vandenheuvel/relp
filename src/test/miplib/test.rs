@@ -2,6 +2,7 @@ use std::path::Path;
 use io::read;
 use algorithm::simplex::logic::solve;
 use test::miplib::get_test_file_path;
+use data::linear_program::general_form::GeneralForm;
 
 #[test]
 fn test_50v() {
@@ -10,7 +11,7 @@ fn test_50v() {
     let path = get_test_file_path(&name);
     let result = read(&path).ok().unwrap();
 
-    let mut general = result.to_general_lp();
+    let mut general: GeneralForm = result.into();
     let canonical = general.to_canonical();
 
     let result = solve(&canonical);

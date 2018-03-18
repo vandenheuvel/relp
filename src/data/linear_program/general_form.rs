@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use data::linear_algebra::matrix::{Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use data::linear_program::canonical_form::CanonicalForm;
@@ -40,8 +38,12 @@ pub struct GeneralForm {
 
 impl GeneralForm {
     /// Create a new linear program in general form.
-    pub fn new(data: SparseMatrix, b: DenseVector, cost: SparseVector, fixed_cost: f64,
-               column_info: Vec<Variable>, solution_values: Vec<(String, f64)>,
+    pub fn new(data: SparseMatrix,
+               b: DenseVector,
+               cost: SparseVector,
+               fixed_cost: f64,
+               column_info: Vec<Variable>,
+               solution_values: Vec<(String, f64)>,
                row_info: Vec<ConstraintType>) -> GeneralForm {
 
         let general_form = GeneralForm { data, b, fixed_cost, cost, column_info, row_info, solution_values, };
@@ -109,7 +111,7 @@ impl GeneralForm {
             let previous_b = self.b.get_value(*row);
             self.b.set_value(*row, previous_b - value * shift_value);
         }
-        self.column_info[j].set_shift(shift_value);
+        self.column_info[j].offset = shift_value;
         self.fixed_cost += self.cost.get_value(j) * shift_value;
     }
     /// Test whether a constraint is a lower bound.
@@ -160,7 +162,11 @@ impl GeneralForm {
         self.data.set_value(row, column, coefficient);
         self.cost.push_zero();
         let name = GeneralForm::generate_slack_name(row);
-        self.column_info.push(Variable::new(name, VariableType::Continuous, 0f64));
+        self.column_info.push(Variable {
+            name,
+            variable_type: VariableType::Continuous,
+            offset: 0f64,
+        });
         self.row_info[row] = ConstraintType::Equal;
 
         debug_assert_consistent!(self);
@@ -181,11 +187,6 @@ impl GeneralForm {
     }
 }
 
-/// All types implementing this type can be converted into a `GeneralForm` linear program.
-pub trait GeneralFormConvertable: Debug {
-    fn to_general_lp(&self) -> GeneralForm;
-}
-
 #[cfg(test)]
 mod test {
 
@@ -198,8 +199,15 @@ mod test {
         let data = SparseMatrix::from_data(data);
         let b = DenseVector::from_data(vec![3f64, 8f64]);
         let cost = SparseVector::from_data(vec![1f64, 1f64]);
-        let column_info = vec![Variable::new(String::from("XONE"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("XTWO"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable {
+            name: "XONE".to_string(),
+            variable_type: VariableType::Continuous,
+            offset: 0f64,
+        }, Variable {
+            name: "XTWO".to_string(),
+            variable_type: VariableType::Continuous,
+            offset: 0f64,
+        }];
         let row_info = vec![ConstraintType::Equal,
                             ConstraintType::Less];
         let mut initial = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
@@ -210,7 +218,11 @@ mod test {
         let b = DenseVector::from_data(vec![5f64]);
         let cost = SparseVector::from_data(vec![1f64]);
         let fixed_cost = 3f64;
-        let column_info = vec![Variable::new(String::from("XTWO"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable {
+            name: "XTWO".to_string(),
+            variable_type: VariableType::Continuous,
+            offset: 0f64,
+        }];
         let solution_values = vec![(String::from("XONE"), 3f64)];
         let row_info = vec![ConstraintType::Less];
         let expected = GeneralForm::new(data, b, cost, fixed_cost, column_info, solution_values, row_info);
@@ -227,8 +239,15 @@ mod test {
         let data = SparseMatrix::from_data(data);
         let b = DenseVector::from_data(vec![-3f64, 3f64, 2f64, 8f64]);
         let cost = SparseVector::from_data(vec![1f64, 1f64]);
-        let column_info = vec![Variable::new(String::from("XONE"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("XTWO"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable {
+            name: "XONE".to_string(),
+            variable_type: VariableType::Continuous,
+            offset: 0f64,
+        }, Variable {
+            name: "XTWO".to_string(),
+            variable_type: VariableType::Continuous,
+            offset: 0f64,
+        }];
         let row_info = vec![ConstraintType::Greater,
                             ConstraintType::Less,
                             ConstraintType::Less,
@@ -242,8 +261,15 @@ mod test {
         let data = SparseMatrix::from_data(data);
         let b = DenseVector::from_data(vec![3f64 + 1f64, 2f64, 8f64 + 2f64 * 1f64]);
         let cost = SparseVector::from_data(vec![1f64, 1f64]);
-        let column_info = vec![Variable::new(String::from("XONE"), VariableType::Continuous, -1f64),
-                               Variable::new(String::from("XTWO"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable {
+            name: "XONE".to_string(),
+            variable_type: VariableType::Continuous,
+            offset: -1f64,
+        }, Variable {
+            name: "XTWO".to_string(),
+            variable_type: VariableType::Continuous,
+            offset: 0f64,
+        }];
         let row_info = vec![ConstraintType::Less,
                             ConstraintType::Less,
                             ConstraintType::Less];
@@ -258,7 +284,7 @@ mod test {
         let data = SparseMatrix::from_data(vec![vec![1f64]]);
         let b = DenseVector::from_data(vec![8f64]);
         let cost = SparseVector::from_data(vec![1f64]);
-        let column_info = vec![Variable::new(String::from("X"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "X".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
         let row_info = vec![ConstraintType::Less];
         let mut result = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
         result.introduce_slack_variables();
@@ -266,8 +292,8 @@ mod test {
         let data = SparseMatrix::from_data(vec![vec![1f64, 1f64]]);
         let b = DenseVector::from_data(vec![8f64]);
         let cost = SparseVector::from_data(vec![1f64, 0f64]);
-        let column_info = vec![Variable::new(String::from("X"), VariableType::Continuous, 0f64),
-                               Variable::new(GeneralForm::generate_slack_name(0), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "X".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: GeneralForm::generate_slack_name(0), variable_type: VariableType::Continuous, offset: 0f64, }];
         let row_info = vec![ConstraintType::Equal];
         let mut expected = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
 
@@ -277,7 +303,7 @@ mod test {
         let data = SparseMatrix::from_data(vec![vec![1f64]]);
         let b = DenseVector::from_data(vec![8f64]);
         let cost = SparseVector::from_data(vec![1f64]);
-        let column_info = vec![Variable::new(String::from("X"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "X".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
         let row_info = vec![ConstraintType::Greater];
         let mut result = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
         result.introduce_slack_variables();
@@ -285,8 +311,8 @@ mod test {
         let data = SparseMatrix::from_data(vec![vec![1f64, -1f64]]);
         let b = DenseVector::from_data(vec![8f64]);
         let cost = SparseVector::from_data(vec![1f64, 0f64]);
-        let column_info = vec![Variable::new(String::from("X"), VariableType::Continuous, 0f64),
-                               Variable::new(GeneralForm::generate_slack_name(0), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "X".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: GeneralForm::generate_slack_name(0), variable_type: VariableType::Continuous, offset: 0f64, }];
         let row_info = vec![ConstraintType::Equal];
         let mut expected = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
 
@@ -309,9 +335,9 @@ mod test {
 
         let cost = SparseVector::from_data(vec![1f64, 4f64, 9f64]);
 
-        let column_info = vec![Variable::new(String::from("XONE"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("YTWO"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("ZTHREE"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "XONE".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "YTWO".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "ZTHREE".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
 
         let row_info = vec![ConstraintType::Less,
                             ConstraintType::Greater,
@@ -327,7 +353,7 @@ mod test {
         let data = SparseMatrix::from_data(vec![vec![2f64]]);
         let b = DenseVector::from_data(vec![-1f64]);
         let cost = SparseVector::from_data(vec![1f64]);
-        let column_info = vec![Variable::new(String::from("X"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "X".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
         let row_info = vec![ConstraintType::Equal];
         let mut result = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
 
@@ -336,7 +362,7 @@ mod test {
         let data = SparseMatrix::from_data(vec![vec![-2f64]]);
         let b = DenseVector::from_data(vec![1f64]);
         let cost = SparseVector::from_data(vec![1f64]);
-        let column_info = vec![Variable::new(String::from("X"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "X".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
         let row_info = vec![ConstraintType::Equal];
         let mut expected = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
 
@@ -359,13 +385,13 @@ mod test {
 
         let cost = SparseVector::from_data(vec![1f64, 4f64, 9f64, 0f64, 0f64, 0f64, 0f64]);
 
-        let column_info = vec![Variable::new(String::from("XONE"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("YTWO"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("ZTHREE"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("SLACK0"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("SLACK1"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("SLACK3"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("SLACK4"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "XONE".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "YTWO".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "ZTHREE".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "SLACK0".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "SLACK1".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "SLACK3".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "SLACK4".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
 
         CanonicalForm::new(data, b, cost, 0f64, column_info, Vec::new())
     }

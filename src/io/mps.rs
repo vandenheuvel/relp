@@ -1,458 +1,555 @@
 //! # Reading MPS files
 //!
 //! Reading of `.mps` files, or files of the Mathematical Programming System format.
+//!
+//! TODO:
+//!     * Support all `BoundType` variants
 
+use std::convert::{TryFrom, TryInto};
 use std::collections::HashMap;
-use std::iter::Iterator;
-use std::str::Lines;
 
 use data::linear_program::elements::{ConstraintType, Variable as ShiftedVariable, VariableType};
-use data::linear_program::general_form::{GeneralForm, GeneralFormConvertable};
 use data::linear_algebra::matrix::{Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
+use data::linear_program::general_form::GeneralForm;
+use io::ParseError;
+use io::ParseErrorSource;
+use io::ParseErrorCause;
 
+/// Parse an MPS program, in string form, to a MPS.
+///
+/// # Arguments
+///
+/// * `program` - The input string in [MPS format](https://en.wikipedia.org/wiki/MPS_(format)).
+///
+/// # Return value
+///
+/// If successful, an `MPS` instance.
+pub fn parse(program: String) -> Result<MPS, ParseError> {
+    let atom_lines = into_atom_lines(&program);
+    let unstructured_mps = UnstructuredMPS::try_from(atom_lines)?;
+    let mps = unstructured_mps.try_into();
 
-/// Takes as argument a string in which the linear program is encoded following the
-/// [MPS format](https://en.wikipedia.org/wiki/MPS_(format)).
-pub fn parse(mut lines: Lines) -> Result<Box<GeneralFormConvertable>, String> {
-    let name = read_name(lines.next())?;
-    lines.next();
-    let (cost_row_name, constraints) = parse_rows(&mut lines)?;
-    let columns = parse_columns(&mut lines)?;
-    let rhs = parse_rhs(&mut lines)?;
-    let bounds = match parse_bounds(&mut lines) {
-        Ok(bounds) => bounds,
-        Err(e) => Vec::new(),
-    };
-
-    Ok(Box::new(MPS { name, cost_row_name, rows: constraints, columns, rhss: rhs, bounds, }))
+    mps
 }
 
-/// Read the name
-fn read_name(line: Option<&str>) -> Result<String, String> {
-    match line {
-        Some(string) => {
-            let parts = string.split_whitespace().collect::<Vec<&str>>();
-            if parts.len() != 2 || parts[0] != "NAME" {
-                Err(format!("This is not a \"NAME\" line: {}", string))
-            } else {
-                Ok(String::from(parts[1]))
-            }
-        },
-        None => Err(String::from("Empty line")),
-    }
+/// Most fundamental element in an MPS text file.
+///
+/// Every part of the input string to end up in the final `MPS` struct is parsed as either a `Word`
+/// or a `Number`.
+#[derive(Clone, Debug, PartialEq)]
+enum Atom<'a> {
+    Word(&'a str),
+    Number(f64),
 }
 
-/// Read the ROWS section
-fn parse_rows(lines: &mut Lines) -> Result<(String, Vec<Constraint>), String> {
-    let mut constraints: Vec<Constraint> = Vec::new();
-    let mut cost_row_name = None;
+/// Convert a line into `Atom`s by testing whether an atom is a number.
+///
+/// # Arguments
+///
+/// * `line` - The input string slice
+///
+/// # Return value
+///
+/// A `Vec` of words and numbers.
+fn into_atoms(line: &str) -> Vec<Atom> {
+    line.split_whitespace()
+        .map(|atom| match atom.parse::<f64>() {
+            Ok(value) => Atom::Number(value),
+            Err(_) => Atom::Word(atom),
+        })
+        .collect()
+}
 
-    for line in lines {
-        match parse_section(line) {
-            Some(MPSSection::Columns(VariableType::Continuous)) => break,
-            Some(section) => return Err(format!("Didn't expect section \"{:?}\"", section)),
-            None => {
-                let mut parts = line.split_whitespace();
-                let constraint_type = match parts.next() {
-                    Some("N") => {
-                        cost_row_name = match parts.next() {
-                            Some(name) => Some(String::from(name)),
-                            None => return Err(format!("No row name: {}", line)),
-                        };
-                        continue;
-                    },
-                    Some("L") => ConstraintType::Less,
-                    Some("E") => ConstraintType::Equal,
-                    Some("G") => ConstraintType::Greater,
-                    _ => return Err(format!("No row type: {}", line)),
-                };
-                let row_name = match parts.next() {
-                    Some(name) => String::from(name),
-                    None => return Err(format!("No row name: {}", line)),
-                };
+/// Convert an MPS program in string form to structured data.
+///
+/// # Arguments
+///
+/// * `program` - The input string
+///
+/// # Return value
+///
+/// All lines stored in a `Vec`. The first `(usize, &str)` tuple is used for creating of errors, it
+/// contains the line number and line.
+fn into_atom_lines<'a>(program: &'a String) -> Vec<((u64, &'a str), Vec<Atom<'a>>)> {
+    program.lines()
+        .enumerate()
+        .map(|(number, line)| (number as u64 + 1u64, line))
+        .filter(|(_, line)| !line.trim_left().starts_with("*"))
+        .filter(|(_, line)| !line.is_empty())
+        .map(|(number, line)| ((number, line), into_atoms(line)))
+        .collect()
+}
 
-                let constraint = Constraint::new(row_name, constraint_type);
-                constraints.push(constraint);
-            }
+/// Every row is either a cost row or some constraint.
+#[derive(Debug, Eq, PartialEq)]
+enum RowType {
+    Cost,
+    Constraint(ConstraintType),
+}
+
+impl<'a> TryFrom<&'a str> for RowType {
+    type Error = ();
+
+    /// Try to read a `RowType` from a string slice.
+    ///
+    /// The type of a row is denoted by `N` if it's the cost row; this row is often unique. There is
+    /// no defined behaviour for multiple cost rows. Constraint rows are indicated by `L`, `E` or
+    /// `G`.
+    ///
+    /// # Arguments
+    ///
+    /// * `word` - The input `String` slice.
+    ///
+    /// # Return value
+    ///
+    /// A `RowType` variant if the `String` slice matches either `N`, `L`, `E` or `G`.
+    ///
+    /// # Errors
+    ///
+    /// Any `String` slices not equal to either `N`, `L`, `E` or `G` will fair to be parsed.
+    fn try_from(word: &str) -> Result<RowType, ()> {
+        match word {
+            "N" => Ok(RowType::Cost),
+            "L" => Ok(RowType::Constraint(ConstraintType::Less)),
+            "E" => Ok(RowType::Constraint(ConstraintType::Equal)),
+            "G" => Ok(RowType::Constraint(ConstraintType::Greater)),
+            _ => Err(()),
         }
     }
+}
 
-    match cost_row_name {
-        Some(name) => Ok((name, constraints)),
-        None => Err(format!("Did not read cost row name")),
+/// MPS defines the `BoundType`s described in this enum.
+///
+/// # Note
+///
+/// Not all `BoundType` variants are currently supported.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum BoundType {
+    /// b <- x (< +inf)
+    LowerContinuous,
+    /// (0 <=) x <= b
+    UpperContinuous,
+    /// x = b
+    Fixed,
+    /// -inf < x < +inf
+    Free,
+    /// -inf < x (<= 0)
+    LowerMinusInfinity,
+    /// (0 <=) x < +inf
+    UpperInfinity,
+    /// x = 0 or 1
+    Binary,
+    /// b <= x ( +inf)
+    LowerInteger,
+    /// (0 <=) x <= b
+    UpperInteger,
+    /// x = 0 or l =< x =< b
+    SemiContinuous,
+}
+
+impl<'a> TryFrom<&'a str> for BoundType {
+    type Error = ();
+
+    /// Try to read a `BoundType` from a `String` slice.
+    ///
+    /// # Arguments
+    ///
+    /// * `word` - The input `String` slice.
+    ///
+    /// # Return value
+    ///
+    /// A `BoundType` variant describing the bound, if the type is known.
+    ///
+    /// # Errors
+    ///
+    /// A `()` error if the bound type is not known.
+    fn try_from(word: &str) -> Result<BoundType, ()> {
+        match word {
+            "LO" => Ok(BoundType::LowerContinuous),
+            "UP" => Ok(BoundType::UpperContinuous),
+            "FX" => Ok(BoundType::Fixed),
+            "FR" => Ok(BoundType::Free),
+            "MI" => Ok(BoundType::LowerMinusInfinity),
+            "PL" => Ok(BoundType::UpperInfinity),
+            "BV" => Ok(BoundType::Binary),
+            "LI" => Ok(BoundType::LowerInteger),
+            "UI" => Ok(BoundType::UpperInteger),
+            "SC" => Ok(BoundType::SemiContinuous),
+            _ => Err(()),
+        }
     }
 }
 
-/// Read the column values
-fn parse_columns(lines: &mut Lines) -> Result<Vec<Variable>, String> {
-    let mut columns = Vec::new();
-    let mut variable_type = VariableType::Continuous;
+/// MPS files are divided into sections.
+///
+/// # Note
+///
+/// The `Endata` variant (notice the odd spelling) denotes the end of the file.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum Section<'a> {
+    Name(&'a str),
+    Rows,
+    Columns(VariableType),
+    Rhs,
+    Bounds,
+    Ranges,
+    Endata,
+}
 
-    let mut previous_variable_name = None;
-    let mut coefficients = Vec::new();
-    for line in lines {
-        match parse_section(line) {
-            Some(MPSSection::Columns(new_type)) => {
-                variable_type = new_type;
+impl<'a, 'b,> TryFrom<&'b Vec<Atom<'a>>> for Section<'a> {
+    type Error = ();
+
+    /// Try to read a `Section` from a `Vec` slice of `Atom`s.
+    ///
+    /// # Arguments
+    ///
+    /// * `line` - The input line consisting of a sequence of `Atom`s.
+    ///
+    /// # Return value
+    ///
+    /// A `Section` variant describing the section this line announces, if one is recognized.
+    ///
+    /// # Errors
+    ///
+    /// A `()` error if no `Section` is recognized.
+    fn try_from(line: &Vec<Atom<'a>>) -> Result<Section<'a>, ()> {
+        match line.as_slice() {
+            &[Atom::Word("NAME"), Atom::Word(name)] => Ok(Section::Name(name)),
+            &[Atom::Word(name)] => match name {
+                "ROWS"     => Ok(Section::Rows),
+                "COLUMNS"  => Ok(Section::Columns(VariableType::Continuous)),
+                "RHS"      => Ok(Section::Rhs),
+                "BOUNDS"   => Ok(Section::Bounds),
+                "RANGES"   => Ok(Section::Ranges),
+                "ENDATA"   => Ok(Section::Endata),
+                _  => Err(()),
+            },
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'a> TryFrom<Vec<((u64, &'a str), Vec<Atom<'a>>)>> for UnstructuredMPS<'a> {
+    type Error = ParseError;
+
+    /// Try to read an `UnstructuredMPS` struct from lines of `Atom`s.
+    ///
+    /// This method attempts to determine the section that is currently being parsed, and remembers
+    /// that section. Subsequent lines are then parsed and collected in the `mps_*` variables.
+    ///
+    /// # Arguments
+    ///
+    /// * `program` - The input program parsed as lines of `Atom`s.
+    ///
+    /// # Return value
+    ///
+    /// An `UnstructuredMPS` instance, if no errors were encountered.
+    ///
+    /// # Errors
+    ///
+    /// A `ParseError` at failure.
+    fn try_from(program: Vec<((u64, &'a str), Vec<Atom<'a>>)>) -> Result<UnstructuredMPS<'a>, ParseError> {
+        let mut current_section: Option<Section> = None;
+
+        let mut mps_name = None;
+        let mut mps_cost_row_name = None;
+        let mut mps_rows = Vec::new();
+        let mut mps_columns = Vec::new();
+        let mut mps_rhss = Vec::new();
+        let mut mps_bounds = Vec::new();
+
+        for (error_info, line) in program.into_iter() {
+            if let Ok(new_section) = Section::try_from(&line) {
+                if let Section::Name(name) = new_section {
+                    mps_name = Some(name);
+                }
+                current_section = Some(new_section);
                 continue;
-            },
-            Some(MPSSection::RHS) => break,
-            Some(section) => return Err(format!("Section \"{:?}\" not expected", section)),
-            None => (),
+            }
+
+            match current_section {
+                Some(Section::Endata) => break,
+                Some(section) => match (section, line.as_slice()) {
+                    (Section::Rows, &[Atom::Word(ty), Atom::Word(row)]) => match RowType::try_from(ty) {
+                        Ok(RowType::Cost) => mps_cost_row_name = Some(row),
+                        Ok(RowType::Constraint(ty)) => mps_rows.push((error_info, (row, ty))),
+                        _ => panic!(),
+                    },
+                    (Section::Columns(marker), &[Atom::Word(column), Atom::Word(row), Atom::Number(value)]) =>
+                        mps_columns.push((error_info, (column, marker, row, value))),
+                    (Section::Columns(marker), &[Atom::Word(column), Atom::Word(row1), Atom::Number(value1), Atom::Word(row2), Atom::Number(value2)]) => {
+                        mps_columns.push((error_info, (column, marker, row1, value1)));
+                        mps_columns.push((error_info, (column, marker, row2, value2)));
+                    },
+                    (Section::Columns(current_marker), &[Atom::Word(_name), Atom::Word("'MARKER'"), Atom::Word(marker)]) =>
+                        current_section = Some(Section::Columns(match (current_marker, marker) {
+                            (VariableType::Continuous, "'INTORG'")   => VariableType::Integer,
+                            (VariableType::Integer, "'INTEND'") => VariableType::Continuous,
+                            _ => return Err(ParseError::new(format!("Didn't expect marker \
+                            \"{}\": currently parsing variables which are {:?}", marker, current_marker), Some(error_info))),
+                        })),
+                    (Section::Rhs, &[Atom::Word(name), Atom::Word(row), Atom::Number(value)]) =>
+                        mps_rhss.push((error_info, (name, row, value))),
+                    (Section::Rhs, &[Atom::Word(name), Atom::Word(row1), Atom::Number(value1), Atom::Word(row2), Atom::Number(value2)]) => {
+                        mps_rhss.push((error_info, (name, row1, value1)));
+                        mps_rhss.push((error_info, (name, row2, value2)));
+                    },
+                    (Section::Bounds, &[Atom::Word(ty), Atom::Word(name), Atom::Word(column), Atom::Number(value)]) => match BoundType::try_from(ty) {
+                        Ok(bound_type) => mps_bounds.push((error_info, (name, bound_type, column, value))),
+                        _ => panic!(),
+                    },
+                    _ => unimplemented!(),
+                },
+                None => panic!(),
+            };
         }
 
-        let mut parts = line.split_whitespace();
-        match parts.next() {
-            Some("RHS") => {
-                break;
-            },
-            None => return Err(format!("Empty line")),
-            variable_name => {
-                if variable_name != previous_variable_name {
-                    if previous_variable_name != None {
-                        columns.push(Variable {
-                            variable_name: String::from(previous_variable_name.unwrap()),
-                            variable_type,
-                            coefficients,
-                        });
-                        coefficients = Vec::new();
-                    }
-                    previous_variable_name = variable_name;
-                }
-
-                for _ in 0..2 {
-                    let row_name = match parts.next() {
-                        Some(name) => String::from(name),
-                        None => continue,
-                    };
-                    let value = match parts.next() {
-                        Some(number) => match number.parse::<f64>() {
-                            Ok(f) => f,
-                            Err(message) => return Err(format!("Column value \"{}\" could not be \
-                        parsed from line \"{}\" : {}", number, line, message)),
-                        },
-                        None => return Err(format!("Column value not found: {}", line)),
-                    };
-                    coefficients.push((row_name, value));
-                }
-            },
+        if mps_rows.len() == 0 {
+            return Err(ParseError::new("No row names read.".to_string(), None));
+        }
+        if mps_columns.len() == 0 {
+            return Err(ParseError::new("No variables read.".to_string(), None));
+        }
+        if mps_rhss.len() == 0 {
+            return Err(ParseError::new("No RHSs read.".to_string(), None));
+        }
+        if let Some(name) = mps_name {
+            if let Some(cost_row_name) = mps_cost_row_name {
+                Ok(UnstructuredMPS {
+                    name,
+                    cost_row_name,
+                    rows: mps_rows,
+                    columns: mps_columns,
+                    rhss: mps_rhss,
+                    bounds: mps_bounds,
+                })
+            } else {
+                Err(ParseError::new("No cost row name read.".to_string(), None))
+            }
+        } else {
+            Err(ParseError::new("No MPS name read.".to_string(), None))
         }
     }
-
-    if coefficients.len() > 0 {
-        columns.push(Variable {
-            variable_name: match previous_variable_name {
-                Some(name) => String::from(name),
-                None => return Err(format!("No column values read")),
-            },
-            variable_type,
-            coefficients,
-        });
-    }
-
-    Ok(columns)
 }
 
-/// Read a `RHS` or right-hand side
-fn parse_rhs(lines: &mut Lines) -> Result<Vec<Rhs>, String> {
-    let mut rhss = Vec::new();
-
-    let mut previous_rhs_name = None;
-    let mut values = Vec::new();
-    for line in lines {
-        match parse_section(line) {
-            // The next section is starting
-            Some(MPSSection::Bounds) | Some(MPSSection::ENDATA) => {
-                match previous_rhs_name {
-                    Some(name) => rhss.push(Rhs {
-                        name: String::from(name),
-                        values: values.clone(),
-                    }),
-                    None => return Err(format!("Reached RHS section, no RHS found")),
-                };
-                break;
-            },
-            // An unexpected section
-            Some(other_section) => {
-                return Err(format!("Didn't expect section {:?}", other_section));
-            },
-            // No new section, we expect one or two RHS values
-            None => {
-                let mut parts = line.split_whitespace();
-                match parts.next() {
-                    None => return Err(format!("No RHS name on line \"{}\"", line)),
-                    rhs_name => {
-                        if rhs_name != previous_rhs_name {
-                            if previous_rhs_name != None {
-                                rhss.push(Rhs {
-                                    name: String::from(rhs_name.unwrap()),
-                                    values: values.clone(),
-                                });
-                                values = Vec::new();
-                            }
-                            previous_rhs_name = rhs_name;
-                        }
-
-                        for _ in 0..2 {
-                            let row_name = match parts.next() {
-                                Some(name) => String::from(name),
-                                None => continue,
-                            };
-                            let value = match parts.next() {
-                                Some(number) => match number.parse::<f64>() {
-                                    Ok(f) => f,
-                                    Err(message) => return Err(format!("Column value \"{}\" could not be \
-                        parsed from line \"{}\" : {}", number, line, message)),
-                                },
-                                None => return Err(format!("Column value not found: {}", line)),
-                            };
-                            values.push((row_name, value));
-                        }
-                    },
-                }
-            },
-        }
-    }
-
-    Ok(rhss)
+/// An `UnstructedMPS` instance is used to gather all data of the `MPS`.
+///
+/// The struct holds all `MPS` data in an intermediate parse phase.
+struct UnstructuredMPS<'a> {
+    name: &'a str,
+    cost_row_name: &'a str,
+    rows: Vec<((u64, &'a str), (&'a str, ConstraintType))>,
+    columns: Vec<((u64, &'a str), (&'a str, VariableType, &'a str, f64))>,
+    rhss: Vec<((u64, &'a str), (&'a str, &'a str, f64))>,
+    bounds: Vec<((u64, &'a str), (&'a str, BoundType, &'a str, f64))>,
 }
 
-/// Read a `Bound` from a string
-fn parse_bounds(lines: &mut Lines) -> Result<Vec<Bound>, String> {
-    let mut bounds = Vec::new();
+impl<'a> TryInto<MPS> for UnstructuredMPS<'a> {
+    type Error = ParseError;
 
-    for line in lines {
-        match parse_section(&line) {
-            Some(MPSSection::ENDATA) => break,
-            Some(section) => return Err(format!("Did not expect section \"{:?}\"", section)),
-            None => {
-                let mut parts = line.split_whitespace();
+    /// Try to convert this `UnstructedMPS` into an `MPS` instance.
+    ///
+    /// This method organizes and structures the unstructured information containted in the
+    /// `UnstructuredMPS` instance.
+    fn try_into(mut self) -> Result<MPS, ParseError> {
+        let row_names = self.rows.iter().map(|&(_, (name, _))| name).collect::<Vec<_>>();
+        let row_index = row_names.iter()
+            .enumerate()
+            .map(|(index, &name)| (name, index))
+            .collect::<HashMap<&str, usize>>();
 
-                let direction = match parts.next() {
-                    Some("UP") => BoundDirection::Upper,
-                    Some("LO") => BoundDirection::Lower,
-                    Some("FX") => BoundDirection::Fixed,
-                    Some(word) => return Err(format!("Bound type \"{}\" not recognised: {}", word, line)),
-                    None => return Err(format!("Bound direction and type not found: {}", line)),
+        let mut rows = Vec::new();
+        for &(error_info, (name, constraint_type)) in self.rows.iter() {
+            rows.push(Constraint {
+                name: match row_index.get(name) {
+                    Some(&index) => index,
+                    None => return Err(ParseError::new(format!("Unknown row: {}", name),
+                    Some(error_info))),
+                },
+                constraint_type,
+            });
+        }
+
+        self.columns.sort_by_key(|&(_, (name, _, _, _))| name);
+        let mut cost_values = Vec::new();
+        let mut columns = Vec::new();
+        let mut column_names = Vec::new();
+        let (_, (mut current_name, mut current_type, _, _)) = self.columns[0];
+        let mut values = Vec::new();
+        for &(error_info, (name, variable_type, row_name, value)) in self.columns.iter() {
+            if name != current_name {
+                columns.push(Variable {
+                    name: column_names.len(),
+                    variable_type: current_type,
+                    values,
+                });
+                column_names.push(current_name.to_string());
+
+                values = Vec::new();
+                current_name = name;
+                current_type = variable_type;
+            }
+
+            if row_name == self.cost_row_name {
+                cost_values.push((column_names.len(), value));
+            } else {
+                let index = match row_index.get(row_name) {
+                    Some(&index) => index,
+                    None => return Err(ParseError::new(format!("Row name \"{}\" not known.", row_name),
+                        Some(error_info))),
                 };
-
-                let name = match parts.next() {
-                    Some(name) => String::from(name),
-                    None => return Err(format!("Bound name not found: {}", line)),
-                };
-
-                let variable_name = match parts.next() {
-                    Some(name) => String::from(name),
-                    None => return Err(format!("Column name not found: {}", line)),
-                };
-
-                let value = match parts.next() {
-                    Some(number) => match number.parse::<f64>() {
-                        Ok(f) => f,
-                        Err(message) => return Err(format!("Bound value \"{}\" could not be parsed \
-                from line \"{}\": {}", number, line, message)),
-                    },
-                    None => return Err(format!("Bound value not found: {}", line)),
-                };
-                bounds.push(Bound { name, direction, variable_name, value, });
+                values.push((index, value));
             }
         }
-    }
+        columns.push(Variable { name: column_names.len(), variable_type: current_type, values, });
+        column_names.push(current_name.to_string());
+        let column_index = column_names.iter()
+            .enumerate()
+            .map(|(index, name)| (name.clone(), index))
+            .collect::<HashMap<String, usize>>();
 
-    Ok(bounds)
-}
+            self.rhss.sort_by_key(|&(_, (name, _, _))| name);
+        let mut rhss = Vec::new();
+        let (_, (mut current_name, _, _))= self.rhss[0];
+        let mut values = Vec::new();
+        for &(error_info, (name, row_name, value)) in self.rhss.iter() {
+            if name != current_name {
+                rhss.push(Rhs { name: current_name.to_string(), values, });
 
-
-/// Determines, it possible, which section of the MPS file the line announces.
-///
-/// If no new section is found, `None` is returned.
-fn parse_section(line: &str) -> Option<MPSSection> {
-    if line.starts_with(" ") {
-        // Check for a nested section
-        let mut parts = line.split_whitespace();
-        parts.next();
-        if let Some("'MARKER'") = parts.next() {
-            match parts.next() {
-                Some("'INTORG'") => Some(MPSSection::Columns(VariableType::Integer)),
-                Some("'INTEND'") => Some(MPSSection::Columns(VariableType::Continuous)),
-                _ => panic!("Marker not recognized on line {}", line),
+                current_name = name;
+                values = Vec::new()
             }
-        } else { None }
+            values.push((match row_index.get(row_name) {
+                Some(&index) => index,
+                None => return Err(ParseError::new(format!("Row name \"{}\" not known.", row_name),
+                                                   Some(error_info))),
+            }, value));
+        }
+        rhss.push(Rhs { name: current_name.to_string(), values, });
+
+        self.bounds.sort_by_key(|&(_, (name, _, _, _))| name);
+        let mut bounds = Vec::new();
+        let (_, (mut bound_name , _, _, _))= self.bounds[0];
+        let mut values = Vec::new();
+        for &(error_info, (name, bound_type, column_name, value)) in self.bounds.iter() {
+            if name != bound_name {
+                bounds.push(Bound { name: bound_name.to_string(), values, });
+
+                bound_name = name;
+                values = Vec::new();
+            }
+            values.push((bound_type, match column_index.get(column_name) {
+                Some(&index) => index,
+                None => return Err(ParseError::new(format!("Variable \"{}\" not known",
+                                                           column_name), Some(error_info))),
+            }, value));
+        }
+        bounds.push(Bound { name: bound_name.to_string(), values, });
+
+        let name = self.name.to_string();
+        let cost_row_name = self.cost_row_name.to_string();
+        let row_names = row_names.into_iter()
+            .map(|name| name.to_string())
+            .collect();
+
+        Ok(MPS { name, cost_row_name, cost_values, row_names, rows, column_names, columns, rhss, bounds, })
     }
-    else if line.starts_with("NAME") { Some(MPSSection::Name) }
-    else if line.starts_with("ROWS") { Some(MPSSection::Rows) }
-    else if line.starts_with("COLUMNS") { Some(MPSSection::Columns(VariableType::Continuous)) }
-    else if line.starts_with("RHS") { Some(MPSSection::RHS) }
-    else if line.starts_with("BOUNDS") { Some(MPSSection::Bounds) }
-    else if line.starts_with("ENDATA") { Some(MPSSection::ENDATA) }
-    else { None }
 }
 
-/// Represents the contents of an MPS file.
+/// Represents the contents of an MPS file in a structured manner.
 ///
-/// Information on variables is spread throughout the `rows`, `real_columns`, `integer_columns`,
-/// `rhs` and `bounds` fields.
-#[derive(Debug)]
-struct MPS {
-    // Name of the linear program
+/// `usize` variables in contained structs refer to the index of the cost and row names.
+#[derive(Debug, PartialEq)]
+pub struct MPS {
+    /// Name of the linear program
     name: String,
-    // Name of the cost row
+    /// Name of the cost row
     cost_row_name: String,
-    // All named constraints
+    /// Variable index and value tuples
+    cost_values: Vec<(usize, f64)>,
+    /// Name of every constraint row
+    row_names: Vec<String>,
+    /// All named constraints
     rows: Vec<Constraint>,
-    // Constraint name and Variable name combinations
+    /// Name of every variable
+    column_names: Vec<String>,
+    /// Constraint name and Variable name combinations
     columns: Vec<Variable>,
-    // Right-hand side constraint values
+    /// Right-hand side constraint values
     rhss: Vec<Rhs>,
-    // Extra bounds on variables
+    /// Extra bounds on variables
     bounds: Vec<Bound>,
 }
 
-impl MPS {
-    fn get_rows_map(&self) -> (HashMap<String, usize>, usize) {
-        let rows_map = self.rows
-            .iter()
-            .map(|row| row.name.clone())
-            .enumerate()
-            .map(|(index, name)| (name, index))
-            .collect::<HashMap<String, usize>>();
-        let nr_rows = rows_map.len();
-        (rows_map, nr_rows)
-    }
-    fn get_columns_map(&self) -> (HashMap<String, usize>, usize) {
-        let columns_map = self.columns
-            .iter()
-            .map(|variable| variable.variable_name.clone())
-            .enumerate()
-            .map(|(index, name)| (name, index))
-            .collect::<HashMap<String, usize>>();
-        let nr_columns = columns_map.len();
-        (columns_map, nr_columns)
-    }
-    fn get_data_and_cost(&self,
-                         rows_map: &HashMap<String, usize>,
-                         columns_map: &HashMap<String, usize>) -> (SparseMatrix, SparseVector) {
-        let (nr_rows, nr_columns) = (rows_map.len(), columns_map.len());
-        let mut data = SparseMatrix::zeros(nr_rows + self.bounds.len(), nr_columns);
-        let mut cost = SparseVector::zeros(nr_columns);
+impl Into<GeneralForm> for MPS {
+    /// Convert an `MPS` into a `GeneralForm` linear program.
+    fn into(self) -> GeneralForm {
+        let (m, n) = (self.rows.len() + self.bounds[0].values.len(), self.columns.len());
 
-        for column in &self.columns {
-            let column_index = *columns_map.get(&column.variable_name).unwrap();
-            for coefficient in &column.coefficients {
-                let value = coefficient.1;
-
-                if coefficient.0 == self.cost_row_name {
-                    cost.set_value(column_index, value);
-                } else {
-                    let row_index = *rows_map.get(&coefficient.0).unwrap();
-                    data.set_value(row_index, column_index, value);
-                }
+        let mut data = SparseMatrix::zeros(m, n);
+        for (column_index, column) in self.columns.iter().enumerate() {
+            for &(row_index, value) in &column.values {
+                data.set_value(row_index, column_index, value);
             }
         }
 
-        (data, cost)
-    }
-    fn get_b(&self, rows_map: &HashMap<String, usize>) -> DenseVector {
-        // TODO: Don't just get the first RHS
-        let rhs = &self.rhss[0];
-        let nr_rows = rows_map.len();
-        let b_tuples: Vec<(usize, f64)> = rhs.values.iter()
-            .map(|&(ref row_name, value)| {
-                let row_nr = *rows_map.get(row_name).unwrap();
-                (row_nr, value)
-            }).collect();
+        let cost = SparseVector::from_tuples(self.cost_values.clone(), n);
 
-        let mut b = DenseVector::zeros(nr_rows + self.bounds.len());
-        for (index, value) in b_tuples {
+        let mut row_info: Vec<ConstraintType> = self.rows.iter()
+            .map(|ref row| row.constraint_type).collect();
+
+        let mut b = DenseVector::zeros(m);
+        // TODO: Use all RHSs
+        for &(index, value) in self.rhss[0].values.iter() {
             b.set_value(index, value);
         }
-        b
-    }
-    fn get_row_info(&self, rows_map: &HashMap<String, usize>) -> Vec<ConstraintType> {
-        let mut row_info = self.rows.clone();
-        row_info.sort_by_key(|row| *rows_map.get(&row.name).unwrap());
-        let row_info = row_info.into_iter()
-            .map(|row| row.constraint_type)
-            .collect::<Vec<ConstraintType>>();
-        row_info
-    }
-    fn get_column_info(&self, columns_map: &HashMap<String, usize>) -> Vec<ShiftedVariable> {
-        let mut column_info = self.columns.iter()
-            .map(|column| (column.variable_name.clone(), column.variable_type))
-            .collect::<Vec<(String, VariableType)>>();
-        column_info.sort_by_key(|(name, _)| *columns_map.get(&name.to_owned()).unwrap());
-        column_info.into_iter()
-            .map(|(name, variable_type)| ShiftedVariable::new(name, variable_type, 0f64))
-            .collect()
-    }
-}
-
-/// Describes how to convert an `MPS` to a `GeneralForm`, or linear program in general form.
-impl GeneralFormConvertable for MPS {
-    fn to_general_lp(&self) -> GeneralForm {
-        let (rows_map, nr_rows) = self.get_rows_map();
-        let (columns_map, _) = self.get_columns_map();
-        let (mut data, cost) = self.get_data_and_cost(&rows_map, &columns_map);
-        let mut b = self.get_b(&rows_map);
-        let mut row_info = self.get_row_info(&rows_map);
-        let column_info = self.get_column_info(&columns_map);
-
-        let nr_ordinary_constraints = nr_rows;
-        for (bound_number, bound) in self.bounds.iter().enumerate() {
-            let row_index = nr_ordinary_constraints + bound_number;
-            b.set_value(row_index, bound.value);
-            row_info.push(match bound.direction {
-                BoundDirection::Lower => ConstraintType::Greater,
-                BoundDirection::Upper => ConstraintType::Less,
-                BoundDirection::Fixed => ConstraintType::Equal,
-            });
-            let column_index = *columns_map.get(&bound.variable_name).unwrap();
-            data.set_value(row_index, column_index, 1f64);
+        let mut nr_bounds_added = 0;
+        for ref bound in self.bounds.iter() {
+            for &(bound_type, variable_index, value) in bound.values.iter() {
+                let row_index = self.rows.len() + nr_bounds_added;
+                b.set_value(row_index, value);
+                data.set_value(row_index, variable_index, 1f64);
+                row_info.push(match bound_type {
+                    BoundType::LowerContinuous      => ConstraintType::Greater,
+                    BoundType::UpperContinuous      => ConstraintType::Less,
+                    BoundType::Fixed                => ConstraintType::Equal,
+                    BoundType::Free                 => unimplemented!(),
+                    BoundType::LowerMinusInfinity   => ConstraintType::Greater,
+                    BoundType::UpperInfinity        => ConstraintType::Less,
+                    BoundType::Binary               => unimplemented!(),
+                    BoundType::LowerInteger         => ConstraintType::Greater,
+                    BoundType::UpperInteger         => ConstraintType::Less,
+                    BoundType::SemiContinuous       => unimplemented!(),
+                });
+                nr_bounds_added += 1;
+            }
         }
+
+        let column_info = self.columns.iter()
+            .map(|ref variable| ShiftedVariable {
+                name: self.column_names[variable.name].clone(),
+                variable_type: variable.variable_type,
+                offset: 0f64,
+            }).collect();
 
         GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info)
     }
 }
 
-/// All sections in a MPS file.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum MPSSection {
-    Name,
-    Rows,
-    Columns(VariableType),
-    RHS,
-    Bounds,
-    ENDATA,
-}
-
 /// Every `Row` has a name and a `RowType`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 struct Constraint {
-    name: String,
+    name: usize,
     constraint_type: ConstraintType,
-}
-
-impl Constraint {
-    /// Create a new `Constraint`.
-    pub fn new(name: String, constraint_type: ConstraintType) -> Constraint {
-        Constraint { name, constraint_type, }
-    }
 }
 
 /// A `Variable` is either continuous or integer, and has for some rows a coefficient.
 #[derive(Debug, PartialEq)]
 struct Variable {
-    variable_name: String,
+    name: usize,
     variable_type: VariableType,
-    coefficients: Vec<(String, f64)>,
-}
-
-impl Variable {
-    /// Create a new `Column`
-    pub fn new(variable_name: String, variable_type: VariableType, coefficients: Vec<(String, f64)>) -> Variable {
-        Variable { variable_name, variable_type, coefficients, }
-    }
+    values: Vec<(usize, f64)>,
 }
 
 /// A `RHS` is a constraint. A single linear program defined in MPS can have multiple right-hand
@@ -460,7 +557,7 @@ impl Variable {
 #[derive(Debug, PartialEq)]
 struct Rhs {
     name: String,
-    values: Vec<(String, f64)>,
+    values: Vec<(usize, f64)>,
 }
 
 /// A `Bound` gives a bound on a variable. The variable can either be continuous or integer, while
@@ -468,24 +565,7 @@ struct Rhs {
 #[derive(Debug, PartialEq)]
 struct Bound {
     name: String,
-    direction: BoundDirection,
-    variable_name: String,
-    value: f64,
-}
-
-impl Bound {
-    pub fn new(name: String, direction: BoundDirection, variable_name: String, value: f64) -> Bound {
-        Bound { name, direction, variable_name, value, }
-    }
-}
-
-/// A `BoundDirection` denotes the type of a bound on a variable. This can either be an upper bound,
-/// a lower bound or describe that the variable is a fixed number.
-#[derive(Debug, PartialEq)]
-enum BoundDirection {
-    Upper,
-    Lower,
-    Fixed,
+    values: Vec<(BoundType, usize, f64)>,
 }
 
 #[cfg(test)]
@@ -494,203 +574,104 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_parse_section() {
-        let line = "NAME          TESTPROB";
-        let result = parse_section(line);
-        assert_eq!(result, Some(MPSSection::Name));
+    fn test_into_atoms() {
+        use super::Atom::*;
 
-        let line = "ROWS";
-        let result = parse_section(line);
-        assert_eq!(result, Some(MPSSection::Rows));
+        macro_rules! test {
+            ($line:expr, [$($words:expr), *]) => {
+                let result = into_atoms($line);
+                let expected = vec![$($words), *];
+                assert_eq!(result, expected);
+            }
+        }
 
-        let line = "COLUMNS";
-        let result = parse_section(line);
-        assert_eq!(result, Some(MPSSection::Columns(VariableType::Continuous)));
-
-        let line = "RHS     ";
-        let result = parse_section(line);
-        assert_eq!(result, Some(MPSSection::RHS));
-
-        let line = "BOUNDS";
-        let result = parse_section(line);
-        assert_eq!(result, Some(MPSSection::Bounds));
-
-        let line = "ENDATA";
-        let result = parse_section(line);
-        assert_eq!(result, Some(MPSSection::ENDATA));
-
-        let line = "    MARK0000  'MARKER'                 'INTORG'";
-        let result = parse_section(line);
-        assert_eq!(result, Some(MPSSection::Columns(VariableType::Integer)));
-
-        let line = "DIFFERENT";
-        let result = parse_section(line);
-        assert_eq!(result, None);
+        test!("NAME TESTPROB", [Word("NAME"), Word("TESTPROB")]);
+        test!("ROWS", [Word("ROWS")]);
+        test!("RHS     ", [Word("RHS")]);
+        test!("NUMBER 134", [Word("NUMBER"), Number(134f64)]);
+        test!("NUMBER 1.6734", [Word("NUMBER"), Number(1.6734f64)]);
+        test!("    MARK0000  'MARKER'                 'INTORG'",
+              [Word("MARK0000"), Word("'MARKER'"), Word("'INTORG'")]);
     }
 
     #[test]
-    fn test_read_name() {
-        // Correct line
-        let name = Some("NAME          TESTPROB");
-        let result = read_name(name);
-        assert_eq!(result, Ok(String::from("TESTPROB")));
+    fn test_into_atom_lines() {
+        use io::mps::Atom::*;
 
-        // Incorrect indicator
-        let name = Some("X TESTPROB");
-        let result = read_name(name);
-        assert!(result.is_err());
-
-        // Missing name
-        let name = Some("NAME          ");
-        let result = read_name(name);
-        assert!(result.is_err());
-
-        // Empty line
-        let name = Some("");
-        let result = read_name(name);
-        assert!(result.is_err());
+        let program = "SOMETEXT 1.2\n*comment\n\n   \t line before is empty".to_string();
+        let result = into_atom_lines(&program);
+        let expected = vec![((1, "SOMETEXT 1.2"), vec![Word("SOMETEXT"), Number(1.2f64)]),
+                            ((4, "   \t line before is empty"),
+                                vec![Word("line"), Word("before"), Word("is"), Word("empty")])];
+        assert_eq!(result, expected);
     }
 
     #[test]
-    fn test_parse_rows() {
-        // Cost row
-        let rows = " N  COST\n L  LIM1\n E  MYEQN\n G  LIM2";
-        let result = parse_rows(&mut rows.lines());
-        let expected = Ok((String::from("COST"),
-                           vec![Constraint::new(String::from("LIM1"), ConstraintType::Less),
-                                Constraint::new(String::from("MYEQN"), ConstraintType::Equal),
-                                Constraint::new(String::from("LIM2"), ConstraintType::Greater)]));
-        assert_eq!(result, expected);
+    fn test_try_from_row_type() {
+        macro_rules! test {
+            ($word:expr, $expected:expr) => {
+                let result = RowType::try_from($word);
+                assert_eq!(result, $expected);
+            }
+        }
 
-        // Missing row name
-        let rows = " E ";
-        let result = parse_rows(&mut rows.lines());
-        assert!(result.is_err());
-
-        // Unknown row type
-        let rows = " X  ROWNAME";
-        let result = parse_rows(&mut rows.lines());
-        assert!(result.is_err());
-
-        // Empty line
-        let rows = "";
-        let result = parse_rows(&mut rows.lines());
-        assert!(result.is_err());
+        test!("N", Ok(RowType::Cost));
+        test!("L", Ok(RowType::Constraint(ConstraintType::Less)));
+        test!("E", Ok(RowType::Constraint(ConstraintType::Equal)));
+        test!("G", Ok(RowType::Constraint(ConstraintType::Greater)));
+        test!("X", Err(()));
+        test!("", Err(()));
+        test!("\t", Err(()));
     }
 
     #[test]
-    fn test_read_columns() {
-        // Correct line, two coefficients
-        let columns = "    XONE      COST                 1   LIM1                 1";
-        let result = parse_columns(&mut columns.lines());
-        let expected = Ok(vec![Variable::new(String::from("XONE"),
-                               VariableType::Continuous,
-                               vec![(String::from("COST"), 1f64),
-                                    (String::from("LIM1"), 1f64)])]);
-        assert_eq!(result, expected);
+    fn test_try_from_bound_type() {
+        macro_rules! test {
+            ($word:expr, $expected:expr) => {
+                let result = BoundType::try_from($word);
+                assert_eq!(result, $expected);
+            }
+        }
 
-        // Correct line, one coefficient
-        let columns = "    ZTHREE    MYEQN                1";
-        let result = parse_columns(&mut columns.lines());
-        let expected = Ok(vec![Variable::new(String::from("ZTHREE"),
-                               VariableType::Continuous,
-                               vec![(String::from("MYEQN"), 1f64)])]);
-        assert_eq!(result, expected);
-
-        // Missing coefficient
-        let columns = "    XONE      COST                 1   LIM1                 ";
-        let result = parse_columns(&mut columns.lines());
-        assert!(result.is_err());
-
-        // Missing row name
-        let columns = "    XONE      COST                 1           1";
-        let result = parse_columns(&mut columns.lines());
-
-        assert!(result.is_err());
-
-        // Missing variable name
-        let columns = "      COST                 1   LIM1                 1";
-        let result = parse_columns(&mut columns.lines());
-        assert!(result.is_err());
+        test!("LO", Ok(BoundType::LowerContinuous));
+        test!("UP", Ok(BoundType::UpperContinuous));
+        test!("FX", Ok(BoundType::Fixed));
+        test!("FR", Ok(BoundType::Free));
+        test!("MI", Ok(BoundType::LowerMinusInfinity));
+        test!("PL", Ok(BoundType::UpperInfinity));
+        test!("BV", Ok(BoundType::Binary));
+        test!("LI", Ok(BoundType::LowerInteger));
+        test!("UI", Ok(BoundType::UpperInteger));
+        test!("SC", Ok(BoundType::SemiContinuous));
+        test!("X", Err(()));
+        test!("", Err(()));
+        test!("\t", Err(()));
     }
 
     #[test]
-    fn test_parse_rhs() {
-        // Correct line, two coefficients
-        let rhs = "    RHS1      LIM1                 5   LIM2                10\nBOUNDS";
-        let result = parse_rhs(&mut rhs.lines());
-        let expected = Ok(vec![Rhs {
-            name: String::from("RHS1"),
-            values: vec![(String::from("LIM1"), 5f64),
-                         (String::from("LIM2"), 10f64)],
-        }]);
-        assert_eq!(result, expected);
+    fn test_try_from_section() {
+        use super::Atom::*;
 
-        // Correct line, one coefficient
-        let rhs = "    RHS1      MYEQN                7\nBOUNDS";
-        let result = parse_rhs(&mut rhs.lines());
-        let expected = Ok(vec![Rhs {
-            name: String::from("RHS1"),
-            values: vec![(String::from("MYEQN"), 7f64)],
-        }]);
-        assert_eq!(result, expected);
+        macro_rules! test {
+            ([$($words:expr), *], $expected:expr) => {
+                let result = Section::try_from(&vec![$($words), *]);
+                assert_eq!(result, $expected);
+            }
+        }
 
-        // Missing coefficient
-        let rhs = "    RHS1      LIM1                 5   LIM2           ";
-        let result = parse_rhs(&mut rhs.lines());
-        assert!(result.is_err());
-
-        // Missing row name
-        let rhs = "    RHS1      LIM1                 5                  10";
-        let result = parse_rhs(&mut rhs.lines());
-        assert!(result.is_err());
-
-        // Missing rhs name
-        let rhs = "         LIM1                 5   LIM2                10";
-        let result = parse_rhs(&mut rhs.lines());
-        assert!(result.is_err());
-
-        // Missing coefficient
-        let rhs = "    RHS1      LIM1   ";
-        let result = parse_rhs(&mut rhs.lines());
-        assert!(result.is_err());
+        test!([Word("NAME"), Word("THENAME")], Ok(Section::Name("THENAME")));
+        test!([Word("ROWS")], Ok(Section::Rows));
+        test!([Word("COLUMNS")], Ok(Section::Columns(VariableType::Continuous)));
+        test!([Word("RHS")], Ok(Section::Rhs));
+        test!([Word("BOUNDS")], Ok(Section::Bounds));
+        test!([Word("RANGES")], Ok(Section::Ranges));
+        test!([Word("ENDATA")], Ok(Section::Endata));
+        test!([Word("X")], Err(()));
+        test!([Number(1.556f64)], Err(()));
+        test!([], Err(()));
     }
 
-    #[test]
-    fn test_parse_bounds() {
-        // Correct bound
-        let bound = " UP BND1      XONE                 4\nENDATA";
-        let result = parse_bounds(&mut bound.lines());
-        assert_eq!(result, Ok(vec![Bound {
-            name: String::from("BND1"),
-            direction: BoundDirection::Upper,
-            variable_name: String::from("XONE"),
-            value: 4f64,
-        }]));
-
-        // Missing coefficient
-        let bound = " UP BND1      XONE            ";
-        let result = parse_bounds(&mut bound.lines());
-        assert!(result.is_err());
-
-        // Missing variable name
-        let bound = " UP BND1                       4";
-        let result = parse_bounds(&mut bound.lines());
-        assert!(result.is_err());
-
-        // Missing bound name
-        let bound = " UP     XONE                 4";
-        let result = parse_bounds(&mut bound.lines());
-        assert!(result.is_err());
-
-        // Missing bound direction
-        let bound = "  BND1      XONE                 4";
-        let result = parse_bounds(&mut bound.lines());
-        assert!(result.is_err());
-    }
-
-    fn lp_string() -> String {
-        let mps = "NAME          TESTPROB
+    const MPS_STR: &str = "NAME          TESTPROB
 ROWS
  N  COST
  L  LIM1
@@ -711,56 +692,40 @@ BOUNDS
  LO BND1      YTWO                -1
  UP BND1      YTWO                 1
 ENDATA";
-        String::from(mps)
+
+    fn mps_string() -> String {
+        MPS_STR.to_string()
     }
 
-    #[allow(unused)]
     fn lp_mps() -> MPS {
-        let name = String::from("TESTPROB");
-        let cost_row_name = String::from("COST");
-        let rows = vec![Constraint::new(String::from("LIM1"), ConstraintType::Less),
-                        Constraint::new(String::from("LIM2"), ConstraintType::Greater),
-                        Constraint::new(String::from("MYEQN"), ConstraintType::Equal)];
+        let name = "TESTPROB".to_string();
+        let cost_row_name = "COST".to_string();
+        let cost_values = vec![(0, 1f64), (1, 4f64), (2, 9f64)];
+        let row_names = vec!["LIM1", "LIM2", "MYEQN"].into_iter().map(String::from).collect();
+        let rows = vec![Constraint { name: 0, constraint_type: ConstraintType::Less, },
+                        Constraint { name: 1, constraint_type: ConstraintType::Greater, },
+                        Constraint { name: 2, constraint_type: ConstraintType::Equal, }];
+        let column_names = vec!["XONE", "YTWO", "ZTHREE"].into_iter().map(String::from).collect();
+        let columns = vec![Variable { name: 0, variable_type: VariableType::Continuous, values: vec![(0, 1f64),
+                                                                                                     (1, 1f64)], },
+                           Variable { name: 1, variable_type: VariableType::Continuous, values: vec![(0, 1f64),
+                                                                                                     (2, -1f64)], },
+                           Variable { name: 2, variable_type: VariableType::Continuous, values: vec![(1, 1f64),
+                                                                                                     (2, 1f64)], }];
+        let rhss = vec![Rhs { name: "RHS1".to_string(), values: vec![(0, 5f64), (1, 10f64), (2, 7f64)], }];
+        let bounds = vec![Bound { name: "BND1".to_string(), values: vec![(BoundType::UpperContinuous, 0, 4f64),
+                                                                         (BoundType::LowerContinuous, 1, -1f64),
+                                                                         (BoundType::UpperContinuous, 1, 1f64)], }];
 
-        let columns = vec![Variable::new(String::from("XONE"),
-                                         VariableType::Continuous,
-                                         vec![(String::from("COST"), 1f64),
-                                              (String::from("LIM1"), 1f64),
-                                              (String::from("LIM2"), 1f64)]),
-                           Variable::new(String::from("YTWO"),
-                                         VariableType::Continuous,
-                                         vec![(String::from("COST"), 4f64),
-                                              (String::from("LIM1"), 1f64),
-                                              (String::from("MYEQN"), -1f64)]),
-                           Variable::new(String::from("ZTHREE"),
-                                         VariableType::Continuous,
-                                         vec![(String::from("COST"), 9f64),
-                                              (String::from("LIM2"), 1f64),
-                                              (String::from("MYEQN"), 1f64)])];
-
-
-        let rhss = vec![Rhs {
-            name: String::from("RHS1"),
-            values: vec![(String::from("LIM1"), 5f64),
-                         (String::from("LIM2"), 10f64),
-                         (String::from("MYEQN"), 7f64)],
-        }];
-
-
-        let bounds = vec![Bound::new(String::from("BND1"), BoundDirection::Upper, String::from("XONE"), 4f64),
-                          Bound::new(String::from("BND1"), BoundDirection::Lower, String::from("YTWO"), -1f64),
-                          Bound::new(String::from("BND1"), BoundDirection::Upper, String::from("YTWO"), 1f64)];
-
-        MPS { name, cost_row_name, rows, columns, rhss, bounds, }
+        MPS { name, cost_row_name, cost_values, row_names, rows, column_names, columns, rhss, bounds, }
     }
 
     #[test]
     fn read() {
-        let result = parse(lp_string().lines());
+        let result = parse(mps_string());
         let expected = lp_mps();
 
-        assert!(result.is_ok());
-        assert_eq!(format!("{:?}", result.ok().unwrap()), format!("{:?}", expected));
+        assert_eq!(result.unwrap(), expected);
     }
 
     fn lp_general() -> GeneralForm {
@@ -781,9 +746,9 @@ ENDATA";
 
         let cost = SparseVector::from_data(vec![1f64, 4f64, 9f64]);
 
-        let column_info = vec![ShiftedVariable::new(String::from("XONE"), VariableType::Continuous, 0f64),
-                               ShiftedVariable::new(String::from("YTWO"), VariableType::Continuous, 0f64),
-                               ShiftedVariable::new(String::from("ZTHREE"), VariableType::Continuous, 0f64)];
+        let column_info = vec![ShiftedVariable { name: "XONE".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               ShiftedVariable { name: "YTWO".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               ShiftedVariable { name: "ZTHREE".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
 
         let row_info = vec![ConstraintType::Less,
                             ConstraintType::Greater,
@@ -797,7 +762,7 @@ ENDATA";
 
     #[test]
     fn convert_to_general_lp() {
-        let result = lp_mps().to_general_lp();
+        let result: GeneralForm = lp_mps().into();
         let expected = lp_general();
 
         assert_eq!(format!("{:?}", result), format!("{:?}", expected));
@@ -805,7 +770,7 @@ ENDATA";
 
     #[test]
     fn parse_and_convert() {
-        let result = parse(lp_string().lines()).ok().unwrap().to_general_lp();
+        let result: GeneralForm = parse(mps_string()).unwrap().into();
         let expected = lp_general();
 
         assert_eq!(format!("{:?}", result), format!("{:?}", expected));

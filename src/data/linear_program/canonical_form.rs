@@ -1,4 +1,4 @@
-use data::linear_program::elements::{Variable, VariableType};
+use data::linear_program::elements::Variable;
 use data::linear_algebra::matrix::{Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 
@@ -16,8 +16,12 @@ pub struct CanonicalForm {
 
 impl CanonicalForm {
     /// Create a new linear program in canonical form.
-    pub fn new(data: SparseMatrix, b: DenseVector, cost: SparseVector, fixed_cost: f64,
-               variable_info: Vec<Variable>, solution_values: Vec<(String, f64)>) -> CanonicalForm {
+    pub fn new(data: SparseMatrix,
+               b: DenseVector,
+               cost: SparseVector,
+               fixed_cost: f64,
+               variable_info: Vec<Variable>,
+               solution_values: Vec<(String, f64)>) -> CanonicalForm {
         let m = b.len();
         debug_assert_eq!(b.len(), m);
         debug_assert_eq!(data.nr_rows(), m);

@@ -43,12 +43,3 @@ pub struct Variable {
     pub variable_type: VariableType,
     pub offset: f64,
 }
-
-impl Variable {
-    pub fn new(name: String, variable_type: VariableType, offset: f64) -> Variable {
-        Variable { name, variable_type, offset, }
-    }
-    pub fn set_shift(&mut self, value: f64) {
-        self.offset = value;
-    }
-}

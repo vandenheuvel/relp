@@ -159,11 +159,11 @@ mod test {
                                             3f64,
                                             4f64]);
         let cost = SparseVector::from_data(vec![1f64, 1f64, 1f64, 1f64, 1f64]);
-        let column_info = vec![Variable::new(String::from("X1"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("X2"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("X3"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("X4"), VariableType::Continuous, 0f64),
-                               Variable::new(String::from("X5"), VariableType::Continuous, 0f64)];
+        let column_info = vec![Variable { name: "X1".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "X2".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "X3".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "X4".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
+                               Variable { name: "X5".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
 
         CanonicalForm::new(data, b, cost, 0f64, column_info, Vec::new())
     }
