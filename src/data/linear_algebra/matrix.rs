@@ -7,8 +7,7 @@ use std::fmt::Debug;
 use std::iter::Iterator;
 use std::slice::Iter;
 use data::linear_algebra::EPSILON;
-
-const MAX_DELTA: f64 = 1e-6;
+use data::linear_algebra::MAX_DELTA;
 
 /// Defines basic ways to create or change a matrix, regardless of back-end.
 pub trait Matrix: Clone + Debug + Eq {
@@ -296,6 +295,14 @@ impl SparseMatrix {
     pub fn push_zero_column(&mut self) {
         self.columns.push(Vec::new());
         self.nr_columns += 1;
+    }
+    /// Return all values in a (row, column, value) tuple if value is nonzero.
+    pub fn values(&self) -> Vec<(usize, usize, f64)> {
+        self.rows.iter()
+            .enumerate()
+            .flat_map(|(row_index, row)| row.iter()
+                .map(move |&(column_index, value)| (row_index, column_index, value)))
+            .collect()
     }
 }
 

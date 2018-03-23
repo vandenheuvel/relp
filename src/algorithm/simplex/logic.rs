@@ -1,47 +1,38 @@
 use std::collections::{HashMap, HashSet};
 
-use algorithm::simplex::data::{CostRow, create_artificial_tableau, Tableau};
+use algorithm::simplex::data::{CostRow, Tableau};
 use algorithm::simplex::EPSILON;
 use algorithm::simplex::tableau_provider::TableauProvider;
-use algorithm::simplex::tableau_provider::matrix_data::MatrixData;
 use data::linear_algebra::matrix::{DenseMatrix, Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
-use data::linear_program::canonical_form::CanonicalForm;
 use data::linear_program::elements::{LinearProgramType, Variable, VariableType};
 
-/// Solves a linear program in `CanonicalForm` using the Simplex method.
-pub fn solve(canonical: &CanonicalForm) -> Result<(Vec<(String, f64)>, f64), String> {
-    let (carry, basis) = match phase_one(canonical) {
+/// Solves a linear program using the Simplex method.
+pub fn solve<T>(provider: &T) -> Result<(Vec<(String, f64)>, f64), String>
+    where T: TableauProvider {
+    let artificial_tableau = Tableau::new_artificial(provider);
+    let (carry, basis) = match phase_one(artificial_tableau) {
         PhaseOneResult::FoundBFS(carry, basis) => (carry, basis),
         PhaseOneResult::Infeasible => return Err(format!("LP not feasible")),
         PhaseOneResult::ArtificialRemain(tableau, artificial_basis_columns) => {
-            let mut tableau: Tableau<MatrixData> = tableau;
-            // TODO: MIPLIB problem 50v-10 doesn't work with this line.
-//            remove_artificial(&mut tableau, artificial_basis_columns)
+            // TODO: MIPLIB problem 50v-10 doesn't work with this line. Neither does the graph problem
+//            remove_artificial(tableau, artificial_basis_columns)
             (tableau.carry(), tableau.basis_columns())
         },
     };
 
-    match phase_two(&canonical, carry, basis) {
+    let tableau = Tableau::new(provider, carry, basis);
+    match phase_two(tableau) {
         LinearProgramType::FiniteOptimum(optimum, cost) =>
-            Ok((combine_column_names(optimum, canonical), cost)),
+            Ok((provider.human_readable_bfs(optimum), cost)),
         LinearProgramType::Infeasible => Err(format!("LP infeasible")),
         LinearProgramType::Unbounded => Err(format!("LP unbounded")),
     }
 }
 
-/// Combines the variable names to the values of a basic feasible solution.
-fn combine_column_names(bfs: SparseVector, canonical: &CanonicalForm) -> Vec<(String, f64)> {
-    debug_assert_eq!(bfs.len(), canonical.variable_info().len());
-
-    let column_info = canonical.variable_info();
-    (0..column_info.len()).map(|i| (column_info[i].clone(), bfs.get_value(i))).collect::<Vec<_>>()
-}
-
 /// Reduces the artificial cost of the basic feasible solution to zero, if possible. In doing so, a
 /// basic feasible solution to the `CanonicalForm` linear program is found.
-fn phase_one(canonical: &CanonicalForm) -> PhaseOneResult<MatrixData> {
-    let mut tableau = create_artificial_tableau(canonical);
+fn phase_one<T>(mut tableau: Tableau<T>) -> PhaseOneResult<T> where T: TableauProvider {
     let mut artificial_basis_columns = (0..tableau.nr_rows()).collect::<HashSet<_>>();
 
     loop {
@@ -69,7 +60,7 @@ fn phase_one(canonical: &CanonicalForm) -> PhaseOneResult<MatrixData> {
 
 /// Removes all artificial variables from the tableau by making a basis change "at zero level", or
 /// without change of cost of the current solution.
-fn remove_artificial<T>(tableau: &mut Tableau<T>, artificials: HashSet<usize>) -> (DenseMatrix, HashMap<usize, usize>)
+fn remove_artificial<T>(mut tableau: Tableau<T>, artificials: HashSet<usize>) -> (DenseMatrix, HashMap<usize, usize>)
     where T: TableauProvider {
     for artificial in artificials.into_iter() {
         debug_assert!(tableau.relative_cost(CostRow::Artificial, artificial).abs() < EPSILON);
@@ -96,9 +87,7 @@ fn remove_artificial<T>(tableau: &mut Tableau<T>, artificials: HashSet<usize>) -
 }
 
 /// Reduces the cost of the basic feasible solution to the minimum.
-fn phase_two(canonical: &CanonicalForm, carry: DenseMatrix, basis: HashMap<usize, usize>) -> LinearProgramType {
-    let mut tableau = Tableau::create_from(canonical, carry, basis);
-
+fn phase_two<T>(mut tableau: Tableau<T>) -> LinearProgramType where T: TableauProvider {
     loop {
         // TODO: when is an LP unbounded?
         match tableau.profitable_column(CostRow::Actual) {
@@ -116,23 +105,35 @@ fn phase_two(canonical: &CanonicalForm, carry: DenseMatrix, basis: HashMap<usize
 /// After the first phase, a basic feasible solution is found, the problem is found to be
 /// infeasible, or artificial variables remain in the basis.
 #[derive(Debug)]
-enum PhaseOneResult<T> where T: TableauProvider {
+enum PhaseOneResult<'a, T: 'a> where T: TableauProvider {
     FoundBFS(DenseMatrix, HashMap<usize, usize>),
     Infeasible,
-    ArtificialRemain(Tableau<T>, HashSet<usize>),
+    ArtificialRemain(Tableau<'a, T>, HashSet<usize>),
 }
 
 #[cfg(test)]
 mod test {
 
     use super::*;
+    use algorithm::simplex::tableau_provider::network::ShortestPathNetwork;
+    use algorithm::simplex::tableau_provider::matrix_data::MatrixData;
+    use data::linear_program::canonical_form::CanonicalForm;
 
-    fn tableau() -> Tableau<MatrixData> {
+    fn matrix_data() -> MatrixData {
         let data = SparseMatrix::from_data(vec![vec![3f64, 2f64, 1f64, 0f64, 0f64],
                                                 vec![5f64, 1f64, 1f64, 1f64, 0f64],
                                                 vec![2f64, 5f64, 1f64, 0f64, 1f64]]);
-        let original_c = SparseVector::from_data(vec![1f64, 1f64, 1f64, 1f64, 1f64]);
-        let data = MatrixData::new(data, original_c);
+        let cost = SparseVector::from_data(vec![1f64, 1f64, 1f64, 1f64, 1f64]);
+        let b = DenseVector::from_data(vec![1f64, 2f64, 3f64]);
+        let column_info = vec![String::from("X1"),
+                               String::from("X2"),
+                               String::from("X3"),
+                               String::from("X4"),
+                               String::from("X5")];
+        MatrixData::new(data, cost, b, column_info)
+    }
+
+    fn tableau(data: &MatrixData) -> Tableau<MatrixData> {
         let carry = DenseMatrix::from_data(vec![vec![-6f64, 1f64, -1f64, -1f64],
                                                 vec![0f64, 1f64, 1f64, 1f64],
                                                 vec![1f64, 1f64, 0f64, 0f64],
@@ -142,13 +143,30 @@ mod test {
         basis_columns.insert(0, 2);
         basis_columns.insert(1, 3);
         basis_columns.insert(2, 4);
-        let column_info = vec![String::from("X1"),
-                               String::from("X2"),
-                               String::from("X3"),
-                               String::from("X4"),
-                               String::from("X5")];
 
-        Tableau::new(data, carry, basis_columns, column_info)
+        Tableau::new(data, carry, basis_columns)
+    }
+
+    #[test]
+    fn test_simplex() {
+        let data = matrix_data();
+        let mut tableau = tableau(&data);
+        if let LinearProgramType::FiniteOptimum(_, cost) = loop {
+            match tableau.profitable_column(CostRow::Actual) {
+                Some(column_nr) => {
+                    let column = tableau.generate_column(column_nr);
+                    let pivot_row = tableau.find_pivot_row(&column);
+                    tableau.bring_into_basis(pivot_row, column_nr, &column)
+                },
+                None => break LinearProgramType::FiniteOptimum(tableau.current_bfs(),
+                                                               tableau.cost(CostRow::Actual)),
+            }
+        } {
+            assert_approx_eq!(cost, 9f64 / 2f64);
+        } else {
+            assert!(false);
+        }
+
     }
 
     fn lp_canonical() -> CanonicalForm {
@@ -169,30 +187,11 @@ mod test {
     }
 
     #[test]
-    fn test_simplex() {
-        let mut tableau = tableau();
-        if let LinearProgramType::FiniteOptimum(_, cost) = loop {
-            match tableau.profitable_column(CostRow::Actual) {
-                Some(column_nr) => {
-                    let column = tableau.generate_column(column_nr);
-                    let pivot_row = tableau.find_pivot_row(&column);
-                    tableau.bring_into_basis(pivot_row, column_nr, &column)
-                },
-                None => break LinearProgramType::FiniteOptimum(tableau.current_bfs(),
-                                                               tableau.cost(CostRow::Actual)),
-            }
-        } {
-            assert_approx_eq!(cost, 9f64 / 2f64);
-        } else {
-            assert!(false);
-        }
-
-    }
-
-    #[test]
     fn test_phase_one() {
         let canonical = lp_canonical();
-        match phase_one(&canonical) {
+        let data = MatrixData::from(canonical);
+        let tableau = Tableau::new_artificial(&data);
+        match phase_one(tableau) {
             PhaseOneResult::FoundBFS(_, map) => {
                 let mut expected = HashMap::new();
                 expected.insert(0, 1);
@@ -211,8 +210,9 @@ mod test {
     }
 
     #[test]
-    fn test_solve() {
-        let result = solve(&lp_canonical()).unwrap();
+    fn test_solve_matrix() {
+        let data = MatrixData::from(lp_canonical());
+        let result = solve(&data).unwrap();
         let expected = (vec![(String::from("X1"), 0f64),
                              (String::from("X2"), 0.5f64),
                              (String::from("X3"), 0f64),
@@ -224,5 +224,17 @@ mod test {
             assert_approx_eq!(result.0[i].1, expected.0[i].1);
         }
         assert_approx_eq!(result.1, expected.1);
+    }
+
+    #[test]
+    fn test_solve_shortest_path() {
+        let data = SparseMatrix::from_data(vec![vec![0f64, 1f64, 0f64, 2f64, 0f64],
+                                                vec![0f64, 0f64, 1f64, 1f64, 0f64],
+                                                vec![0f64, 0f64, 0f64, 1f64, 1f64],
+                                                vec![0f64, 0f64, 0f64, 0f64, 2f64],
+                                                vec![0f64, 0f64, 0f64, 0f64, 0f64]]);
+        let graph = ShortestPathNetwork::new(data, 0, 4);
+        let result = solve(&graph).unwrap().1;
+        assert_eq!(result, 3f64);
     }
 }

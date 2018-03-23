@@ -1,20 +1,24 @@
 use std::path::Path;
-use io::read;
+
 use algorithm::simplex::logic::solve;
-use test::miplib::get_test_file_path;
+use algorithm::simplex::tableau_provider::matrix_data::MatrixData;
+use data::linear_program::canonical_form::CanonicalForm;
 use data::linear_program::general_form::GeneralForm;
+use io::read;
+use test::miplib::get_test_file_path;
 
 #[test]
 fn test_50v() {
     /// Testing problem 50v-10
     let name = String::from("50v-10");
     let path = get_test_file_path(&name);
-    let result = read(&path).ok().unwrap();
+    let result = read(&path).unwrap();
 
-    let mut general: GeneralForm = result.into();
-    let canonical = general.to_canonical();
+    let general: GeneralForm = result.into();
+    let canonical: CanonicalForm = general.into();
+    let data = MatrixData::from(canonical);
 
-    let result = solve(&canonical);
+    let result = solve(&data);
     let result = result.ok().unwrap();
 
     assert_approx_eq!(result.1, 2879.065687f64);

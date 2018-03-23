@@ -1,6 +1,7 @@
 //! # Reading and writing of linear programs
 //!
 //! This module provides read and write functionality for linear program formats.
+mod mps;
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FormatResult};
@@ -9,8 +10,6 @@ use std::io::{Error as IOError, Read};
 use std::path::Path;
 
 use data::linear_program::general_form::GeneralForm;
-
-mod mps;
 
 /// The `read` function takes a file path and returns, if successful, a struct which can be
 /// converted to a linear program in general form.

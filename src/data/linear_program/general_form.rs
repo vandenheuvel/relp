@@ -50,15 +50,6 @@ impl GeneralForm {
         debug_assert_consistent!(general_form);
         general_form
     }
-    /// Convert this linear program into canonical form.
-    pub fn to_canonical(&mut self) -> CanonicalForm {
-        self.substitute_fixed();
-        self.shift_variables();
-        self.make_b_non_negative();
-        self.introduce_slack_variables();
-
-        CanonicalForm::new(self.data.clone(), self.b.clone(), self.cost.clone(), self.fixed_cost, self.column_info.clone(), self.solution_values.clone())
-    }
     /// Substitute known variables in all constraints in which it is nonzero.
     fn substitute_fixed(&mut self) {
         let mut row = 0;
@@ -184,6 +175,18 @@ impl GeneralForm {
     /// The number of variables in this linear program.
     pub fn nr_columns(&self) -> usize {
         self.data.nr_columns()
+    }
+}
+
+impl Into<CanonicalForm> for GeneralForm {
+    /// Convert this linear program into canonical form.
+    fn into(mut self) -> CanonicalForm {
+        self.substitute_fixed();
+        self.shift_variables();
+        self.make_b_non_negative();
+        self.introduce_slack_variables();
+
+        CanonicalForm::new(self.data, self.b, self.cost, self.fixed_cost, self.column_info, self.solution_values)
     }
 }
 
@@ -398,7 +401,7 @@ mod test {
 
     #[test]
     fn to_canonical() {
-        let result = lp_general().to_canonical();
+        let result: CanonicalForm = lp_general().into();
         let expected = lp_canonical();
 
         assert_eq!(result, expected);

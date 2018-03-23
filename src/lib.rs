@@ -8,6 +8,7 @@
 #![feature(use_extern_macros)]
 #![feature(conservative_impl_trait)]
 #![feature(slice_patterns)]
+#![feature(iterator_flatten)]
 
 #[macro_use] extern crate assert_approx_eq;
 
