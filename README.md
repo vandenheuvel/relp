@@ -15,12 +15,14 @@ use lp::io::read;
 
 fn main() {
     let path = Path::new("./path/to/mps/myprogram.mps");
-    let result = read(path).ok().unwrap();
+    let result = read(path).unwrap();
 
-    let general = result.to_general_lp();
-    let canonical = general.to_canonical();
+    let general: GeneralForm = result.into();
+    let canonical: CanonicalForm = general.into();
+    let data = MatrixData::from(canonical);
 
-    let result = solve(&canonical).ok().unwrap().1;
-    println!("{:?}", result);
+    let result = solve(&data).unwrap();
+
+    println!("{:?}", result.1);
 }
 ```
