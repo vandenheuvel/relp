@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use algorithm::simplex::logic::solve;
 use algorithm::simplex::tableau_provider::matrix_data::MatrixData;
 use data::linear_program::canonical_form::CanonicalForm;
@@ -8,8 +6,8 @@ use io::read;
 use test::miplib::get_test_file_path;
 
 #[test]
+/// Testing problem 50v-10
 fn test_50v() {
-    /// Testing problem 50v-10
     let name = String::from("50v-10");
     let path = get_test_file_path(&name);
     let result = read(&path).unwrap();

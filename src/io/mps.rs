@@ -13,8 +13,6 @@ use data::linear_algebra::matrix::{Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use data::linear_program::general_form::GeneralForm;
 use io::ParseError;
-use io::ParseErrorSource;
-use io::ParseErrorCause;
 
 /// Parse an MPS program, in string form, to a MPS.
 ///

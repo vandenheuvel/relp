@@ -10,6 +10,7 @@
 #![feature(slice_patterns)]
 #![feature(iterator_flatten)]
 
+#[cfg(test)]
 #[macro_use] extern crate assert_approx_eq;
 
 pub mod algorithm;

@@ -21,7 +21,8 @@ impl CanonicalForm {
                cost: SparseVector,
                fixed_cost: f64,
                variable_info: Vec<Variable>,
-               solution_values: Vec<(String, f64)>) -> CanonicalForm {
+               _solution_values: Vec<(String, f64)>) -> CanonicalForm {
+        // TODO: Use the `_solution_values` parameter while outputting the solution to this LP
         let m = b.len();
         debug_assert_eq!(b.len(), m);
         debug_assert_eq!(data.nr_rows(), m);

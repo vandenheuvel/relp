@@ -3,11 +3,11 @@
 //! The `Matrix` trait defines a set of operations available for all matrix types defined in this
 //! module.
 
-use std::fmt::Debug;
 use std::iter::Iterator;
 use std::slice::Iter;
 use data::linear_algebra::EPSILON;
 use data::linear_algebra::MAX_DELTA;
+use std::fmt::{Debug, Display, Formatter, Result as FormatResult};
 
 /// Defines basic ways to create or change a matrix, regardless of back-end.
 pub trait Matrix: Clone + Debug + Eq {
@@ -163,6 +163,31 @@ impl PartialEq for DenseMatrix {
 
 impl Eq for DenseMatrix {}
 
+impl Display for DenseMatrix {
+    fn fmt(&self, f: &mut Formatter) -> FormatResult {
+        writeln!(f, "Rows: {}\tColumns: {}", self.nr_rows, self.nr_columns)?;
+
+        let column_width = 10;
+        let counter_width = 5;
+        // Column counter
+        write!(f, "{0:width$}", "", width = counter_width)?;
+        for column_index in 0..self.nr_columns {
+            write!(f, "{0:>width$}", column_index, width = column_width)?;
+        }
+        writeln!(f, "")?;
+
+        // Row counter and row data
+        for (index, row) in self.data.iter().enumerate() {
+            write!(f, "{0: <width$}", index, width = counter_width)?;
+            for v in row.iter() {
+                write!(f, "{0:>width$.5}", v, width = column_width)?;
+            }
+            writeln!(f, "")?;
+        }
+        write!(f, "")
+    }
+}
+
 /// Uses a two indices as underlying data structures: a row-major Vec<Vec<f64>> as well as a
 /// column-major Vec<Vec<f64>>. Indices start at `0`.
 #[derive(Debug)]
@@ -231,11 +256,11 @@ impl SparseMatrix {
 
         self.rows[i] = new_row.map(|&t| t).collect();
 
-        for (column, value) in self.rows[i].iter() {
-            SparseMatrix::set_value_helper(&mut self.columns, *column, i, *value);
+        for &(column, value) in self.rows[i].iter() {
+            SparseMatrix::set_value_helper(&mut self.columns, column, i, value);
         }
 
-        debug_assert!(self.rows[i].len() < self.nr_columns);
+        debug_assert!(self.rows[i].len() <= self.nr_columns);
         debug_assert!(if let Some(maximum) = self.rows[i].iter().map(|(column, _)| *column).max() {
             maximum < self.nr_columns
         } else { true });
@@ -265,6 +290,21 @@ impl SparseMatrix {
 
         self.rows.remove(i);
         self.nr_rows -= 1;
+    }
+    /// Change column `j` to the values provided in `new_column`.
+    pub fn set_column(&mut self, j: usize, new_column: Iter<'_, (usize, f64)>) {
+        debug_assert!(j < self.nr_columns());
+
+        self.columns[j] = new_column.map(|&t| t).collect();
+
+        for &(row, value) in self.columns[j].iter() {
+            SparseMatrix::set_value_helper(&mut self.rows, row, j, value);
+        }
+
+        debug_assert!(self.columns[j].len() <= self.nr_rows);
+        debug_assert!(if let Some(maximum) = self.columns[j].iter().map(|(row, _)| *row).max() {
+            maximum < self.nr_rows
+        } else { true });
     }
     /// Remove columns `j`.
     pub fn remove_column(&mut self, j: usize) {
@@ -725,11 +765,11 @@ mod test {
         #[test]
         fn test_remove_column() {
             // Remove a middle column
-            let mut data = vec![vec![1f64, 2f64, 3f64, 4f64],
+            let data = vec![vec![1f64, 2f64, 3f64, 4f64],
                                 vec![5f64, 6f64, 7f64, 8f64],
                                 vec![9f64, 10f64, 11f64, 12f64]];
             let mut m = SparseMatrix::from_data(data);
-            let mut data = vec![vec![1f64, 3f64, 4f64],
+            let data = vec![vec![1f64, 3f64, 4f64],
                                 vec![5f64, 7f64, 8f64],
                                 vec![9f64, 11f64, 12f64]];
             let expected = SparseMatrix::from_data(data);

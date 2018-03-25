@@ -3,9 +3,8 @@ use std::collections::{HashMap, HashSet};
 use algorithm::simplex::data::{CostRow, Tableau};
 use algorithm::simplex::EPSILON;
 use algorithm::simplex::tableau_provider::TableauProvider;
-use data::linear_algebra::matrix::{DenseMatrix, Matrix, SparseMatrix};
-use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
-use data::linear_program::elements::{LinearProgramType, Variable, VariableType};
+use data::linear_algebra::matrix::{DenseMatrix};
+use data::linear_program::elements::LinearProgramType;
 
 /// Solves a linear program using the Simplex method.
 pub fn solve<T>(provider: &T) -> Result<(Vec<(String, f64)>, f64), String>
@@ -15,7 +14,7 @@ pub fn solve<T>(provider: &T) -> Result<(Vec<(String, f64)>, f64), String>
         PhaseOneResult::FoundBFS(carry, basis) => (carry, basis),
         PhaseOneResult::Infeasible => return Err(format!("LP not feasible")),
         PhaseOneResult::ArtificialRemain(tableau, artificial_basis_columns) => {
-            // TODO: MIPLIB problem 50v-10 doesn't work with this line. Neither does the graph problem
+//             TODO: MIPLIB problem 50v-10 doesn't work with this line, possibly because some constraints are redundant
 //            remove_artificial(tableau, artificial_basis_columns)
             (tableau.carry(), tableau.basis_columns())
         },
@@ -67,17 +66,19 @@ fn remove_artificial<T>(mut tableau: Tableau<T>, artificials: HashSet<usize>) ->
 
         let artificial_column = tableau.generate_artificial_column(artificial);
         let pivot_row = artificial_column.values()
+            .skip_while(|(i, _)| *i < 2)
             .find(|(_, v)| (1f64 - v).abs() < EPSILON)
             .unwrap().0 - 1 - 1;
 
-        for non_artificial in tableau.nr_rows()..tableau.nr_columns() {
-            if !tableau.is_in_basis(&non_artificial) {
-                if tableau.relative_cost(CostRow::Artificial, non_artificial).abs() < EPSILON {
-                    let column = tableau.generate_column(non_artificial);
-                    tableau.bring_into_basis(pivot_row, non_artificial, &column);
-                    break;
-                }
-            }
+        let column = (0..tableau.nr_columns())
+            .filter(|j| !tableau.is_in_basis(&j))
+            .find(|&j| tableau.relative_cost(CostRow::Artificial, j).abs() < EPSILON);
+        if let Some(pivot_column) = column {
+            let column_data = tableau.generate_column(pivot_column);
+            tableau.bring_into_basis(pivot_row, pivot_column, &column_data);
+        } else {
+            // The problem is overdetermined, matrix doesn't have full rank, constraints are redundant
+            // TODO: Remove row
         }
 
         debug_assert!(!tableau.is_in_basis(&artificial));
@@ -118,6 +119,11 @@ mod test {
     use algorithm::simplex::tableau_provider::network::ShortestPathNetwork;
     use algorithm::simplex::tableau_provider::matrix_data::MatrixData;
     use data::linear_program::canonical_form::CanonicalForm;
+    use data::linear_algebra::matrix::{Matrix, SparseMatrix};
+    use data::linear_algebra::vector::DenseVector;
+    use data::linear_program::elements::Variable;
+    use data::linear_algebra::vector::{SparseVector, Vector};
+    use data::linear_program::elements::VariableType;
 
     fn matrix_data() -> MatrixData {
         let data = SparseMatrix::from_data(vec![vec![3f64, 2f64, 1f64, 0f64, 0f64],

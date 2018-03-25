@@ -4,13 +4,11 @@
 //! The tableau is extended with supplementary data structures for efficiency.
 use std::collections::{HashMap};
 use std::f64;
+use std::fmt::{Display, Formatter, Result as FormatResult};
+use std::iter::repeat;
 
 use algorithm::simplex::EPSILON;
-use algorithm::simplex::tableau_provider::matrix_data::MatrixData;
 use algorithm::simplex::tableau_provider::TableauProvider;
-
-use data::linear_program::canonical_form::CanonicalForm;
-use data::linear_program::elements::{Variable, VariableType};
 use data::linear_algebra::matrix::{DenseMatrix, Matrix, SparseMatrix};
 use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 
@@ -48,7 +46,7 @@ impl<'a, T> Tableau<'a, T> where T: TableauProvider {
     /// having only the artificial variables in the basis.
     pub fn new_artificial(provider: &'a T) -> Tableau<'a, T> {
         let m = provider.nr_rows();
-        let carry = create_carry_matrix(provider.get_b().clone(), DenseMatrix::identity(m));
+        let carry = Self::create_carry_matrix(provider.get_b().clone(), DenseMatrix::identity(m));
         let basis_columns = (0..m).map(|i| (i, i)).collect();
 
         Tableau::new(provider, carry, basis_columns)
@@ -76,6 +74,21 @@ impl<'a, T> Tableau<'a, T> where T: TableauProvider {
             nr_columns,
         }
     }
+    /// Create a carry matrix for a tableau with a known basis inverse.
+    fn create_carry_matrix(b: DenseVector, basis_inverse: DenseMatrix) -> DenseMatrix {
+        let m = b.len();
+        debug_assert_eq!(basis_inverse.nr_rows(), m);
+        debug_assert_eq!(basis_inverse.nr_columns(), m);
+
+        let cost_row = DenseVector::zeros(1 + m);
+        let mut artificial_cost_row = DenseVector::zeros(1 + m);
+        for column in 0..m {
+            artificial_cost_row.set_value(1 + column, -1f64);
+        }
+        let minus_cost = - b.iter().sum::<f64>();
+        artificial_cost_row.set_value(0, minus_cost);
+        cost_row.vcat(artificial_cost_row.vcat(b.hcat(basis_inverse)))
+    }
     /// Brings a column into the basis by updating the `self.carry` matrix and updating the
     /// data structures holding the collection of basis columns.
     pub fn bring_into_basis(&mut self, pivot_row_nr: usize, pivot_column_nr: usize, column: &SparseVector) {
@@ -99,7 +112,7 @@ impl<'a, T> Tableau<'a, T> where T: TableauProvider {
     fn update_basis_indices(&mut self, pivot_row: usize, pivot_column: usize) {
         debug_assert!(self.basis_columns.contains_key(&pivot_row));
 
-        let leaving_column = *self.basis_columns.get(&pivot_row).unwrap();
+        let _leaving_column = *self.basis_columns.get(&pivot_row).unwrap();
         self.basis_columns.insert(pivot_row, pivot_column);
     }
     /// Generate a column of the tableau as it would look like with the current basis by matrix
@@ -124,7 +137,7 @@ impl<'a, T> Tableau<'a, T> where T: TableauProvider {
     pub fn generate_artificial_column(&self, j: usize) -> SparseVector {
         debug_assert!(j < self.nr_rows());
 
-        SparseVector::from_data(self.carry.column(j))
+        SparseVector::from_data(self.carry.column(1 + j))
     }
     /// Determine the row to pivot on, given the column. This is the row with the positive but
     /// minimal ratio between the current constraint vector and the column.
@@ -178,6 +191,13 @@ impl<'a, T> Tableau<'a, T> where T: TableauProvider {
         }
         total
     }
+    fn as_sparse_matrix(&self) -> SparseMatrix {
+        let mut m = SparseMatrix::zeros(1 + 1 + self.nr_rows, self.nr_columns);
+        for j in 0..self.nr_columns {
+            m.set_column(j, self.generate_column(j).values());
+        }
+        m
+    }
     /// Gets a copy of the carry matrix.
     pub fn carry(&self) -> DenseMatrix {
         self.carry.clone()
@@ -221,20 +241,57 @@ impl<'a, T> Tableau<'a, T> where T: TableauProvider {
     }
 }
 
-/// Create a carry matrix for a tableau with a known basis inverse.
-fn create_carry_matrix(b: DenseVector, basis_inverse: DenseMatrix) -> DenseMatrix {
-    let m = b.len();
-    debug_assert_eq!(basis_inverse.nr_rows(), m);
-    debug_assert_eq!(basis_inverse.nr_columns(), m);
+impl<'a, T> Display for Tableau<'a, T> where T: TableauProvider {
+    fn fmt(&self, f: &mut Formatter) -> FormatResult {
+        writeln!(f, "Tableau:")?;
+        writeln!(f, "=== Current Tableau ===")?;
+        let column_width = 10;
+        let counter_width = 5;
+        // Column counter
+        write!(f, "{0:width$}", "", width = counter_width)?;
+        for column_index in 0..self.nr_columns {
+            write!(f, "{0:>width$}", column_index, width = column_width)?;
+        }
+        writeln!(f, "")?;
 
-    let cost_row = DenseVector::zeros(1 + m);
-    let mut artificial_cost_row = DenseVector::zeros(1 + m);
-    for column in 0..m {
-        artificial_cost_row.set_value(1 + column, -1f64);
+        // Row counter and row data
+        let m = self.as_sparse_matrix();
+        for row_index in 0..m.nr_rows() {
+            if row_index == 1 + 1 {
+                writeln!(f, "{}", repeat("-").take(counter_width + m.nr_columns() * column_width)
+                    .collect::<String>())?;
+            }
+            write!(f, "{0: <width$}", if row_index < 2 { row_index } else { row_index - 1 - 1},
+                   width = counter_width)?;
+            for column_index in 0..m.nr_columns() {
+                write!(f, "{0:>width$.5}", m.get_value(row_index, column_index),
+                       width = column_width)?;
+            }
+            writeln!(f, "")?;
+        }
+        writeln!(f, "= Artificial Part of Tableau =")?;
+        for row_index in 0..(1 + 1 + self.nr_rows) {
+            for column_index in 0..self.nr_rows {
+                write!(f, "{0:>width$.5}",
+                       self.generate_artificial_column(column_index).get_value(row_index),
+                       width = column_width)?;
+            }
+            writeln!(f, "")?;
+        }
+
+        writeln!(f, "=== Basis Columns ===")?;
+        let mut basis = self.basis_columns.iter()
+            .map(|(&i, &j)| (i, j))
+            .collect::<Vec<(usize, usize)>>();
+        basis.sort_by_key(|&(i, _)| i);
+        writeln!(f, "{:?}", basis)?;
+
+        writeln!(f, "=== Basis Inverse ===")?;
+        self.carry.fmt(f)?;
+
+        writeln!(f, "=== Data Provider ===")?;
+        self.provider.fmt(f)
     }
-    let minus_cost = - b.iter().sum::<f64>();
-    artificial_cost_row.set_value(0, minus_cost);
-    cost_row.vcat(artificial_cost_row.vcat(b.hcat(basis_inverse)))
 }
 
 
@@ -242,6 +299,10 @@ fn create_carry_matrix(b: DenseVector, basis_inverse: DenseMatrix) -> DenseMatri
 mod test {
 
     use super::*;
+    use data::linear_program::canonical_form::CanonicalForm;
+    use algorithm::simplex::tableau_provider::matrix_data::MatrixData;
+    use data::linear_program::elements::Variable;
+    use data::linear_program::elements::VariableType;
 
     fn canonical_large() -> CanonicalForm {
         let data = vec![vec![1f64, 1f64, 0f64, 1f64, 0f64, 0f64, 0f64],
@@ -275,12 +336,6 @@ mod test {
         let matrix_data = MatrixData::from(canonical_large());
         let result = Tableau::new_artificial(&matrix_data);
 
-        let data = SparseMatrix::from_data(vec![vec![1f64, 1f64, 0f64, 1f64, 0f64, 0f64, 0f64],
-                                                vec![1f64, 0f64, 1f64, 0f64, -1f64, 0f64, 0f64],
-                                                vec![0f64, -1f64, 1f64, 0f64, 0f64, 0f64, 0f64],
-                                                vec![1f64, 0f64, 0f64, 0f64, 0f64, 1f64, 0f64],
-                                                vec![0f64, 1f64, 0f64, 0f64, 0f64, 0f64, 1f64]]);
-        let c = SparseVector::from_data(vec![1f64, 4f64, 9f64, 0f64, 0f64, 0f64, 0f64]);
         let carry = DenseMatrix::from_data(vec![vec![0f64, 0f64, 0f64, 0f64, 0f64, 0f64],
                                                 vec![-27f64, -1f64, -1f64, -1f64, -1f64, -1f64],
                                                 vec![5f64, 1f64, 0f64, 0f64, 0f64, 0f64],
@@ -292,13 +347,6 @@ mod test {
         for i in 0..5 {
             basis_columns.insert(i, i);
         }
-        let column_info = vec![String::from("XONE"),
-                               String::from("YTWO"),
-                               String::from("ZTHREE"),
-                               String::from("SLACK0"),
-                               String::from("SLACK1"),
-                               String::from("SLACK2"),
-                               String::from("SLACK3")];
         let expected = Tableau::new(&matrix_data, carry, basis_columns);
 
         assert_eq!(result, expected);
@@ -498,11 +546,11 @@ mod test {
         let bfs_tableau = bfs_tableau(&data);
         assert!(bfs_tableau.profitable_column(CostRow::Artificial).is_none());
 
-        let without_artificials = Tableau::new(&data,
+        let without_artificial = Tableau::new(&data,
             bfs_tableau.carry(),
             bfs_tableau.basis_columns());
         let expected = tableau(&data);
 
-        assert_eq!(without_artificials, expected);
+        assert_eq!(without_artificial, expected);
     }
 }

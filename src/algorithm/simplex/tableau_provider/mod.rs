@@ -1,11 +1,11 @@
 pub mod matrix_data;
 pub mod network;
 
+use std::fmt::Display;
 use std::slice::Iter;
-use data::linear_algebra::vector::DenseVector;
-use data::linear_algebra::vector::{SparseVector, Vector};
+use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 
-pub trait TableauProvider {
+pub trait TableauProvider: Display {
     fn column(&self, j: usize) -> Iter<'_, (usize, f64)>;
     fn get_actual_cost_value(&self, j: usize) -> f64;
     fn get_artificial_cost_value(&self, j: usize) -> f64;

@@ -298,7 +298,7 @@ mod test {
         let column_info = vec![Variable { name: "X".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
                                Variable { name: GeneralForm::generate_slack_name(0), variable_type: VariableType::Continuous, offset: 0f64, }];
         let row_info = vec![ConstraintType::Equal];
-        let mut expected = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
+        let expected = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
 
         assert_eq!(result, expected);
 
@@ -317,7 +317,7 @@ mod test {
         let column_info = vec![Variable { name: "X".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
                                Variable { name: GeneralForm::generate_slack_name(0), variable_type: VariableType::Continuous, offset: 0f64, }];
         let row_info = vec![ConstraintType::Equal];
-        let mut expected = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
+        let expected = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
 
         assert_eq!(result, expected);
     }
@@ -367,7 +367,7 @@ mod test {
         let cost = SparseVector::from_data(vec![1f64]);
         let column_info = vec![Variable { name: "X".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
         let row_info = vec![ConstraintType::Equal];
-        let mut expected = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
+        let expected = GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info);
 
         assert_eq!(result, expected);
     }
