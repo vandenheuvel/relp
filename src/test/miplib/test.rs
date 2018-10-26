@@ -2,7 +2,7 @@ use algorithm::simplex::logic::solve;
 use algorithm::simplex::tableau_provider::matrix_data::MatrixData;
 use data::linear_program::canonical_form::CanonicalForm;
 use data::linear_program::general_form::GeneralForm;
-use io::read;
+use io::import;
 use test::miplib::get_test_file_path;
 
 #[test]
@@ -10,7 +10,7 @@ use test::miplib::get_test_file_path;
 fn test_50v() {
     let name = String::from("50v-10");
     let path = get_test_file_path(&name);
-    let result = read(&path).unwrap();
+    let result = import(&path).unwrap();
 
     let general: GeneralForm = result.into();
     let canonical: CanonicalForm = general.into();
