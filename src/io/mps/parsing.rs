@@ -19,7 +19,9 @@ use io::mps::Section;
 /// or a `Number`.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Atom<'a> {
+    /// A token consisting of text which should not contain whitespace.
     Word(&'a str),
+    /// A token representing a number.
     Number(f64),
 }
 
@@ -97,38 +99,6 @@ pub(super) type UnstructuredBound<'a> = (&'a str, BoundType, &'a str, f64);
 /// TODO: Support the RANGES section
 pub(super) type UnstructuredRange<'a> = ();
 
-impl<'a> UnstructuredMPS<'a> {
-    /// Checks that a minimal set of sections is present.
-    ///
-    /// # Note
-    ///
-    /// This is not a check for consistency, this method is a helper method for the TryFrom
-    /// constructor for this type.
-    fn all_required_fields_present(mps_name: &Option<&str>,
-                                   mps_cost_row_name: &Option<&str>,
-                                   mps_rows: &Vec<UnstructuredRow>,
-                                   mps_columns: &Vec<UnstructuredColumn>,
-                                   mps_rhss: &Vec<UnstructuredRhs>) -> Result<(), ParseError> {
-        if mps_name.is_none() {
-            return Err(ParseError::new("No MPS name read."));
-        }
-        if mps_cost_row_name.is_none() {
-            return Err(ParseError::new("No cost row name read."));
-        }
-        if mps_rows.is_empty() {
-            return Err(ParseError::new("No row names read."));
-        }
-        if  mps_columns.is_empty() {
-            return Err(ParseError::new("No variables read."));
-        }
-        if mps_rhss.is_empty() {
-            return Err(ParseError::new("No RHSs read."));
-        }
-
-        Ok(())
-    }
-}
-
 impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a> {
     type Error = ParseError;
 
@@ -167,7 +137,7 @@ impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a>
                         current_section = None;
                     },
                     Section::Endata => break,
-                    other_section => current_section = Some(new_section),
+                    _other_section => current_section = Some(new_section),
                 }
                 continue;
             }
@@ -176,16 +146,13 @@ impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a>
                 None => Err(ParseError::new("Section unknown, can't parse line")),
                 Some(Section::Name(_)) => panic!("The name should be updated in section parsing"),
                 Some(Section::Rows) => parse_row_line(line, &mut cost_row_name, &mut rows),
-                Some(Section::Columns(marker)) => parse_column_line(line, marker, &mut columns).map(|maybe_marker| {
-                    if let Some(new_marker) = maybe_marker {
-                        current_section = Some(Section::Columns(new_marker));
-                    }
-                }),
+                Some(Section::Columns(mut marker)) => parse_column_line(line, &mut marker, &mut columns),
                 Some(Section::Rhs) => parse_rhs_line(line, &mut rhss),
                 Some(Section::Bounds) => parse_bound_line(line, &mut bounds),
                 Some(Section::Ranges) => parse_range_line(line, &mut ranges),
                 Some(Section::Endata) => panic!("Row parsing should have been aborted after Endata detection"),
-            }.map_err(|parse_error| ParseError::with_file_location(parse_error.description(), file_location))?;
+            }.map_err(|parse_error|
+                ParseError::with_file_location(parse_error.description(), file_location))?;
         }
 
         UnstructuredMPS::all_required_fields_present(&name, &cost_row_name, &rows, &columns, &rhss)
@@ -215,10 +182,9 @@ fn parse_row_line<'a>(line: Vec<Atom<'a>>,
                       cost_row_name: &mut Option<&'a str>,
                       row_collector: &mut Vec<UnstructuredRow<'a>>) -> Result<(), ParseError> {
     match line.as_slice() {
-        &[Atom::Word(ty), Atom::Word(row)] => match RowType::try_from(ty) {
-            Ok(RowType::Cost) => *cost_row_name = Some(row),
-            Ok(RowType::Constraint(ty)) => row_collector.push((row, ty)),
-            _ => unimplemented!(),
+        &[Atom::Word(ty), Atom::Word(row)] => match RowType::try_from(ty)? {
+            RowType::Cost => *cost_row_name = Some(row),
+            RowType::Constraint(ty) => row_collector.push((row, ty)),
         },
         _ => return Err(ParseError::new("Line can't be parsed as part of the row section."))
     }
@@ -239,30 +205,28 @@ fn parse_row_line<'a>(line: Vec<Atom<'a>>,
 /// A new variable type, indicating that the integer section of the columns section has started or
 /// ended.
 fn parse_column_line<'a>(line: Vec<Atom<'a>>,
-                         marker: VariableType,
-                         column_collector: &mut Vec<UnstructuredColumn<'a>>
-) -> Result<Option<VariableType>, ParseError> {
+                         marker: &mut VariableType,
+                         column_collector: &mut Vec<UnstructuredColumn<'a>>,
+) -> Result<(), ParseError> {
     match line.as_slice() {
         &[Atom::Word(column), Atom::Word(row), Atom::Number(value)] =>
-            column_collector.push((column, marker, row, value)),
+            column_collector.push((column, *marker, row, value)),
         &[Atom::Word(column), Atom::Word(row1), Atom::Number(value1), Atom::Word(row2), Atom::Number(value2)] => {
-            column_collector.push((column, marker, row1, value1));
-            column_collector.push((column, marker, row2, value2));
+            column_collector.push((column, *marker, row1, value1));
+            column_collector.push((column, *marker, row2, value2));
         },
         &[Atom::Word(_name), Atom::Word(COLUMN_SECTION_MARKER), Atom::Word(new_marker)] => {
-            let new_marker = match (&marker, new_marker) {
+            *marker = match (&marker, new_marker) {
                 (VariableType::Continuous, START_OF_INTEGER) => VariableType::Integer,
                 (VariableType::Integer, END_OF_INTEGER) => VariableType::Continuous,
                 _ => return Err(ParseError::new(format!("Didn't expect marker \
                             \"{}\": currently parsing variables which are {:?}", new_marker, marker))),
             };
-
-            return Ok(Some(new_marker));
         },
         _ => return Err(ParseError::new("Line can't be parsed as part of the column section.")),
     }
 
-    Ok(None)
+    Ok(())
 }
 
 /// Parse a line of atoms which describes a right hand side entry.
@@ -283,7 +247,7 @@ fn parse_rhs_line<'a>(line: Vec<Atom<'a>>, rhs_collector: &mut Vec<UnstructuredR
             rhs_collector.push((name, row1, value1));
             rhs_collector.push((name, row2, value2));
         },
-        _ => unimplemented!(),
+        _ => return Err(ParseError::new("Can't parse this row as right-hand side (RHS).")),
     }
 
     Ok(())
@@ -301,11 +265,9 @@ fn parse_rhs_line<'a>(line: Vec<Atom<'a>>, rhs_collector: &mut Vec<UnstructuredR
 /// A `ParseError` in case of an unknown format.
 fn parse_bound_line<'a>(line: Vec<Atom<'a>>, bound_collector: &mut Vec<UnstructuredBound<'a>>) -> Result<(), ParseError> {
     match line.as_slice() {
-        &[Atom::Word(ty), Atom::Word(name), Atom::Word(column), Atom::Number(value)] => match BoundType::try_from(ty) {
-            Ok(bound_type) => bound_collector.push((name, bound_type, column, value)),
-            _ => panic!(),
-        },
-        _ => unimplemented!(),
+        &[Atom::Word(ty), Atom::Word(name), Atom::Word(column), Atom::Number(value)] =>
+            bound_collector.push((name, BoundType::try_from(ty)?, column, value)),
+        _ => return Err(ParseError::new("Can't parse this row as bound.")),
     }
 
     Ok(())
@@ -336,6 +298,38 @@ fn parse_range_line<'a>(
     Ok(())
 }
 
+impl<'a> UnstructuredMPS<'a> {
+    /// Checks that a minimal set of sections is present.
+    ///
+    /// # Note
+    ///
+    /// This is not a check for consistency, this method is a helper method for the TryFrom
+    /// constructor for this type.
+    fn all_required_fields_present(mps_name: &Option<&str>,
+                                   mps_cost_row_name: &Option<&str>,
+                                   mps_rows: &Vec<UnstructuredRow>,
+                                   mps_columns: &Vec<UnstructuredColumn>,
+                                   mps_rhss: &Vec<UnstructuredRhs>) -> Result<(), ParseError> {
+        if mps_name.is_none() {
+            return Err(ParseError::new("No MPS name read."));
+        }
+        if mps_cost_row_name.is_none() {
+            return Err(ParseError::new("No cost row name read."));
+        }
+        if mps_rows.is_empty() {
+            return Err(ParseError::new("No row names read."));
+        }
+        if  mps_columns.is_empty() {
+            return Err(ParseError::new("No variables read."));
+        }
+        if mps_rhss.is_empty() {
+            return Err(ParseError::new("No RHSs read."));
+        }
+
+        Ok(())
+    }
+}
+
 impl<'a, 'b,> TryFrom<&'b Vec<Atom<'a>>> for Section<'a> {
     type Error = ();
 
@@ -352,7 +346,7 @@ impl<'a, 'b,> TryFrom<&'b Vec<Atom<'a>>> for Section<'a> {
     /// # Errors
     ///
     /// A `()` error if no `Section` is recognized.
-    fn try_from(line: &Vec<Atom<'a>>) -> Result<Section<'a>, ()> {
+    fn try_from(line: &Vec<Atom<'a>>) -> Result<Section<'a>, Self::Error> {
         match line.as_slice() {
             &[Atom::Word("NAME"), Atom::Word(name)] => Ok(Section::Name(name)),
             &[Atom::Word(name)] => match name {
@@ -370,7 +364,7 @@ impl<'a, 'b,> TryFrom<&'b Vec<Atom<'a>>> for Section<'a> {
 }
 
 impl<'a> TryFrom<&'a str> for RowType {
-    type Error = ();
+    type Error = ParseError;
 
     /// Try to read a `RowType` from a string slice.
     ///
@@ -389,19 +383,19 @@ impl<'a> TryFrom<&'a str> for RowType {
     /// # Errors
     ///
     /// Any `String` slices not equal to either `N`, `L`, `E` or `G` will fair to be parsed.
-    fn try_from(word: &str) -> Result<RowType, ()> {
+    fn try_from(word: &str) -> Result<RowType, Self::Error> {
         match word {
             "N" => Ok(RowType::Cost),
             "L" => Ok(RowType::Constraint(ConstraintType::Less)),
             "E" => Ok(RowType::Constraint(ConstraintType::Equal)),
             "G" => Ok(RowType::Constraint(ConstraintType::Greater)),
-            _ => Err(()),
+            _ => Err(ParseError::new(format!("Row type \"{}\" unknown.", word))),
         }
     }
 }
 
 impl<'a> TryFrom<&'a str> for BoundType {
-    type Error = ();
+    type Error = ParseError;
 
     /// Try to read a `BoundType` from a `String` slice.
     ///
@@ -416,7 +410,7 @@ impl<'a> TryFrom<&'a str> for BoundType {
     /// # Errors
     ///
     /// A `()` error if the bound type is not known.
-    fn try_from(word: &str) -> Result<BoundType, ()> {
+    fn try_from(word: &str) -> Result<BoundType, Self::Error> {
         match word {
             "LO" => Ok(BoundType::LowerContinuous),
             "UP" => Ok(BoundType::UpperContinuous),
@@ -428,7 +422,7 @@ impl<'a> TryFrom<&'a str> for BoundType {
             "LI" => Ok(BoundType::LowerInteger),
             "UI" => Ok(BoundType::UpperInteger),
             "SC" => Ok(BoundType::SemiContinuous),
-            _ => Err(()),
+            _ => Err(ParseError::new(format!("Cant' parse \"{}\" as bound type.", word))),
         }
     }
 }
@@ -438,12 +432,32 @@ impl<'a> TryFrom<&'a str> for BoundType {
 #[cfg(test)]
 mod test {
 
-    use super::*;
+    use std::convert::TryFrom;
+
+    use data::linear_program::elements::{ConstraintType, VariableType};
+    use io::mps::parsing::Atom::*;
+    use io::mps::parsing::into_atom_lines;
+    use io::mps::parsing::into_atoms;
+    use io::mps::BoundType;
+    use io::mps::RowType;
+    use io::mps::Section;
+    use io::mps::parsing::parse_row_line;
+    use io::mps::parsing::parse_column_line;
+    use io::mps::token::{COLUMN_SECTION_MARKER, END_OF_INTEGER, START_OF_INTEGER};
+
+
+    #[test]
+    fn test_into_atom_lines() {
+        let program = "SOMETEXT 1.2\n*comment\n\n   \t line before is empty".to_string();
+        let result = into_atom_lines(&program);
+        let expected = vec![((1, "SOMETEXT 1.2"), vec![Word("SOMETEXT"), Number(1.2f64)]),
+                            ((4, "   \t line before is empty"),
+                             vec![Word("line"), Word("before"), Word("is"), Word("empty")])];
+        assert_eq!(result, expected);
+    }
 
     #[test]
     fn test_into_atoms() {
-        use super::Atom::*;
-
         macro_rules! test {
             ($line:expr, [$($words:expr), *]) => {
                 let result = into_atoms($line);
@@ -462,63 +476,85 @@ mod test {
     }
 
     #[test]
-    fn test_into_atom_lines() {
-        use io::mps::parsing::Atom::*;
+    fn test_parse_row_line() {
+        let initial_cost_row_name = Some("COST_ROW_NAME");
 
-        let program = "SOMETEXT 1.2\n*comment\n\n   \t line before is empty".to_string();
-        let result = into_atom_lines(&program);
-        let expected = vec![((1, "SOMETEXT 1.2"), vec![Word("SOMETEXT"), Number(1.2f64)]),
-                            ((4, "   \t line before is empty"),
-                                vec![Word("line"), Word("before"), Word("is"), Word("empty")])];
-        assert_eq!(result, expected);
-    }
+        macro_rules! test_positive {
+            ([$($words:expr), *], [$($expected_row:expr), *], $expected_cost_row_name:expr) => {
+                let line = vec![$($words), *];
+                let mut cost_row_name = initial_cost_row_name.clone();
+                let mut collector = Vec::new();
 
-    #[test]
-    fn test_try_from_row_type() {
-        macro_rules! test {
-            ($word:expr, $expected:expr) => {
-                let result = RowType::try_from($word);
-                assert_eq!(result, $expected);
+                let result = parse_row_line(line, &mut cost_row_name, &mut collector);
+
+                assert!(result.is_ok());
+                assert_eq!(cost_row_name, $expected_cost_row_name);
+                assert_eq!(collector, vec![$($expected_row), *]);
             }
         }
 
-        test!("N", Ok(RowType::Cost));
-        test!("L", Ok(RowType::Constraint(ConstraintType::Less)));
-        test!("E", Ok(RowType::Constraint(ConstraintType::Equal)));
-        test!("G", Ok(RowType::Constraint(ConstraintType::Greater)));
-        test!("X", Err(()));
-        test!("", Err(()));
-        test!("\t", Err(()));
-    }
+        test_positive!([Word("E"), Word("ROW_NAME")],
+                       [("ROW_NAME", ConstraintType::Equal)], Some("COST_ROW_NAME"));
+        test_positive!([Word("N"), Word("NEW_COST_ROW_NAME")],
+                       [], Some("NEW_COST_ROW_NAME"));
 
-    #[test]
-    fn test_try_from_bound_type() {
-        macro_rules! test {
-            ($word:expr, $expected:expr) => {
-                let result = BoundType::try_from($word);
-                assert_eq!(result, $expected);
+        macro_rules! test_negative {
+            ([$($words:expr), *]) => {
+                let line = vec![$($words), *];
+                let mut cost_row_name = initial_cost_row_name.clone();
+                let mut collector = Vec::new();
+
+                let result = parse_row_line(line, &mut cost_row_name, &mut collector);
+
+                assert!(result.is_err());
             }
         }
 
-        test!("LO", Ok(BoundType::LowerContinuous));
-        test!("UP", Ok(BoundType::UpperContinuous));
-        test!("FX", Ok(BoundType::Fixed));
-        test!("FR", Ok(BoundType::Free));
-        test!("MI", Ok(BoundType::LowerMinusInfinity));
-        test!("PL", Ok(BoundType::UpperInfinity));
-        test!("BV", Ok(BoundType::Binary));
-        test!("LI", Ok(BoundType::LowerInteger));
-        test!("UI", Ok(BoundType::UpperInteger));
-        test!("SC", Ok(BoundType::SemiContinuous));
-        test!("X", Err(()));
-        test!("", Err(()));
-        test!("\t", Err(()));
+        test_negative!([Word("UNKNOWN_ROW_TYPE"), Word("ROW_NAME")]);
+        test_negative!([Word("JUST_ONE_WORD")]);
+        test_negative!([Word("ONE"), Word("TWO"), Word("THREE")]);
+        test_negative!([Word("ONE"), Word("TWO"), Word("THREE"), Word("FOUR")]);
+    }
+
+    #[test]
+    fn test_parse_column_line() {
+        macro_rules! test_positive {
+            (
+                [$($words:expr), *],
+                [$($expected_data:expr), *],
+                $initial_marker:expr,
+                $expected_marker:expr
+            ) => {
+                let line = vec![$($words), *];
+                let mut marker = $initial_marker;
+                let mut collector = Vec::new();
+
+                let result = parse_column_line(line, &mut marker, &mut collector);
+
+                assert!(result.is_ok());
+                assert_eq!(collector, vec![$($expected_data), *]);
+                assert_eq!(marker, $expected_marker);
+            }
+        }
+
+        test_positive!([Word("CNAME"), Word("RNAME"), Number(5f64)],
+            [("CNAME", VariableType::Continuous, "RNAME", 5f64)],
+            VariableType::Continuous, VariableType::Continuous);
+        test_positive!([Word("CNAME"), Word("RNAME"), Number(5f64)],
+            [("CNAME", VariableType::Integer, "RNAME", 5f64)],
+            VariableType::Integer, VariableType::Integer);
+        test_positive!([Word("CNAME1"), Word("RNAME1"), Number(1f64), Word("RNAME2"), Number(2f64)],
+            [("CNAME1", VariableType::Continuous, "RNAME1", 1f64),
+             ("CNAME1", VariableType::Continuous, "RNAME2", 2f64)],
+            VariableType::Continuous, VariableType::Continuous);
+        test_positive!([Word("MARKER_NAME"), Word(COLUMN_SECTION_MARKER), Word(START_OF_INTEGER)],
+            [], VariableType::Continuous, VariableType::Integer);
+        test_positive!([Word("MARKER_NAME"), Word(COLUMN_SECTION_MARKER), Word(END_OF_INTEGER)],
+            [], VariableType::Integer, VariableType::Continuous);
     }
 
     #[test]
     fn test_try_from_section() {
-        use super::Atom::*;
-
         macro_rules! test {
             ([$($words:expr), *], $expected:expr) => {
                 let result = Section::try_from(&vec![$($words), *]);
@@ -536,6 +572,56 @@ mod test {
         test!([Word("X")], Err(()));
         test!([Number(1.556f64)], Err(()));
         test!([], Err(()));
+    }
+
+    #[test]
+    fn test_try_from_row_type() {
+        macro_rules! test_positive {
+            ($word:expr, $expected:expr) => {
+                let result = RowType::try_from($word);
+                assert!(result.is_ok());
+                assert_eq!(result.unwrap(), $expected);
+            }
+        }
+        test_positive!("N", RowType::Cost);
+        test_positive!("L", RowType::Constraint(ConstraintType::Less));
+        test_positive!("E", RowType::Constraint(ConstraintType::Equal));
+        test_positive!("G", RowType::Constraint(ConstraintType::Greater));
+
+        macro_rules! test_negative {
+            ($word:expr) => {
+                let result = RowType::try_from($word);
+                assert!(result.is_err());
+            }
+        }
+        test_negative!("X");
+        test_negative!("");
+        test_negative!("\t");
+    }
+
+    #[test]
+    fn test_try_from_bound_type() {
+        macro_rules! test {
+            ($word:expr, $expected:ident) => {
+                let result = BoundType::try_from($word);
+                assert!(result.is_ok());
+                assert_eq!(result.unwrap(), BoundType::$expected);
+            }
+        }
+
+        test!("LO", LowerContinuous);
+        test!("UP", UpperContinuous);
+        test!("FX", Fixed);
+        test!("FR", Free);
+        test!("MI", LowerMinusInfinity);
+        test!("PL", UpperInfinity);
+        test!("BV", Binary);
+        test!("LI", LowerInteger);
+        test!("UI", UpperInteger);
+        test!("SC", SemiContinuous);
+        assert!(BoundType::try_from("X").is_err());
+        assert!(BoundType::try_from("").is_err());
+        assert!(BoundType::try_from("\t").is_err());
     }
 
 }
