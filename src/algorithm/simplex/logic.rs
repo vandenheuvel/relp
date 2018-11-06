@@ -168,7 +168,7 @@ mod test {
                                                                tableau.cost(CostRow::Actual)),
             }
         } {
-            assert_approx_eq!(cost, 9f64 / 2f64);
+            assert_abs_diff_eq!(cost, 9f64 / 2f64);
         } else {
             assert!(false);
         }
@@ -227,9 +227,9 @@ mod test {
 
         for i in 0..expected.0.len() {
             assert_eq!(result.0[i].0, expected.0[i].0);
-            assert_approx_eq!(result.0[i].1, expected.0[i].1);
+            assert_abs_diff_eq!(result.0[i].1, expected.0[i].1);
         }
-        assert_approx_eq!(result.1, expected.1);
+        assert_abs_diff_eq!(result.1, expected.1);
     }
 
     #[test]

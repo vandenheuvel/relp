@@ -309,23 +309,23 @@ mod test {
         let d = test_data();
         let v = T::from_data(d);
 
-        assert_approx_eq!(v.get_value(0), 0f64);
+        assert_abs_diff_eq!(v.get_value(0), 0f64);
     }
 
     fn zeros<T>() where T: Vector {
         let size = 533;
         let v= T::zeros(size);
 
-        assert_approx_eq!(v.get_value(0), 0f64);
-        assert_approx_eq!(v.get_value(size - 1), 0f64);
+        assert_abs_diff_eq!(v.get_value(0), 0f64);
+        assert_abs_diff_eq!(v.get_value(size - 1), 0f64);
     }
 
     fn ones<T>() where T: Vector {
         let size = 593;
         let v = T::ones(size);
 
-        assert_approx_eq!(v.get_value(0), 1f64);
-        assert_approx_eq!(v.get_value(size - 1), 1f64);
+        assert_abs_diff_eq!(v.get_value(0), 1f64);
+        assert_abs_diff_eq!(v.get_value(size - 1), 1f64);
     }
 
     fn get_set<T>() where T: Vector {
@@ -333,20 +333,20 @@ mod test {
 
 
         // Getting a zero value
-        assert_approx_eq!(v.get_value(0), 0f64);
+        assert_abs_diff_eq!(v.get_value(0), 0f64);
 
         // Getting a nonzero value
-        assert_approx_eq!(v.get_value(1), 5f64);
+        assert_abs_diff_eq!(v.get_value(1), 5f64);
 
         // Setting to the same value doesn't change
         let value = v.get_value(2);
         v.set_value(2, value);
-        assert_approx_eq!(v.get_value(2), value);
+        assert_abs_diff_eq!(v.get_value(2), value);
 
         // Changing a value
         let value = 3f64;
         v.set_value(1, value);
-        assert_approx_eq!(v.get_value(1), value);
+        assert_abs_diff_eq!(v.get_value(1), value);
     }
 
     fn out_of_bounds_get<T>() where T: Vector {
@@ -421,7 +421,7 @@ mod test {
             let v = test_vector::<SparseVector>();
             let u = test_vector::<SparseVector>();
 
-            assert_approx_eq!(v.inner_product(&u), 25f64 + 36f64);
+            assert_abs_diff_eq!(v.inner_product(&u), 25f64 + 36f64);
         }
     }
 }

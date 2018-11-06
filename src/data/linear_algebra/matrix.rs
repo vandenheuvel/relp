@@ -514,8 +514,8 @@ mod test {
     fn from_data<T>() where T: Matrix {
         let m = test_matrix::<T>();
 
-        assert_approx_eq!(m.get_value(0, 0), 1f64);
-        assert_approx_eq!(m.get_value(1, 2), 6f64);
+        assert_abs_diff_eq!(m.get_value(0, 0), 1f64);
+        assert_abs_diff_eq!(m.get_value(1, 2), 6f64);
     }
     
     fn create<T>() where T: Matrix {
@@ -543,40 +543,40 @@ mod test {
         let (rows, columns) = (299, 482);
         let m = T::zeros(rows, columns);
 
-        assert_approx_eq!(m.get_value(0, 0), 0f64);
-        assert_approx_eq!(m.get_value(rows - 1, columns - 1), 0f64);
+        assert_abs_diff_eq!(m.get_value(0, 0), 0f64);
+        assert_abs_diff_eq!(m.get_value(rows - 1, columns - 1), 0f64);
     }
 
     fn identity<T>() where T: Matrix {
         let size = 133;
         let m = T::identity(size);
 
-        assert_approx_eq!(m.get_value(0, 0), 1f64);
-        assert_approx_eq!(m.get_value(size - 1, size - 1), 1f64);
-        assert_approx_eq!(m.get_value(0, 1), 0f64);
-        assert_approx_eq!(m.get_value(1, 0), 0f64);
-        assert_approx_eq!(m.get_value(0, size - 1), 0f64);
-        assert_approx_eq!(m.get_value(size - 1, size - 1 - 1), 0f64);
+        assert_abs_diff_eq!(m.get_value(0, 0), 1f64);
+        assert_abs_diff_eq!(m.get_value(size - 1, size - 1), 1f64);
+        assert_abs_diff_eq!(m.get_value(0, 1), 0f64);
+        assert_abs_diff_eq!(m.get_value(1, 0), 0f64);
+        assert_abs_diff_eq!(m.get_value(0, size - 1), 0f64);
+        assert_abs_diff_eq!(m.get_value(size - 1, size - 1 - 1), 0f64);
     }
 
     fn get_set<T>() where T: Matrix {
         let mut m = test_matrix::<T>();
 
         // Getting a zero value
-        assert_approx_eq!(m.get_value(0, 2), 0f64);
+        assert_abs_diff_eq!(m.get_value(0, 2), 0f64);
 
         // Getting a nonzero value
-        assert_approx_eq!(m.get_value(0, 1), 2f64);
+        assert_abs_diff_eq!(m.get_value(0, 1), 2f64);
 
         // Setting to the same value doesn't change
         let v = m.get_value(0, 1);
         m.set_value(0, 1, v);
-        assert_approx_eq!(m.get_value(0, 1), v);
+        assert_abs_diff_eq!(m.get_value(0, 1), v);
 
         // Changing a value
         let v = 3f64;
         m.set_value(1, 1, v);
-        assert_approx_eq!(m.get_value(1, 1), v);
+        assert_abs_diff_eq!(m.get_value(1, 1), v);
     }
 
     fn out_of_bounds_get<T>() where T: Matrix {
@@ -596,24 +596,24 @@ mod test {
         let mut m = test_matrix::<T>();
         let m_copy = m.clone();
         m.multiply_row(0, 1f64);
-        assert_approx_eq!(m.get_value(0, 1), m_copy.get_value(0, 1));
+        assert_abs_diff_eq!(m.get_value(0, 1), m_copy.get_value(0, 1));
 
         // Multiply by zero
         let mut m = test_matrix::<T>();
         m.multiply_row(1, 0f64);
-        assert_approx_eq!(m.get_value(1, 2), 0f64);
+        assert_abs_diff_eq!(m.get_value(1, 2), 0f64);
 
         // Multiply by minus one
         let mut m = test_matrix::<T>();
         let m_copy = m.clone();
         m.multiply_row(0, -1f64);
-        assert_approx_eq!(m.get_value(0, 1), -m_copy.get_value(0, 1));
+        assert_abs_diff_eq!(m.get_value(0, 1), -m_copy.get_value(0, 1));
 
         let mut m = test_matrix::<T>();
         let m_copy = m.clone();
         let factor = 4.56f64;
         m.multiply_row(0, factor);
-        assert_approx_eq!(m.get_value(0, 2), factor * m_copy.get_value(0, 2));
+        assert_abs_diff_eq!(m.get_value(0, 2), factor * m_copy.get_value(0, 2));
     }
 
     #[cfg(test)]
@@ -652,11 +652,11 @@ mod test {
         fn test_row_column() {
             let m = test_matrix::<DenseMatrix>();
 
-            assert_approx_eq!(m.column(2)[0], 0f64);
-            assert_approx_eq!(m.column(1).iter().sum::<f64>(), 2f64 + 5f64);
+            assert_abs_diff_eq!(m.column(2)[0], 0f64);
+            assert_abs_diff_eq!(m.column(1).iter().sum::<f64>(), 2f64 + 5f64);
 
-            assert_approx_eq!(m.row(0).nth(0).unwrap(), 1f64);
-            assert_approx_eq!(m.row(1).sum::<f64>(), 5f64 + 6f64);
+            assert_abs_diff_eq!(*m.row(0).nth(0).unwrap(), 1f64);
+            assert_abs_diff_eq!(m.row(1).sum::<f64>(), 5f64 + 6f64);
         }
 
         #[test]
@@ -671,7 +671,7 @@ mod test {
             let test_value = m.get_value(edit_row, test_column);
             m.mul_add_rows(read_row, edit_row, multiple);
 
-            assert_approx_eq!(m.get_value(edit_row, test_column),
+            assert_abs_diff_eq!(m.get_value(edit_row, test_column),
                     test_value + multiple * m.get_value(read_row, test_column));
 
 
@@ -687,8 +687,8 @@ mod test {
             m.set_value(pivot_row, pivot_column, 1f64);
             m.mul_add_rows(pivot_row, test_row, multiple);
 
-            assert_approx_eq!(m.get_value(test_row, pivot_column), 0f64);
-            assert_approx_eq!(m.get_value(test_row, test_column),
+            assert_abs_diff_eq!(m.get_value(test_row, pivot_column), 0f64);
+            assert_abs_diff_eq!(m.get_value(test_row, test_column),
                     test_value - multiple * m.get_value(pivot_row, test_column));
         }
     }
@@ -730,10 +730,10 @@ mod test {
             let m = test_matrix::<SparseMatrix>();
 
             assert_eq!(m.column(2).nth(0).unwrap(), &(1 as usize, 6f64));
-            assert_approx_eq!(m.column(1).map(|&(_, value)| value).sum::<f64>(), 2f64 + 5f64);
+            assert_abs_diff_eq!(m.column(1).map(|&(_, value)| value).sum::<f64>(), 2f64 + 5f64);
 
             assert_eq!(m.row(0).nth(0).unwrap(), &(0 as usize, 1f64));
-            assert_approx_eq!(m.row(1).map(|&(_, value)| value).sum::<f64>(), 5f64 + 6f64);
+            assert_abs_diff_eq!(m.row(1).map(|&(_, value)| value).sum::<f64>(), 5f64 + 6f64);
         }
 
         #[test]

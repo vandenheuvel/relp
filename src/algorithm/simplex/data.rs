@@ -422,25 +422,25 @@ mod test {
     fn test_cost() {
         let data = matrix_data();
         let artificial_tableau = artificial_tableau(&data);
-        assert_approx_eq!(artificial_tableau.cost(CostRow::Artificial), 8f64);
-        assert_approx_eq!(artificial_tableau.cost(CostRow::Actual), 0f64);
+        assert_abs_diff_eq!(artificial_tableau.cost(CostRow::Artificial), 8f64);
+        assert_abs_diff_eq!(artificial_tableau.cost(CostRow::Actual), 0f64);
 
         let tableau = tableau(&data);
-        assert_approx_eq!(tableau.cost(CostRow::Actual), 6f64);
+        assert_abs_diff_eq!(tableau.cost(CostRow::Actual), 6f64);
     }
 
     #[test]
     fn test_relative_cost() {
         let data = matrix_data();
         let artificial_tableau = artificial_tableau(&data);
-        assert_approx_eq!(artificial_tableau.relative_cost(CostRow::Artificial, 0), -10f64);
+        assert_abs_diff_eq!(artificial_tableau.relative_cost(CostRow::Artificial, 0), -10f64);
 
-        assert_approx_eq!(artificial_tableau.relative_cost(CostRow::Actual, 0), 1f64);
+        assert_abs_diff_eq!(artificial_tableau.relative_cost(CostRow::Actual, 0), 1f64);
 
         let tableau = tableau(&data);
-        assert_approx_eq!(tableau.relative_cost(CostRow::Actual, 0), -3f64);
-        assert_approx_eq!(tableau.relative_cost(CostRow::Actual, 1), -3f64);
-        assert_approx_eq!(tableau.relative_cost(CostRow::Actual, 2), 0f64);
+        assert_abs_diff_eq!(tableau.relative_cost(CostRow::Actual, 0), -3f64);
+        assert_abs_diff_eq!(tableau.relative_cost(CostRow::Actual, 1), -3f64);
+        assert_abs_diff_eq!(tableau.relative_cost(CostRow::Actual, 2), 0f64);
     }
 
     #[test]
@@ -451,7 +451,7 @@ mod test {
         let expected = SparseVector::from_data(vec![1f64, -10f64, 3f64, 5f64, 2f64]);
 
         for i in 0..column.len() {
-            assert_approx_eq!(column.get_value(i), expected.get_value(i));
+            assert_abs_diff_eq!(column.get_value(i), expected.get_value(i));
         }
 
         let tableau = tableau(&data);
@@ -460,7 +460,7 @@ mod test {
 
         for row in 0..column.len() {
             if row != CostRow::Artificial as usize {
-                assert_approx_eq!(column.get_value(row), expected.get_value(row));
+                assert_abs_diff_eq!(column.get_value(row), expected.get_value(row));
             }
         }
     }
@@ -513,8 +513,8 @@ mod test {
         artificial_tableau.bring_into_basis(row, column, &column_data);
 
         assert!(artificial_tableau.is_in_basis(&column));
-        assert_approx_eq!(artificial_tableau.cost(CostRow::Artificial), 14f64 / 3f64);
-        assert_approx_eq!(artificial_tableau.cost(CostRow::Actual), 1f64 / 3f64);
+        assert_abs_diff_eq!(artificial_tableau.cost(CostRow::Artificial), 14f64 / 3f64);
+        assert_abs_diff_eq!(artificial_tableau.cost(CostRow::Actual), 1f64 / 3f64);
 
         let mut tableau = tableau(&data);
         let column = 1;
@@ -523,7 +523,7 @@ mod test {
         tableau.bring_into_basis(row, column, &column_data);
 
         assert!(tableau.is_in_basis(&column));
-        assert_approx_eq!(tableau.cost(CostRow::Actual), 9f64 / 2f64);
+        assert_abs_diff_eq!(tableau.cost(CostRow::Actual), 9f64 / 2f64);
     }
 
     fn bfs_tableau(data: &MatrixData) -> Tableau<MatrixData> {
