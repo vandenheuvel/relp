@@ -18,6 +18,9 @@ use io::mps::parsing::UnstructuredRow;
 use io::mps::parsing::UnstructuredColumn;
 use io::mps::parsing::UnstructuredRhs;
 use io::mps::parsing::UnstructuredBound;
+use approx::AbsDiffEq;
+use io::EPSILON;
+use std::convert::identity;
 
 impl<'a> TryFrom<UnstructuredMPS<'a>> for MPS {
     type Error = LinearProgramError;
@@ -76,7 +79,9 @@ impl<'a> TryFrom<UnstructuredMPS<'a>> for MPS {
 fn build_row_index<'a>(
     unstructured_rows: &Vec<UnstructuredRow<'a>>
 ) -> (Vec<&'a str>, HashMap<&'a str, usize>) {
-    let row_names = unstructured_rows.iter().map(|&(name, _)| name).collect::<Vec<_>>();
+    let row_names = unstructured_rows.iter()
+        .map(|&UnstructuredRow { name, .. }| name)
+        .collect::<Vec<_>>();
     let row_index = row_names.iter()
         .enumerate()
         .map(|(index, &name)| (name, index))
@@ -102,7 +107,7 @@ fn order_rows<'a>(
 ) -> Result<Vec<Constraint>, LinearProgramError> {
     let mut rows: Vec<Constraint> = Vec::with_capacity(unstructured_rows.len());
 
-    for &(name, constraint_type) in unstructured_rows.iter() {
+    for &UnstructuredRow { name, constraint_type, } in unstructured_rows.iter() {
         rows.push(Constraint {
             name: match index.get(name) {
                 Some(&index) => index,
@@ -139,14 +144,14 @@ fn build_columns<'a>(
     cost_row_name: &'a str,
     row_index: &HashMap<&'a str, usize>,
 ) -> Result<(Vec<(usize, f64)>, Vec<Variable>, Vec<String>), LinearProgramError> {
-    unstructured_columns.sort_by_key(|&(name, _, _, _)| name);
+    unstructured_columns.sort_by_key(|&UnstructuredColumn { name, .. }| name);
 
     let mut cost_values = Vec::new();
     let mut columns = Vec::new();
     let mut column_names = Vec::new();
-    let (mut current_name, mut current_type, _, _) = unstructured_columns[0];
+    let UnstructuredColumn { name: mut current_name, variable_type: mut current_type, .. } = unstructured_columns[0];
     let mut values = Vec::new();
-    for &(name, variable_type, row_name, value) in unstructured_columns.iter() {
+    for &UnstructuredColumn { name, variable_type, row_name, value, } in unstructured_columns.iter() {
         if name != current_name {
             columns.push(Variable {
                 name: column_names.len(),
@@ -218,12 +223,12 @@ fn build_rhss<'a>(
     unstructured_rhss: &mut Vec<UnstructuredRhs<'a>>,
     row_index: &HashMap<&'a str, usize>,
 ) -> Result<Vec<Rhs>, LinearProgramError> {
-    unstructured_rhss.sort_by_key(|&(name, _, _)| name);
+    unstructured_rhss.sort_by_key(|&UnstructuredRhs { name, .. }| name);
 
     let mut rhss = Vec::new();
-    let (mut current_name, _, _) = unstructured_rhss[0];
+    let UnstructuredRhs { name: mut current_name, .. } = unstructured_rhss[0];
     let mut values = Vec::new();
-    for &(name, row_name, value) in unstructured_rhss.iter() {
+    for &UnstructuredRhs { name, row_name, value, } in unstructured_rhss.iter() {
         if name != current_name {
             rhss.push(Rhs { name: current_name.to_string(), values, });
 
@@ -260,12 +265,12 @@ fn build_bounds<'a>(
     unstructured_bounds: &mut Vec<UnstructuredBound<'a>>,
     column_index: &HashMap<String, usize>,
 ) -> Result<Vec<Bound>, LinearProgramError> {
-    unstructured_bounds.sort_by_key(|&(name, _, _, _)| name);
+    unstructured_bounds.sort_by_key(|&UnstructuredBound { name, .. }| name);
 
     let mut bounds = Vec::new();
-    let (mut bound_name , _, _, _)= unstructured_bounds[0];
+    let UnstructuredBound { name: mut bound_name, .. } = unstructured_bounds[0];
     let mut values = Vec::new();
-    for &(name, bound_type, column_name, value) in unstructured_bounds.iter() {
+    for &UnstructuredBound { name, bound_type, column_name, value, } in unstructured_bounds.iter() {
         if name != bound_name {
             bounds.push(Bound { name: bound_name.to_string(), values, });
 
@@ -416,6 +421,35 @@ impl Into<GeneralForm> for MPS {
             }).collect();
 
         GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info)
+    }
+}
+
+impl AbsDiffEq for MPS {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> <Self as AbsDiffEq>::Epsilon {
+        EPSILON
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
+        self.name == other.name &&
+            self.cost_row_name == other.cost_row_name &&
+            self.cost_values.iter().zip(other.cost_values.iter())
+                .map(|((index1, value1), (index2, value2))|
+                    index1 == index2 && abs_diff_eq!(value1, value2))
+                .all(identity) &&
+            self.row_names == other.row_names &&
+            self.rows == other.rows &&
+            self.column_names == other.column_names &&
+            self.columns.iter().zip(other.columns.iter())
+                .map(|(column1, column2)| abs_diff_eq!(column1, column2))
+                .all(identity) &&
+            self.rhss.iter().zip(other.rhss.iter())
+                .map(|(column1, column2)| abs_diff_eq!(column1, column2))
+                .all(identity) &&
+            self.bounds.iter().zip(other.bounds.iter())
+                .map(|(column1, column2)| abs_diff_eq!(column1, column2))
+                .all(identity)
     }
 }
 

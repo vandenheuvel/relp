@@ -12,6 +12,11 @@ use io::mps::BoundType;
 use io::mps::RowType;
 use io::mps::Section;
 
+use self::Atom::{Word, Number};
+use approx::AbsDiffEq;
+use io::EPSILON;
+use std::convert::identity;
+
 
 /// Most fundamental element in an MPS text file.
 ///
@@ -58,8 +63,8 @@ pub(super) fn into_atom_lines(program: &impl AsRef<str>) -> Vec<((u64, &str), Ve
 fn into_atoms(line: &str) -> Vec<Atom> {
     line.split_whitespace()
         .map(|atom| match atom.parse::<f64>() {
-            Ok(value) => Atom::Number(value),
-            Err(_) => Atom::Word(atom),
+            Ok(value) => Number(value),
+            Err(_) => Word(atom),
         })
         .collect()
 }
@@ -72,6 +77,7 @@ fn into_atoms(line: &str) -> Vec<Atom> {
 ///
 /// The information contained in this struct is not necessarily consistent, e.g. some columns
 /// might reference rows which are not declared.
+#[derive(Debug, PartialEq)]
 pub(super) struct UnstructuredMPS<'a> {
     /// Name of the linear program
     pub name: &'a str,
@@ -88,16 +94,39 @@ pub(super) struct UnstructuredMPS<'a> {
 }
 
 /// Name and constraint type of a row
-pub(super) type UnstructuredRow<'a> = (&'a str, ConstraintType);
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct UnstructuredRow<'a> {
+    pub name: &'a str,
+    pub constraint_type: ConstraintType,
+}
 /// Name of a column, variable type of a column, name of a row and a value (a constraint matrix
 /// entry in sparse description)
-pub(super) type UnstructuredColumn<'a> = (&'a str, VariableType, &'a str, f64);
-/// Name of the right-hand side, column name and constraint value
-pub(super) type UnstructuredRhs<'a> = (&'a str, &'a str, f64);
+#[derive(Debug, PartialEq)]
+pub(super) struct UnstructuredColumn<'a> {
+    pub name: &'a str,
+    pub variable_type: VariableType,
+    pub row_name: &'a str,
+    pub value: f64,
+}
+/// Name of the right-hand side, name of the variable and constraint value
+#[derive(Debug, PartialEq)]
+pub(super) struct UnstructuredRhs<'a> {
+    pub name: &'a str,
+    pub row_name: &'a str,
+    pub value: f64,
+}
 /// Name of the bound, bound type, name of the variable and constraint value
-pub(super) type UnstructuredBound<'a> = (&'a str, BoundType, &'a str, f64);
+#[derive(Debug, PartialEq)]
+pub(super) struct UnstructuredBound<'a> {
+    pub name: &'a str,
+    pub bound_type: BoundType,
+    pub column_name: &'a str,
+    pub value: f64,
+}
 /// TODO: Support the RANGES section
-pub(super) type UnstructuredRange<'a> = ();
+#[derive(Debug, PartialEq)]
+pub(super) struct UnstructuredRange {
+}
 
 impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a> {
     type Error = ParseError;
@@ -146,7 +175,7 @@ impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a>
                 None => Err(ParseError::new("Section unknown, can't parse line")),
                 Some(Section::Name(_)) => panic!("The name should be updated in section parsing"),
                 Some(Section::Rows) => parse_row_line(line, &mut cost_row_name, &mut rows),
-                Some(Section::Columns(mut marker)) => parse_column_line(line, &mut marker, &mut columns),
+                Some(Section::Columns(ref mut marker)) => parse_column_line(line, marker, &mut columns),
                 Some(Section::Rhs) => parse_rhs_line(line, &mut rhss),
                 Some(Section::Bounds) => parse_bound_line(line, &mut bounds),
                 Some(Section::Ranges) => parse_range_line(line, &mut ranges),
@@ -182,9 +211,11 @@ fn parse_row_line<'a>(line: Vec<Atom<'a>>,
                       cost_row_name: &mut Option<&'a str>,
                       row_collector: &mut Vec<UnstructuredRow<'a>>) -> Result<(), ParseError> {
     match line.as_slice() {
-        &[Atom::Word(ty), Atom::Word(row)] => match RowType::try_from(ty)? {
-            RowType::Cost => *cost_row_name = Some(row),
-            RowType::Constraint(ty) => row_collector.push((row, ty)),
+        &[Word(ty), Word(row_name)] => match RowType::try_from(ty)? {
+            RowType::Cost => *cost_row_name = Some(row_name),
+            RowType::Constraint(ty) => row_collector.push(UnstructuredRow {
+                name: row_name, constraint_type: ty,
+            }),
         },
         _ => return Err(ParseError::new("Line can't be parsed as part of the row section."))
     }
@@ -209,13 +240,19 @@ fn parse_column_line<'a>(line: Vec<Atom<'a>>,
                          column_collector: &mut Vec<UnstructuredColumn<'a>>,
 ) -> Result<(), ParseError> {
     match line.as_slice() {
-        &[Atom::Word(column), Atom::Word(row), Atom::Number(value)] =>
-            column_collector.push((column, *marker, row, value)),
-        &[Atom::Word(column), Atom::Word(row1), Atom::Number(value1), Atom::Word(row2), Atom::Number(value2)] => {
-            column_collector.push((column, *marker, row1, value1));
-            column_collector.push((column, *marker, row2, value2));
+        &[Word(column_name), Word(row_name), Number(value)] =>
+            column_collector.push(UnstructuredColumn {
+                name: column_name, variable_type: *marker, row_name, value,
+            }),
+        &[Word(column_name), Word(row1), Number(value1), Word(row2), Number(value2)] => {
+            column_collector.push(UnstructuredColumn {
+                name: column_name, variable_type: *marker, row_name: row1, value: value1,
+            });
+            column_collector.push(UnstructuredColumn {
+                name: column_name, variable_type: *marker, row_name: row2, value: value2,
+            });
         },
-        &[Atom::Word(_name), Atom::Word(COLUMN_SECTION_MARKER), Atom::Word(new_marker)] => {
+        &[Word(_name), Word(COLUMN_SECTION_MARKER), Word(new_marker)] => {
             *marker = match (&marker, new_marker) {
                 (VariableType::Continuous, START_OF_INTEGER) => VariableType::Integer,
                 (VariableType::Integer, END_OF_INTEGER) => VariableType::Continuous,
@@ -241,11 +278,11 @@ fn parse_column_line<'a>(line: Vec<Atom<'a>>,
 /// A `ParseError` in case of an unknown format.
 fn parse_rhs_line<'a>(line: Vec<Atom<'a>>, rhs_collector: &mut Vec<UnstructuredRhs<'a>>) -> Result<(), ParseError> {
     match line.as_slice() {
-        &[Atom::Word(name), Atom::Word(row), Atom::Number(value)] =>
-            rhs_collector.push((name, row, value)),
-        &[Atom::Word(name), Atom::Word(row1), Atom::Number(value1), Atom::Word(row2), Atom::Number(value2)] => {
-            rhs_collector.push((name, row1, value1));
-            rhs_collector.push((name, row2, value2));
+        &[Word(name), Word(row_name), Number(value)] =>
+            rhs_collector.push(UnstructuredRhs { name, row_name, value, }),
+        &[Word(name), Word(row1), Number(value1), Word(row2), Number(value2)] => {
+            rhs_collector.push(UnstructuredRhs { name, row_name: row1, value: value1, });
+            rhs_collector.push(UnstructuredRhs { name, row_name: row2, value: value2, });
         },
         _ => return Err(ParseError::new("Can't parse this row as right-hand side (RHS).")),
     }
@@ -265,8 +302,10 @@ fn parse_rhs_line<'a>(line: Vec<Atom<'a>>, rhs_collector: &mut Vec<UnstructuredR
 /// A `ParseError` in case of an unknown format.
 fn parse_bound_line<'a>(line: Vec<Atom<'a>>, bound_collector: &mut Vec<UnstructuredBound<'a>>) -> Result<(), ParseError> {
     match line.as_slice() {
-        &[Atom::Word(ty), Atom::Word(name), Atom::Word(column), Atom::Number(value)] =>
-            bound_collector.push((name, BoundType::try_from(ty)?, column, value)),
+        &[Word(ty), Word(name), Word(column_name), Number(value)] =>
+            bound_collector.push(UnstructuredBound {
+                name, bound_type: BoundType::try_from(ty)?, column_name, value,
+            }),
         _ => return Err(ParseError::new("Can't parse this row as bound.")),
     }
 
@@ -289,7 +328,7 @@ fn parse_bound_line<'a>(line: Vec<Atom<'a>>, bound_collector: &mut Vec<Unstructu
 /// TODO: Ranges are currently not supported.
 fn parse_range_line<'a>(
     line: Vec<Atom<'a>>,
-    range_collector: &mut Vec<UnstructuredRange<'a>>
+    range_collector: &mut Vec<UnstructuredRange>
 ) -> Result<(), ParseError> {
     match line.as_slice() {
         _ => unimplemented!(),
@@ -330,6 +369,73 @@ impl<'a> UnstructuredMPS<'a> {
     }
 }
 
+impl<'a> AbsDiffEq for UnstructuredMPS<'a> {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> <Self as AbsDiffEq>::Epsilon {
+        EPSILON
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
+        self.name == other.name &&
+            self.cost_row_name == other.cost_row_name &&
+            self.rows == other.rows &&
+            self.columns.iter().zip(other.columns.iter())
+                .map(|(column1, column2)| abs_diff_eq!(column1, column2))
+                .all(identity) &&
+            self.rhss.iter().zip(other.rhss.iter())
+                .map(|(rhs1, rhs2)| abs_diff_eq!(rhs1, rhs2))
+                .all(identity) &&
+            self.bounds.iter().zip(other.bounds.iter())
+                .map(|(bound1, bound2)| abs_diff_eq!(bound1, bound2))
+                .all(identity)
+    }
+}
+
+impl<'a> AbsDiffEq for UnstructuredColumn<'a> {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> <Self as AbsDiffEq>::Epsilon {
+        EPSILON
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
+        self.name == other.name &&
+            self.variable_type == other.variable_type &&
+            self.row_name == other.row_name &&
+            abs_diff_eq!(self.value, other.value)
+    }
+}
+
+impl<'a> AbsDiffEq for UnstructuredRhs<'a> {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> <Self as AbsDiffEq>::Epsilon {
+        EPSILON
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
+        self.name == other.name &&
+            self.row_name == other.row_name &&
+            abs_diff_eq!(self.value, other.value)
+    }
+}
+
+impl<'a> AbsDiffEq for UnstructuredBound<'a> {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> <Self as AbsDiffEq>::Epsilon {
+        EPSILON
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
+        self.name == other.name &&
+            self.bound_type == other.bound_type &&
+            self.column_name == other.column_name &&
+            abs_diff_eq!(self.value, other.value)
+    }
+}
+
 impl<'a, 'b,> TryFrom<&'b Vec<Atom<'a>>> for Section<'a> {
     type Error = ();
 
@@ -348,8 +454,8 @@ impl<'a, 'b,> TryFrom<&'b Vec<Atom<'a>>> for Section<'a> {
     /// A `()` error if no `Section` is recognized.
     fn try_from(line: &Vec<Atom<'a>>) -> Result<Section<'a>, Self::Error> {
         match line.as_slice() {
-            &[Atom::Word("NAME"), Atom::Word(name)] => Ok(Section::Name(name)),
-            &[Atom::Word(name)] => match name {
+            &[Word("NAME"), Word(name)] => Ok(Section::Name(name)),
+            &[Word(name)] => match name {
                 "ROWS"     => Ok(Section::Rows),
                 "COLUMNS"  => Ok(Section::Columns(VariableType::Continuous)),
                 "RHS"      => Ok(Section::Rhs),
@@ -435,9 +541,12 @@ mod test {
     use std::convert::TryFrom;
 
     use data::linear_program::elements::{ConstraintType, VariableType};
+    use io::mps::test::lp_unstructured_mps;
+    use io::mps::test::MPS_STRING;
     use io::mps::parsing::Atom::*;
     use io::mps::parsing::into_atom_lines;
     use io::mps::parsing::into_atoms;
+    use io::mps::parsing::{UnstructuredColumn, UnstructuredMPS, UnstructuredRow};
     use io::mps::BoundType;
     use io::mps::RowType;
     use io::mps::Section;
@@ -494,7 +603,8 @@ mod test {
         }
 
         test_positive!([Word("E"), Word("ROW_NAME")],
-                       [("ROW_NAME", ConstraintType::Equal)], Some("COST_ROW_NAME"));
+                       [UnstructuredRow { name: "ROW_NAME", constraint_type: ConstraintType::Equal, }],
+                       Some("COST_ROW_NAME"));
         test_positive!([Word("N"), Word("NEW_COST_ROW_NAME")],
                        [], Some("NEW_COST_ROW_NAME"));
 
@@ -521,7 +631,7 @@ mod test {
         macro_rules! test_positive {
             (
                 [$($words:expr), *],
-                [$($expected_data:expr), *],
+                [$($expected_data:expr, ) *],
                 $initial_marker:expr,
                 $expected_marker:expr
             ) => {
@@ -538,19 +648,54 @@ mod test {
         }
 
         test_positive!([Word("CNAME"), Word("RNAME"), Number(5f64)],
-            [("CNAME", VariableType::Continuous, "RNAME", 5f64)],
+            [
+                UnstructuredColumn {
+                    name: "CNAME",
+                    variable_type: VariableType::Continuous,
+                    row_name: "RNAME",
+                     value: 5f64,
+                 },
+            ],
             VariableType::Continuous, VariableType::Continuous);
         test_positive!([Word("CNAME"), Word("RNAME"), Number(5f64)],
-            [("CNAME", VariableType::Integer, "RNAME", 5f64)],
+            [
+                UnstructuredColumn {
+                    name: "CNAME",
+                    variable_type: VariableType::Integer,
+                    row_name: "RNAME",
+                     value: 5f64,
+                },
+            ],
             VariableType::Integer, VariableType::Integer);
         test_positive!([Word("CNAME1"), Word("RNAME1"), Number(1f64), Word("RNAME2"), Number(2f64)],
-            [("CNAME1", VariableType::Continuous, "RNAME1", 1f64),
-             ("CNAME1", VariableType::Continuous, "RNAME2", 2f64)],
+            [
+                UnstructuredColumn {
+                    name: "CNAME1",
+                    variable_type: VariableType::Continuous,
+                    row_name: "RNAME1",
+                     value: 1f64,
+                 },
+                 UnstructuredColumn {
+                     name: "CNAME1",
+                     variable_type: VariableType::Continuous,
+                     row_name: "RNAME2",
+                      value: 2f64,
+                  },
+            ],
             VariableType::Continuous, VariableType::Continuous);
         test_positive!([Word("MARKER_NAME"), Word(COLUMN_SECTION_MARKER), Word(START_OF_INTEGER)],
             [], VariableType::Continuous, VariableType::Integer);
         test_positive!([Word("MARKER_NAME"), Word(COLUMN_SECTION_MARKER), Word(END_OF_INTEGER)],
             [], VariableType::Integer, VariableType::Continuous);
+    }
+
+    #[test]
+    fn test_try_from_unstructured_mps() {
+        let lines = into_atom_lines(&MPS_STRING);
+
+        let result = UnstructuredMPS::try_from(lines);
+        assert!(result.is_ok());
+        assert_abs_diff_eq!(result.unwrap(), lp_unstructured_mps());
     }
 
     #[test]

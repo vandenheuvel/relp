@@ -8,6 +8,7 @@ description = "A solver for linear programs"
 
 [dependencies]
 assert_approx_eq = "1.0.0"
+approx = "0.3.0"
 
 [features]
 miplib_tests = []

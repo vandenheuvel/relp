@@ -1,6 +1,7 @@
 //! # Reading and writing of linear programs
 //!
 //! This module provides read and write functionality for linear program formats.
+use std::f64;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -11,6 +12,8 @@ use io::error::ImportError;
 
 mod mps;
 pub mod error;
+
+pub const EPSILON: f64 = f64::EPSILON;
 
 
 /// The `import` function takes a file path and returns, if successful, a struct which can be

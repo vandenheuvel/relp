@@ -4,9 +4,11 @@
 //! Optimization by Christos H. Papadimitriou.
 #![feature(try_from)]
 #![feature(slice_patterns)]
+#![feature(convert_id)]
 
 #[cfg(test)]
 #[macro_use] extern crate assert_approx_eq;
+#[macro_use] extern crate approx;
 extern crate core;
 
 pub mod algorithm;
