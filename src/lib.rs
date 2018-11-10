@@ -1,18 +1,18 @@
-//! # A linear program solver.
+//! # A linear program solver
 //!
 //! Linear programs are solved using the Simplex Method as described in the book Combinatorial
-//! Optimization by Christos H. Papadimitriou.
-#![feature(try_from)]
-#![feature(slice_patterns)]
-#![feature(convert_id)]
+//! Optimization by Christos H. Papadimitriou and Kenneth Steiglitz.
+#![warn(missing_docs)]
+#![feature(is_sorted)]
+#![feature(or_patterns)]
+#![feature(drain_filter)]
 
-#[macro_use] extern crate approx;
-extern crate core;
+extern crate daggy;
+extern crate num;
 
 pub mod algorithm;
+pub mod data;
 pub mod io;
 
-mod data;
-
 #[cfg(test)]
-mod test;
+mod tests;

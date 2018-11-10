@@ -8,7 +8,7 @@ addons:
 
 cache: cargo
 
-before_cache:
+before_script:
  - cargo install cargo-tarpaulin
 
 script:
@@ -17,6 +17,6 @@ script:
  - cargo test
 
 after_success:
- - cargo tarpaulin --out Xml
+ - cargo tarpaulin --ignore-tests --out Xml
  - bash <(curl -s https://codecov.io/bash) 
 

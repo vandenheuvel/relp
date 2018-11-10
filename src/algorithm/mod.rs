@@ -1,5 +1,5 @@
 //! # Algorithms
 //!
-//! This module holds algorithms
-
+//! This module holds algorithms.
 pub mod simplex;
+pub mod utilities;

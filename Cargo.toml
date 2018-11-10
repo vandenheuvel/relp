@@ -6,8 +6,14 @@ license = "MIT"
 repository = "https://github.com/vandenheuvel/rust-lp"
 description = "A solver for linear programs"
 
+edition = "2018"
+
 [dependencies]
-approx = "0.3.0"
+num = "0.2.1"
+daggy = "0.6.x"  # Currently only for debug asserts
+
+itertools = "0.9.0"
 
 [features]
-miplib_tests = []
+miplib = []
+burkardt = []
