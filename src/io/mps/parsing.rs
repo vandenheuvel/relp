@@ -2,28 +2,29 @@
 //!
 //! First stage of importing linear programs. Checks if the MPS file is syntactically correct, but
 //! doesn't do any consistency checks for e.g. undefined row names in the column section.
-use std::convert::TryFrom;
-use std::error::Error;
-
-use data::linear_program::elements::{ConstraintType, VariableType};
-use io::error::{ParseError, FileLocation};
-use io::mps::token::{COMMENT_INDICATOR, COLUMN_SECTION_MARKER, END_OF_INTEGER, START_OF_INTEGER};
-use io::mps::BoundType;
-use io::mps::RowType;
-use io::mps::Section;
-
-use self::Atom::{Word, Number};
-use approx::AbsDiffEq;
-use io::EPSILON;
 use std::convert::identity;
+use std::convert::TryFrom;
 
+use approx::AbsDiffEq;
+
+use crate::data::linear_program::elements::{ConstraintType, VariableType};
+use crate::io::EPSILON;
+use crate::io::error::{FileLocation, ParseError};
+use crate::io::mps::BoundType;
+use crate::io::mps::RowType;
+use crate::io::mps::Section;
+use crate::io::mps::token::{
+    COLUMN_SECTION_MARKER, COMMENT_INDICATOR, END_OF_INTEGER, START_OF_INTEGER,
+};
+
+use self::Atom::{Number, Word};
 
 /// Most fundamental element in an MPS text file.
 ///
 /// Every part of the input string to end up in the final `MPS` struct is parsed as either a `Word`
 /// or a `Number`.
 #[derive(Clone, Debug, PartialEq)]
-pub(super) enum Atom<'a> {
+pub(crate) enum Atom<'a> {
     /// A token consisting of text which should not contain whitespace.
     Word(&'a str),
     /// A token representing a number.
@@ -40,12 +41,12 @@ pub(super) enum Atom<'a> {
 ///
 /// All lines stored in a `Vec`. The first `(usize, &str)` tuple is used for creating of errors, it
 /// contains the line number and line.
-pub(super) fn into_atom_lines(program: &impl AsRef<str>) -> Vec<((u64, &str), Vec<Atom>)> {
+pub(crate) fn into_atom_lines(program: &impl AsRef<str>) -> Vec<((u64, &str), Vec<Atom>)> {
     program.as_ref()
         .lines()
         .enumerate()
         .map(|(number, line)| (number as u64 + 1u64, line))
-        .filter(|(_, line)| !line.trim_left().starts_with(COMMENT_INDICATOR))
+        .filter(|(_, line)| !line.trim_start().starts_with(COMMENT_INDICATOR))
         .filter(|(_, line)| !line.is_empty())
         .map(|(number, line)| ((number, line), into_atoms(line)))
         .collect()
@@ -78,7 +79,7 @@ fn into_atoms(line: &str) -> Vec<Atom> {
 /// The information contained in this struct is not necessarily consistent, e.g. some columns
 /// might reference rows which are not declared.
 #[derive(Debug, PartialEq)]
-pub(super) struct UnstructuredMPS<'a> {
+pub(crate) struct UnstructuredMPS<'a> {
     /// Name of the linear program
     pub name: &'a str,
     /// Name of the cost row, or objective function
@@ -95,14 +96,14 @@ pub(super) struct UnstructuredMPS<'a> {
 
 /// Name and constraint type of a row
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct UnstructuredRow<'a> {
+pub(crate) struct UnstructuredRow<'a> {
     pub name: &'a str,
     pub constraint_type: ConstraintType,
 }
 /// Name of a column, variable type of a column, name of a row and a value (a constraint matrix
 /// entry in sparse description)
 #[derive(Debug, PartialEq)]
-pub(super) struct UnstructuredColumn<'a> {
+pub(crate) struct UnstructuredColumn<'a> {
     pub name: &'a str,
     pub variable_type: VariableType,
     pub row_name: &'a str,
@@ -110,14 +111,14 @@ pub(super) struct UnstructuredColumn<'a> {
 }
 /// Name of the right-hand side, name of the variable and constraint value
 #[derive(Debug, PartialEq)]
-pub(super) struct UnstructuredRhs<'a> {
+pub(crate) struct UnstructuredRhs<'a> {
     pub name: &'a str,
     pub row_name: &'a str,
     pub value: f64,
 }
 /// Name of the bound, bound type, name of the variable and constraint value
 #[derive(Debug, PartialEq)]
-pub(super) struct UnstructuredBound<'a> {
+pub(crate) struct UnstructuredBound<'a> {
     pub name: &'a str,
     pub bound_type: BoundType,
     pub column_name: &'a str,
@@ -125,8 +126,7 @@ pub(super) struct UnstructuredBound<'a> {
 }
 /// TODO: Support the RANGES section
 #[derive(Debug, PartialEq)]
-pub(super) struct UnstructuredRange {
-}
+pub(crate) struct UnstructuredRange {}
 
 impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a> {
     type Error = ParseError;
@@ -147,7 +147,9 @@ impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a>
     /// # Errors
     ///
     /// A `ParseError` at failure.
-    fn try_from(atom_lines: Vec<(FileLocation<'a>, Vec<Atom<'a>>)>) -> Result<UnstructuredMPS<'a>, Self::Error> {
+    fn try_from(
+        atom_lines: Vec<(FileLocation<'a>, Vec<Atom<'a>>)>,
+    ) -> Result<UnstructuredMPS<'a>, Self::Error> {
         let mut current_section: Option<Section> = None;
 
         let mut name = None;
@@ -164,7 +166,7 @@ impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a>
                     Section::Name(new_program_name) => {
                         name = Some(new_program_name);
                         current_section = None;
-                    },
+                    }
                     Section::Endata => break,
                     _other_section => current_section = Some(new_section),
                 }
@@ -181,7 +183,7 @@ impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a>
                 Some(Section::Ranges) => parse_range_line(line, &mut ranges),
                 Some(Section::Endata) => panic!("Row parsing should have been aborted after Endata detection"),
             }.map_err(|parse_error|
-                ParseError::with_file_location(parse_error.description(), file_location))?;
+                ParseError::with_file_location(parse_error.to_string(), file_location))?;
         }
 
         UnstructuredMPS::all_required_fields_present(&name, &cost_row_name, &rows, &columns, &rhss)
@@ -207,14 +209,17 @@ impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a>
 /// # Return value
 ///
 /// A ParseError if parsing fails.
-fn parse_row_line<'a>(line: Vec<Atom<'a>>,
-                      cost_row_name: &mut Option<&'a str>,
-                      row_collector: &mut Vec<UnstructuredRow<'a>>) -> Result<(), ParseError> {
+fn parse_row_line<'a>(
+    line: Vec<Atom<'a>>,
+    cost_row_name: &mut Option<&'a str>,
+    row_collector: &mut Vec<UnstructuredRow<'a>>,
+) -> Result<(), ParseError> {
     match line.as_slice() {
         &[Word(ty), Word(row_name)] => match RowType::try_from(ty)? {
             RowType::Cost => *cost_row_name = Some(row_name),
             RowType::Constraint(ty) => row_collector.push(UnstructuredRow {
-                name: row_name, constraint_type: ty,
+                name: row_name,
+                constraint_type: ty,
             }),
         },
         _ => return Err(ParseError::new("Line can't be parsed as part of the row section."))
@@ -235,9 +240,10 @@ fn parse_row_line<'a>(line: Vec<Atom<'a>>,
 ///
 /// A new variable type, indicating that the integer section of the columns section has started or
 /// ended.
-fn parse_column_line<'a>(line: Vec<Atom<'a>>,
-                         marker: &mut VariableType,
-                         column_collector: &mut Vec<UnstructuredColumn<'a>>,
+fn parse_column_line<'a>(
+    line: Vec<Atom<'a>>,
+    marker: &mut VariableType,
+    column_collector: &mut Vec<UnstructuredColumn<'a>>,
 ) -> Result<(), ParseError> {
     match line.as_slice() {
         &[Word(column_name), Word(row_name), Number(value)] =>
@@ -300,7 +306,10 @@ fn parse_rhs_line<'a>(line: Vec<Atom<'a>>, rhs_collector: &mut Vec<UnstructuredR
 /// # Return value
 ///
 /// A `ParseError` in case of an unknown format.
-fn parse_bound_line<'a>(line: Vec<Atom<'a>>, bound_collector: &mut Vec<UnstructuredBound<'a>>) -> Result<(), ParseError> {
+fn parse_bound_line<'a>(
+    line: Vec<Atom<'a>>,
+    bound_collector: &mut Vec<UnstructuredBound<'a>>,
+) -> Result<(), ParseError> {
     match line.as_slice() {
         &[Word(ty), Word(name), Word(column_name), Number(value)] =>
             bound_collector.push(UnstructuredBound {
@@ -326,15 +335,11 @@ fn parse_bound_line<'a>(line: Vec<Atom<'a>>, bound_collector: &mut Vec<Unstructu
 /// # Note
 ///
 /// TODO: Ranges are currently not supported.
-fn parse_range_line<'a>(
-    line: Vec<Atom<'a>>,
-    range_collector: &mut Vec<UnstructuredRange>
+fn parse_range_line(
+    _line: Vec<Atom>,
+    _range_collector: &mut Vec<UnstructuredRange>,
 ) -> Result<(), ParseError> {
-    match line.as_slice() {
-        _ => unimplemented!(),
-    }
-
-    Ok(())
+    unimplemented!()
 }
 
 impl<'a> UnstructuredMPS<'a> {
@@ -344,11 +349,13 @@ impl<'a> UnstructuredMPS<'a> {
     ///
     /// This is not a check for consistency, this method is a helper method for the TryFrom
     /// constructor for this type.
-    fn all_required_fields_present(mps_name: &Option<&str>,
-                                   mps_cost_row_name: &Option<&str>,
-                                   mps_rows: &Vec<UnstructuredRow>,
-                                   mps_columns: &Vec<UnstructuredColumn>,
-                                   mps_rhss: &Vec<UnstructuredRhs>) -> Result<(), ParseError> {
+    fn all_required_fields_present(
+        mps_name: &Option<&str>,
+        mps_cost_row_name: &Option<&str>,
+        mps_rows: &Vec<UnstructuredRow>,
+        mps_columns: &Vec<UnstructuredColumn>,
+        mps_rhss: &Vec<UnstructuredRhs>,
+    ) -> Result<(), ParseError> {
         if mps_name.is_none() {
             return Err(ParseError::new("No MPS name read."));
         }
@@ -358,7 +365,7 @@ impl<'a> UnstructuredMPS<'a> {
         if mps_rows.is_empty() {
             return Err(ParseError::new("No row names read."));
         }
-        if  mps_columns.is_empty() {
+        if mps_columns.is_empty() {
             return Err(ParseError::new("No variables read."));
         }
         if mps_rhss.is_empty() {
@@ -376,7 +383,7 @@ impl<'a> AbsDiffEq for UnstructuredMPS<'a> {
         EPSILON
     }
 
-    fn abs_diff_eq(&self, other: &Self, epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
+    fn abs_diff_eq(&self, other: &Self, _epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
         self.name == other.name &&
             self.cost_row_name == other.cost_row_name &&
             self.rows == other.rows &&
@@ -399,11 +406,11 @@ impl<'a> AbsDiffEq for UnstructuredColumn<'a> {
         EPSILON
     }
 
-    fn abs_diff_eq(&self, other: &Self, epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
-        self.name == other.name &&
-            self.variable_type == other.variable_type &&
-            self.row_name == other.row_name &&
-            abs_diff_eq!(self.value, other.value)
+    fn abs_diff_eq(&self, other: &Self, _epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
+        self.name == other.name
+            && self.variable_type == other.variable_type
+            && self.row_name == other.row_name
+            && abs_diff_eq!(self.value, other.value)
     }
 }
 
@@ -414,10 +421,10 @@ impl<'a> AbsDiffEq for UnstructuredRhs<'a> {
         EPSILON
     }
 
-    fn abs_diff_eq(&self, other: &Self, epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
-        self.name == other.name &&
-            self.row_name == other.row_name &&
-            abs_diff_eq!(self.value, other.value)
+    fn abs_diff_eq(&self, other: &Self, _epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
+        self.name == other.name
+            && self.row_name == other.row_name
+            && abs_diff_eq!(self.value, other.value)
     }
 }
 
@@ -428,15 +435,15 @@ impl<'a> AbsDiffEq for UnstructuredBound<'a> {
         EPSILON
     }
 
-    fn abs_diff_eq(&self, other: &Self, epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
-        self.name == other.name &&
-            self.bound_type == other.bound_type &&
-            self.column_name == other.column_name &&
-            abs_diff_eq!(self.value, other.value)
+    fn abs_diff_eq(&self, other: &Self, _epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
+        self.name == other.name
+            && self.bound_type == other.bound_type
+            && self.column_name == other.column_name
+            && abs_diff_eq!(self.value, other.value)
     }
 }
 
-impl<'a, 'b,> TryFrom<&'b Vec<Atom<'a>>> for Section<'a> {
+impl<'a, 'b> TryFrom<&'b Vec<Atom<'a>>> for Section<'a> {
     type Error = ();
 
     /// Try to read a `Section` from a `Vec` slice of `Atom`s.
@@ -534,34 +541,30 @@ impl<'a> TryFrom<&'a str> for BoundType {
 }
 
 
-/// Testing the parsing functionality
 #[cfg(test)]
 mod test {
-
     use std::convert::TryFrom;
 
-    use data::linear_program::elements::{ConstraintType, VariableType};
-    use io::mps::test::lp_unstructured_mps;
-    use io::mps::test::MPS_STRING;
-    use io::mps::parsing::Atom::*;
-    use io::mps::parsing::into_atom_lines;
-    use io::mps::parsing::into_atoms;
-    use io::mps::parsing::{UnstructuredColumn, UnstructuredMPS, UnstructuredRow};
-    use io::mps::BoundType;
-    use io::mps::RowType;
-    use io::mps::Section;
-    use io::mps::parsing::parse_row_line;
-    use io::mps::parsing::parse_column_line;
-    use io::mps::token::{COLUMN_SECTION_MARKER, END_OF_INTEGER, START_OF_INTEGER};
-
+    use crate::data::linear_program::elements::{ConstraintType, VariableType};
+    use crate::io::mps::BoundType;
+    use crate::io::mps::parsing::{UnstructuredColumn, UnstructuredRow};
+    use crate::io::mps::parsing::Atom::*;
+    use crate::io::mps::parsing::into_atom_lines;
+    use crate::io::mps::parsing::into_atoms;
+    use crate::io::mps::parsing::parse_column_line;
+    use crate::io::mps::parsing::parse_row_line;
+    use crate::io::mps::RowType;
+    use crate::io::mps::Section;
+    use crate::io::mps::token::{COLUMN_SECTION_MARKER, END_OF_INTEGER, START_OF_INTEGER};
 
     #[test]
     fn test_into_atom_lines() {
         let program = "SOMETEXT 1.2\n*comment\n\n   \t line before is empty".to_string();
         let result = into_atom_lines(&program);
-        let expected = vec![((1, "SOMETEXT 1.2"), vec![Word("SOMETEXT"), Number(1.2f64)]),
-                            ((4, "   \t line before is empty"),
-                             vec![Word("line"), Word("before"), Word("is"), Word("empty")])];
+        let expected = vec![
+            ((1, "SOMETEXT 1.2"), vec![Word("SOMETEXT"), Number(1.2f64)]),
+            ((4, "   \t line before is empty"), vec![Word("line"), Word("before"), Word("is"), Word("empty")]),
+        ];
         assert_eq!(result, expected);
     }
 
@@ -581,7 +584,7 @@ mod test {
         test!("NUMBER 134", [Word("NUMBER"), Number(134f64)]);
         test!("NUMBER 1.6734", [Word("NUMBER"), Number(1.6734f64)]);
         test!("    MARK0000  'MARKER'                 'INTORG'",
-            [Word("MARK0000"), Word("'MARKER'"), Word("'INTORG'")]);
+              [Word("MARK0000"), Word("'MARKER'"), Word("'INTORG'")]);
     }
 
     #[test]
@@ -690,15 +693,6 @@ mod test {
     }
 
     #[test]
-    fn test_try_from_unstructured_mps() {
-        let lines = into_atom_lines(&MPS_STRING);
-
-        let result = UnstructuredMPS::try_from(lines);
-        assert!(result.is_ok());
-        assert_abs_diff_eq!(result.unwrap(), lp_unstructured_mps());
-    }
-
-    #[test]
     fn test_try_from_section() {
         macro_rules! test {
             ([$($words:expr), *], $expected:expr) => {
@@ -726,7 +720,7 @@ mod test {
                 let result = RowType::try_from($word);
                 assert!(result.is_ok());
                 assert_eq!(result.unwrap(), $expected);
-            }
+            };
         }
         test_positive!("N", RowType::Cost);
         test_positive!("L", RowType::Constraint(ConstraintType::Less));
@@ -737,7 +731,7 @@ mod test {
             ($word:expr) => {
                 let result = RowType::try_from($word);
                 assert!(result.is_err());
-            }
+            };
         }
         test_negative!("X");
         test_negative!("");
@@ -751,7 +745,7 @@ mod test {
                 let result = BoundType::try_from($word);
                 assert!(result.is_ok());
                 assert_eq!(result.unwrap(), BoundType::$expected);
-            }
+            };
         }
 
         test!("LO", LowerContinuous);
@@ -768,5 +762,4 @@ mod test {
         assert!(BoundType::try_from("").is_err());
         assert!(BoundType::try_from("\t").is_err());
     }
-
 }

@@ -1,427 +1,747 @@
+//! # Vector types for linear programs
+//!
+//! Sparse and dense vectors. These were written by hand, because a certain specific set of
+//! operations needs to be done quickly with these types.
+use std::collections::HashSet;
+use std::fmt::{Debug, Display};
+use std::fmt::Error;
+use std::fmt::Formatter;
 use std::slice::Iter;
 
-use data::linear_algebra::matrix::{DenseMatrix, Matrix};
-use algorithm::simplex::EPSILON;
+use crate::algorithm::utilities::remove_indices;
+use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, SparseMatrix};
+use crate::data::linear_algebra::SparseTuples;
+use crate::data::linear_algebra::utilities::remove_sparse_indices;
+use crate::data::number_types::traits::Field;
 
 /// Defines basic ways to create or change a vector, regardless of back-end.
-pub trait Vector {
-    fn from_data(data: Vec<f64>) -> Self;
-    fn ones(size: usize) -> Self;
-    fn zeros(size: usize) -> Self;
-    fn get_value(&self, index: usize) -> f64;
-    fn set_value(&mut self, index: usize, value: f64);
+pub trait Vector<F>: Eq + Display + Debug {
+    /// Items stored internally.
+    type Inner;
+
+    /// Create a new instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Internal data values. Will not be changed and directly used for creation.
+    /// * `len` - Length of the vector represented (and not necessarily of the internal data struct
+    /// ure).
+    ///
+    /// # Return value
+    ///
+    /// Input data wrapped inside a vector.
+    fn new(data: Vec<Self::Inner>, len: usize) -> Self;
+    /// Remove the items at the specified indices.
+    fn remove_indices(&mut self, indices: &Vec<usize>);
+    /// Make a vector longer by one, by adding an extra value at the end of this vector.
+    fn push_value(&mut self, value: F);
+    /// Iterate over the internal values.
+    fn iter_values(&self) -> Iter<Self::Inner>;
+    /// Get the value at an index.
+    ///
+    /// Depending on internal representation, this can be an expensive operation (for `SparseVector`
+    /// 's, the cost depends on the (lack of) sparsity.
+    fn get_value(&self, index: usize) -> F;
+    /// Set the value at an index.
+    ///
+    /// Depending on internal representation, this can be an expensive operation (for `SparseVector`
+    /// 's, the cost depends on the (lack of) sparsity.
+    fn set_value(&mut self, index: usize, value: F);
+    /// Number of items represented by the vector.
     fn len(&self) -> usize;
+    /// Get the size of the internal data structure (and not of the represented vector).
     fn size(&self) -> usize;
 }
 
 /// Uses a Vec<f64> as underlying data a structure. Length is fixed at creation.
-#[derive(Debug, Clone, PartialEq)]
-pub struct DenseVector {
-    data: Vec<f64>,
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DenseVector<F> {
+    data: Vec<F>,
     len: usize,
 }
 
-impl DenseVector {
-    /// Consider this a column vector and concatenate a `DenseMatrix` to the "right" (high column
-    /// indices) of this matrix "horizontally" (number of rows must be equal).
-    pub fn hcat(self, other: DenseMatrix) -> DenseMatrix {
-        debug_assert_eq!(other.nr_rows(), self.len());
+impl<F: Field> DenseVector<F> {
+    /// Create a vector with all values being equal to a given value.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value which all elements of this vector are equal to.
+    /// * `len` - Length of the vector, number of elements.
+    ///
+    /// # Return value
+    ///
+    /// A constant `DenseVector`
+    pub fn constant(value: F, len: usize) -> Self {
+        debug_assert_ne!(len, 0);
 
-        let mut data = other.data();
-        for i in 0..self.len() {
-            data[i].insert(0, self.data[i]);
-        }
-        DenseMatrix::from_data(data)
+        Self { data: vec![value; len], len, }
     }
-    /// Consider this a row vector and concatenate a `DenseMatrix` to the "bottom" (high row
-    /// indices) of this matrix "vertically" (number of columns must be equal).
-    pub fn vcat(self, other: DenseMatrix) -> DenseMatrix {
-        debug_assert_eq!(other.nr_columns(), self.len());
 
-        let mut data = other.data();
-        data.insert(0, self.data);
-
-        DenseMatrix::from_data(data)
-    }
-    /// Iterate over the values of this vector.
-    pub fn iter(&self) -> Iter<f64> {
-        self.data.iter()
-    }
-    /// Remove the value at index `i`.
-    pub fn remove_value(&mut self, i: usize) {
-        debug_assert!(i < self.len());
-
-        self.data.remove(i);
-        self.len -= 1;
+    /// Append multiple values to this vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_values` - An ordered collections of values to append.
+    pub fn extend_with_values(&mut self, new_values: Vec<F>) {
+        self.len += new_values.len();
+        self.data.extend(new_values);
     }
 }
 
-impl Vector for DenseVector {
+impl<F: Field> Vector<F> for DenseVector<F> {
+    type Inner = F;
+
     /// Create a `DenseVector` from the provided data.
-    fn from_data(data: Vec<f64>) -> DenseVector {
-        debug_assert_ne!(data.len(), 0);
-
-        let size = data.len();
-        DenseVector { data, len: size, }
-    }
-    /// Create a `DenseVector` of length `len` filled with `1f64`.
-    fn ones(len: usize) -> DenseVector {
+    fn new(data: Vec<Self::Inner>, len: usize) -> Self {
         debug_assert_ne!(len, 0);
+        debug_assert_eq!(data.len(), len);
 
-        DenseVector { data: vec![1f64; len], len, }
+        Self { data, len, }
     }
-    /// Create a `DenseVector` of length `len` filled with `0f64`.
-    fn zeros(len: usize) -> DenseVector {
-        debug_assert_ne!(len, 0);
 
-        DenseVector { data: vec![0f64; len], len, }
+    /// Reduce the size of the vector by removing values.
+    ///
+    /// # Arguments
+    ///
+    /// * `indices` - A set of indices to remove from the vector, assumed sorted.
+    fn remove_indices(&mut self, indices: &Vec<usize>) {
+        debug_assert!(indices.is_sorted());
+        // All values are unique
+        debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
+        debug_assert!(indices.iter().all(|&i| i < self.len));
+        debug_assert!(indices.len() < self.len);
+
+        remove_indices(&mut self.data, indices);
+        self.len -= indices.len();
     }
+
+    /// Append a value to this vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value to append.
+    fn push_value(&mut self, value: F) {
+        self.data.push(value);
+        self.len += 1;
+    }
+
+    /// Iterate over the values of this vector.
+    fn iter_values(&self) -> Iter<Self::Inner> {
+        self.data.iter()
+    }
+
     /// Get the value at index `i`.
-    fn get_value(&self, i: usize) -> f64 {
+    fn get_value(&self, i: usize) -> F {
         debug_assert!(i < self.len);
 
         self.data[i]
     }
+
     /// Set the value at index `i` to `value`.
-    fn set_value(&mut self, i: usize, value: f64) {
+    fn set_value(&mut self, i: usize, value: F) {
         debug_assert!(i < self.len);
 
-        for _ in 0..(i as i64 - self.data.len() as i64 + 1) {
-            self.data.push(0f64);
-        }
         self.data[i] = value;
     }
+
     /// The length of this vector.
     fn len(&self) -> usize {
-        self.data.len()
+        self.len
     }
+
     /// The size of this vector in memory.
     fn size(&self) -> usize {
-        self.len
+        self.data.len()
+    }
+}
+
+impl<F: Display> Display for DenseVector<F> {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        for value in self.data.iter() {
+            writeln!(f, "{}", value)?;
+        }
+        writeln!(f, "")
     }
 }
 
 /// A sparse vector using a `Vec<>` with (row, value) combinations as back-end. Indices start at
 /// `0`.
-#[derive(Debug)]
-pub struct SparseVector {
-    data: Vec<(usize, f64)>,
+///
+/// TODO: Consider making this backed by a `HashMap`.
+#[derive(Eq, PartialEq, Clone, Debug)]
+pub struct SparseVector<F> {
+    data: SparseTuples<F>,
     len: usize,
 }
 
-impl SparseVector {
-    /// Create a vector of length `len` from `data`.
-    pub fn from_tuples(data: Vec<(usize, f64)>, len: usize) -> SparseVector {
-        debug_assert_ne!(len, 0);
-        debug_assert!(data.iter().map(|&(i, _)| i).max().unwrap_or(0 as usize) < len);
-
-        SparseVector { data, len, }
-    }
-    /// Concatenate this vector with another into a third. The length of the new vector is the sum
-    /// of the lengths of the vectors it was created from.
-    pub fn cat(self, other: SparseVector) -> SparseVector {
-        let len = self.len() + other.len();
-        let mut data = self.data;
-        for (row, value) in other.data {
-            data.push((self.len + row, value));
-        }
-        SparseVector { data, len, }
-    }
-    /// Get all (row, value) tuples of this vector in an Iter.
-    pub fn values(&self) -> Iter<'_, (usize, f64)> {
-        self.data.iter()
-    }
+impl<F: Field> SparseVector<F> {
     /// Calculate the inner product between two vectors.
-    pub fn inner_product(&self, other: &SparseVector) -> f64 {
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - Vector to calculate inner product with.
+    ///
+    /// # Return value
+    ///
+    /// The inner product.
+    pub fn inner_product(&self, other: &Self) -> F {
         debug_assert_eq!(other.len(), self.len());
 
-        let mut total = 0f64;
-        let mut other_values = other.values();
-        let mut next_value = other_values.next();
-        for (my_column, my_value) in self.values() {
-            if next_value.is_none() {
-                break;
-            }
-            let mut column = next_value.unwrap().0;
-            let mut value = next_value.unwrap().1;
+        let mut self_tuple_index = 0;
+        let mut other_tuple_index = 0;
 
-            while column < *my_column {
-                let next_value = other_values.next();
-                if next_value.is_none() {
-                    break;
-                }
-                column = next_value.unwrap().0;
-                value = next_value.unwrap().1;
-            }
+        let mut total = F::additive_identity();
+        while self_tuple_index < self.data.len() && other_tuple_index < other.data.len() {
+            let self_tuple = self.data[self_tuple_index];
+            let other_tuple = other.data[other_tuple_index];
 
-            if column == *my_column {
-                total += value * *my_value;
-                next_value = other_values.next();
+            if self_tuple.0 < other_tuple.0 {
+                self_tuple_index += 1;
+            } else if self_tuple.0 > other_tuple.0 {
+                other_tuple_index += 1;
+            } else {
+                // self_tuple.0 == other_tuple.0
+                total += self_tuple.1 * other_tuple.1;
+                self_tuple_index += 1;
+                other_tuple_index += 1;
             }
         }
 
         total
     }
-    /// Append a zero value
-    pub fn push_zero(&mut self) {
-        self.len += 1;
-    }
-    /// Remove the value at row `i`.
-    pub fn remove_value(&mut self, i: usize) {
-        debug_assert!(self.len > 1);
-        debug_assert!(i < self.len);
 
-        self.len -= 1;
+    /// Add the multiple of another row to this row.
+    ///
+    /// # Arguments
+    ///
+    /// * `multiple` - Constant that all elements of the `other` vector are multiplied with.
+    /// * `other` - Vector to add a multiple of to this vector.
+    ///
+    /// # Return value
+    ///
+    /// A new `SparseVector`.
+    ///
+    /// # Note
+    ///
+    /// The implementation of this method doesn't look pretty, but it seems to be reasonably fast.
+    /// If this method is too slow, it might be wise to consider the switching of the `SparseVector`
+    /// storage backend from a `Vec` to a `HashMap`.
+    pub fn add_multiple_of_row(&self, multiple: F, other: &Self) -> Self {
+        debug_assert_eq!(other.len(), self.len());
 
-        let mut index = 0;
-        let mut removed = false;
-        while index < self.data.len() {
-            if self.data[index].0 == i && !removed {
-                self.data.remove(index);
-                removed = true;
-            } else if self.data[index].0 >= i {
-                self.data[index].0 -= 1;
-                index += 1;
+        let mut new_tuples = Vec::new();
+        let mut i = 0;
+        let mut j = 0;
+
+        while i < self.data.len() && j < other.data.len() {
+            if self.data[i].0 < other.data[j].0 {
+                new_tuples.push(self.data[i]);
+                i += 1;
+            } else if self.data[i].0 == other.data[j].0 {
+                let new_value = self.data[i].1 + multiple * other.data[j].1;
+                if new_value != F::additive_identity() {
+                    new_tuples.push((self.data[i].0, new_value));
+                }
+                i += 1;
+                j += 1;
             } else {
-                index += 1;
+                // self.data[i].0 > other.data[j].0
+                new_tuples.push((other.data[j].0, multiple * other.data[j].1));
+                j += 1;
             }
+        }
+        new_tuples.extend_from_slice(&self.data[i..]);
+        new_tuples.extend(other.data[j..].iter().map(|&(i, v)| (i, multiple * v)));
+
+        Self::new(new_tuples, self.len)
+    }
+
+    /// TODO: Consider moving this to the matrix module
+    pub fn multiply(&self, matrix: SparseMatrix<F, ColumnMajorOrdering>) -> Self {
+        debug_assert_eq!(matrix.nr_rows(), self.len());
+
+        Self::new(
+            (0..matrix.nr_columns())
+                .map(|j| (j, self.inner_product(&matrix.clone_column(j))))
+                .filter(|&(_, v)| v != F::additive_identity())
+                .collect(),
+            matrix.nr_columns(),
+        )
+    }
+
+    /// Consume this `SparseVector` by iterating over it's inner `SparseTuple`'s.
+    pub fn values_into_iter(self) -> impl IntoIterator<Item = (usize, F)> {
+        self.data.into_iter()
+    }
+
+    /// Create a `SparseVector` representation of standard basis unit vector e_i.
+    ///
+    /// # Arguments
+    ///
+    /// * `i` - Only index where there should be a 1. Note that indexing starts at zero, and runs
+    /// until (not through) `len`.
+    /// * `len` - Size of the `SparseVector`.
+    pub fn standard_basis_vector(i: usize, len: usize) -> Self {
+        debug_assert!(i < len);
+
+        Self::new(vec![(i, F::multiplicative_identity())], len)
+    }
+
+    /// Multiply each element of the vector by a value.
+    pub fn element_wise_multiply(&mut self, value: F) {
+        for (_, v) in self.data.iter_mut() {
+            *v *= value;
+        }
+    }
+
+    /// Divide each element of the vector by a value.
+    pub fn element_wise_divide(&mut self, value: F) {
+        for (_, v) in self.data.iter_mut() {
+            *v /= value;
         }
     }
 }
 
-impl Vector for SparseVector {
-    /// Create a `SparseVector` from the provided data.
-    fn from_data(data: Vec<f64>) -> SparseVector {
-        debug_assert_ne!(data.len(), 0);
+impl<F: Field> Vector<F> for SparseVector<F> {
+    type Inner = (usize, F);
 
-        let size = data.len();
-        SparseVector {
-            data: data.into_iter()
-                .enumerate()
-                .filter(|(_, v)| v.abs() >= EPSILON)
-                .collect(),
-            len: size,
-        }
-    }
-    /// Create a `SparseVector` of length `len` filled with `1f64`.
-    fn ones(len: usize) -> SparseVector {
+    /// Create a vector of length `len` from `data`.
+    ///
+    /// Requires that values close to zero are already filtered.
+    fn new(data: Vec<Self::Inner>, len: usize) -> Self {
+        debug_assert!(data.iter().all(|&(i, _)| i < len));
+        debug_assert!(data.is_sorted_by_key(|&(i, _)| i));
         debug_assert_ne!(len, 0);
+        debug_assert!(data.len() <= len);
+        debug_assert!(data.iter().all(|&(_, v)| v != F::additive_identity()));
 
-        let mut data = Vec::with_capacity(len);
-        for i in 0..len {
-            data.push((i, 1f64));
-        }
-        SparseVector { data, len, }
+        Self { data, len, }
     }
-    /// Create a `SparseVector` of length `len` filled with `0f64`.
-    fn zeros(len: usize) -> SparseVector {
-        debug_assert_ne!(len, 0);
 
-        SparseVector { data: Vec::new(), len, }
+    /// Remove elements.
+    ///
+    /// # Arguments
+    ///
+    /// * `indices` is assumed sorted.
+    fn remove_indices(&mut self, indices: &Vec<usize>) {
+        debug_assert!(indices.is_sorted());
+        // All values are unique
+        debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
+        debug_assert!(indices.iter().all(|&i| i < self.len));
+        debug_assert!(indices.len() < self.len);
+
+        remove_sparse_indices(&mut self.data, indices);
+        self.len -= indices.len();
     }
+
+    /// Append a zero value
+    fn push_value(&mut self, value: F) {
+        debug_assert!(value != F::additive_identity());
+
+        self.data.push((self.len, value));
+        self.len += 1;
+    }
+
+    fn iter_values(&self) -> Iter<Self::Inner> {
+        self.data.iter()
+    }
+
     /// Get the value at index `i`.
-    fn get_value(&self, i: usize) -> f64 {
+    fn get_value(&self, i: usize) -> F {
         debug_assert!(i < self.len);
 
-        match self.data.iter().find(|&&(index, _)| index == i) {
-            Some(&(_, value)) => value,
-            None => 0f64,
-        }
+        self.data
+            .binary_search_by_key(&i, |&(index, _)| index)
+            .map_or(F::additive_identity(), |i| self.data[i].1)
     }
+
     /// Set the value at index `i` to `value`.
-    fn set_value(&mut self, i: usize, value: f64) {
+    ///
+    /// # Arguments
+    ///
+    /// * `i` - Index of the value. New tuple will be inserted, potentially causing many values to
+    /// be shifted.
+    /// * `value` - Value to be taken at index `i`. Should not be very close to zero to avoid
+    /// memory usage and numerical error build-up.
+    fn set_value(&mut self, i: usize, value: F) {
         debug_assert!(i < self.len);
+        debug_assert_ne!(value, F::additive_identity());
 
-        if value == 0f64 {
-            return;
+        match self.data.binary_search_by_key(&i, |&(index, _)| index) {
+            Ok(index) => self.data[index].1 = value,
+            Err(index) => self.data.insert(index, (i, value)),
         }
-
-        for index in 0..self.data.len() {
-            if self.data[index].0 < i {
-                continue;
-            } else if self.data[index].0 == i {
-                self.data[index].1 = value;
-            } else if self.data[index].0 > i {
-                self.data.insert(i, (i, value));
-            }
-            return;
-        }
-        self.data.push((i, value));
     }
+
     /// The length of this vector.
     fn len(&self) -> usize {
         self.len
     }
+
     /// The size of this vector in memory.
     fn size(&self) -> usize {
         self.data.len()
     }
 }
 
-impl Clone for SparseVector {
-    fn clone(&self) -> SparseVector {
-        SparseVector {
-            data: self.data.clone(),
-            len: self.len,
+impl<F: Display> Display for SparseVector<F> {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        for (index, value) in self.data.iter() {
+            writeln!(f, "({} {}), ", index, value)?;
         }
+        writeln!(f, "")
     }
 }
-
-impl PartialEq for SparseVector {
-    fn eq(&self, other: &SparseVector) -> bool {
-        if !(self.len() == other.len()) {
-            return false;
-        }
-
-        for i in 0..self.len() {
-            if !((self.get_value(i) - other.get_value(i)).abs() < EPSILON) {
-                return false;
-            }
-        }
-
-        true
-    }
-}
-
-impl Eq for SparseVector {}
-
 
 #[cfg(test)]
-mod test {
+#[allow(dead_code)]
+pub mod test {
+    //! Contains also some helper methods to be used in other test modules.
 
-    use super::*;
+    use std::f64::EPSILON;
 
+    use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
+    use crate::data::number_types::traits::RealField;
+    use crate::RF;
+
+    pub trait TestVector<F>: Vector<F> {
+        fn from_test_data(data: Vec<f64>) -> Self;
+    }
+    impl<RF: RealField> TestVector<RF> for DenseVector<RF> {
+        /// Create a `DenseVector` from the provided data.
+        fn from_test_data(data: Vec<f64>) -> Self {
+            debug_assert_ne!(data.len(), 0);
+
+            let size = data.len();
+            Self { data: data.into_iter().map(|v| RF!(v)).collect(), len: size, }
+        }
+    }
+    impl<RF: RealField> TestVector<RF> for SparseVector<RF> {
+        /// Create a `SparseVector` from the provided data.
+        fn from_test_data(data: Vec<f64>) -> Self {
+            debug_assert_ne!(data.len(), 0);
+
+            let size = data.len();
+            Self {
+                data: data.into_iter()
+                    .enumerate()
+                    .map(|(i, v)| (i, RF!(v)))
+                    .filter(|&(_, v)| v != RF::additive_identity())
+                    .collect(),
+                len: size,
+            }
+        }
+    }
+
+    impl<RF: RealField> SparseVector<RF> {
+        /// Create a `SparseVector` from the provided data.
+        pub fn from_test_tuples(data: Vec<(usize, f64)>, len: usize) -> Self {
+            debug_assert!(data.iter().all(|&(i, _)| i < len));
+            debug_assert!(data.is_sorted_by_key(|&(i, _)| i));
+            debug_assert_ne!(len, 0);
+            debug_assert!(data.len() <= len);
+            debug_assert!(data.iter().all(|&(_, v)| v.abs() > EPSILON));
+
+            Self {
+                data: data.into_iter().map(|(i, v)| (i, RF!(v))).collect(),
+                len,
+            }
+        }
+    }
+
+    /// Test data used in tests.
     fn test_data() -> Vec<f64> {
-        vec![0f64, 5f64, 6f64]
+        vec![0, 5, 6].into_iter().map(|v| v as f64).collect()
     }
 
-    fn test_vector<T>() -> T where T: Vector {
-        return T::from_data(test_data())
+    /// A test vector used in tests.
+    fn test_vector<RF: RealField, V: TestVector<RF>>() -> V {
+        return V::from_test_data(test_data())
     }
 
-    fn create<T>() where T: Vector {
-        from_data::<T>();
-        zeros::<T>();
-        ones::<T>();
+    /// Test
+    fn push_value<RF: RealField, V: TestVector<RF>>() {
+        let mut v = test_vector::<RF, V>();
+        let len = v.len();
+        let new_v = RF!(1);
+        v.push_value(new_v);
+        assert_eq!(v.len(), len + 1);
+        assert_eq!(v.get_value(v.len() - 1), new_v);
     }
 
-    fn from_data<T>() where T: Vector {
-        let d = test_data();
-        let v = T::from_data(d);
-
-        assert_abs_diff_eq!(v.get_value(0), 0f64);
-    }
-
-    fn zeros<T>() where T: Vector {
-        let size = 533;
-        let v= T::zeros(size);
-
-        assert_abs_diff_eq!(v.get_value(0), 0f64);
-        assert_abs_diff_eq!(v.get_value(size - 1), 0f64);
-    }
-
-    fn ones<T>() where T: Vector {
-        let size = 593;
-        let v = T::ones(size);
-
-        assert_abs_diff_eq!(v.get_value(0), 1f64);
-        assert_abs_diff_eq!(v.get_value(size - 1), 1f64);
-    }
-
-    fn get_set<T>() where T: Vector {
-        let mut v = test_vector::<T>();
-
+    /// Test
+    fn get_set<RF: RealField, V: TestVector<RF>>() {
+        let mut v = test_vector::<RF, V>();
 
         // Getting a zero value
-        assert_abs_diff_eq!(v.get_value(0), 0f64);
+        assert_eq!(v.get_value(0), RF!(0));
 
         // Getting a nonzero value
-        assert_abs_diff_eq!(v.get_value(1), 5f64);
+        assert_eq!(v.get_value(1), RF!(5));
 
         // Setting to the same value doesn't change
         let value = v.get_value(2);
         v.set_value(2, value);
-        assert_abs_diff_eq!(v.get_value(2), value);
+        assert_eq!(v.get_value(2), value);
 
         // Changing a value
-        let value = 3f64;
+        let value = RF!(3);
         v.set_value(1, value);
-        assert_abs_diff_eq!(v.get_value(1), value);
+        assert_eq!(v.get_value(1), value);
+
+        // Changing a value
+        let value = RF!(3);
+        v.set_value(0, value);
+        assert_eq!(v.get_value(1), value);
     }
 
-    fn out_of_bounds_get<T>() where T: Vector {
-        let v = test_vector::<T>();
+    /// Test
+    fn out_of_bounds_get<RF: RealField, V: TestVector<RF>>() {
+        let v = test_vector::<RF, V>();
 
         v.get_value(400);
     }
 
-    fn out_of_bounds_set<T>() where T: Vector {
-        let mut v = test_vector::<T>();
+    /// Test
+    fn out_of_bounds_set<RF: RealField, V: TestVector<RF>>() {
+        let mut v = test_vector::<RF, V>();
 
-        v.set_value(400, 45f64);
+        v.set_value(400, RF!(45));
+    }
+
+    /// Test
+    fn len<F: RealField, V: TestVector<F>>() {
+        let v = test_vector::<F, V>();
+
+        assert_eq!(v.len(), 3);
     }
 
     #[cfg(test)]
     mod dense_vector {
+        use num::rational::Ratio;
+        use num::traits::FromPrimitive;
 
-        use super::*;
+        use crate::{R32, RF};
+        use crate::data::linear_algebra::vector::{DenseVector, Vector};
+        use crate::data::linear_algebra::vector::test::{get_set, len, out_of_bounds_get, out_of_bounds_set, push_value, TestVector};
+        use crate::data::number_types::traits::RealField;
+
+        type T = Ratio<i32>;
+
+        fn new<RF: RealField>() {
+            let d = vec![0, 5, 6].into_iter().map(|v| RF!(v)).collect::<Vec<_>>();
+            let len = d.len();
+            let v = DenseVector::<RF>::new(d, len);
+
+            assert_eq!(v.get_value(0), RF::zero());
+        }
 
         #[test]
-        fn test_create() {
-            create::<DenseVector>();
+        fn test_new() {
+            new::<Ratio<i32>>();
+            new::<Ratio<i64>>();
+        }
+
+        #[test]
+        fn test_push_value() {
+            push_value::<T, DenseVector<T>>();
         }
 
         #[test]
         fn test_get_set() {
-            get_set::<DenseVector>();
+            get_set::<T, DenseVector<T>>();
         }
 
         #[test]
         #[should_panic]
         fn test_out_of_bounds_get() {
-            out_of_bounds_get::<DenseVector>();
+            out_of_bounds_get::<T, DenseVector<T>>();
         }
 
         #[test]
         #[should_panic]
         fn test_out_of_bounds_set() {
-            out_of_bounds_set::<DenseVector>();
+            out_of_bounds_set::<T, DenseVector<T>>();
+        }
+
+        #[test]
+        fn test_remove_indices() {
+            let mut v = DenseVector::<T>::from_test_data(vec![0f64, 1f64, 2f64]);
+            v.remove_indices(&vec![1]);
+            assert_eq!(v, DenseVector::<T>::from_test_data(vec![0f64, 2f64]));
+
+            let mut v = DenseVector::<T>::from_test_data(vec![3f64, 0f64, 0f64]);
+            v.remove_indices(&vec![0]);
+            assert_eq!(v, DenseVector::<T>::from_test_data(vec![0f64, 0f64]));
+
+            let vs = vec![0f64, 0f64, 2f64, 3f64, 0f64, 5f64, 0f64, 0f64, 0f64, 9f64];
+            let mut v = DenseVector::<T>::from_test_data(vs);
+            v.remove_indices(&vec![3, 4, 6]);
+            let vs = vec![0f64, 0f64, 2f64, 5f64, 0f64, 0f64, 9f64];
+            assert_eq!(v, DenseVector::<T>::from_test_data(vs));
+        }
+
+        #[test]
+        fn test_len() {
+            len::<T, DenseVector<T>>()
+        }
+
+        #[test]
+        fn test_extend_with_values() {
+            let mut v = DenseVector::<T>::from_test_data(vec![0f64, 1f64, 2f64]);
+            v.extend_with_values(vec![]);
+            assert_eq!(v, DenseVector::<T>::from_test_data(vec![0f64, 1f64, 2f64]));
+
+            let mut v = DenseVector::<T>::from_test_data(vec![0f64, 1f64, 2f64]);
+            v.extend_with_values(vec![R32!(3)]);
+            assert_eq!(v, DenseVector::<T>::from_test_data(vec![0f64, 1f64, 2f64, 3f64]));
+
+            let mut v = DenseVector::<T>::from_test_data(vec![0f64, 1f64, 2f64]);
+            v.extend_with_values(vec![R32!(3), R32!(4)]);
+            assert_eq!(v, DenseVector::<T>::from_test_data(vec![0f64, 1f64, 2f64, 3f64, 4f64]));
         }
     }
 
     #[cfg(test)]
     mod sparse_vector {
+        use num::{FromPrimitive, Zero};
+        use num::rational::Ratio;
 
-        use super::*;
+        use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, MatrixOrder};
+        use crate::data::linear_algebra::vector::{SparseVector, Vector};
+        use crate::data::linear_algebra::vector::test::{get_set, len, out_of_bounds_get, out_of_bounds_set, push_value, test_vector, TestVector};
+        use crate::R32;
+
+        type T = Ratio<i32>;
 
         #[test]
-        fn test_create() {
-            create::<SparseVector>();
+        fn test_new() {
+            let d = vec![(1, T::from_i32(5).unwrap()), (2, T::from_i32(6).unwrap())];
+            let len = 3;
+            let v = SparseVector::new(d, len);
+
+            assert_eq!(v.get_value(0), T::zero());
+        }
+
+        #[test]
+        fn test_push_value() {
+            push_value::<T, SparseVector<T>>();
         }
 
         #[test]
         fn test_get_set() {
-            get_set::<SparseVector>();
+            get_set::<T, SparseVector<T>>();
         }
 
         #[test]
         #[should_panic]
         fn test_out_of_bounds_get() {
-            out_of_bounds_get::<SparseVector>();
+            out_of_bounds_get::<T, SparseVector<T>>();
         }
 
         #[test]
         #[should_panic]
         fn test_out_of_bounds_set() {
-            out_of_bounds_set::<SparseVector>();
+            out_of_bounds_set::<T, SparseVector<T>>();
         }
 
         #[test]
         fn test_inner_product() {
-            let v = test_vector::<SparseVector>();
-            let u = test_vector::<SparseVector>();
+            let v = test_vector::<T, SparseVector<T>>();
+            let u = test_vector::<T, SparseVector<T>>();
+            assert_eq!(v.inner_product(&u), R32!(5 * 5 + 6 * 6));
 
-            assert_abs_diff_eq!(v.inner_product(&u), 25f64 + 36f64);
+            let v = SparseVector::<T>::from_test_data(vec![3f64]);
+            let w = SparseVector::from_test_data(vec![5f64]);
+            assert_eq!(v.inner_product(&w), R32!(15));
+
+            let v = SparseVector::<T>::from_test_data(vec![0f64]);
+            let w = SparseVector::from_test_data(vec![0f64]);
+            assert_eq!(v.inner_product(&w), R32!(0));
+
+            let v = SparseVector::<T>::from_test_data(vec![0f64, 2f64]);
+            let w = SparseVector::from_test_data(vec![0f64, 3f64]);
+            assert_eq!(v.inner_product(&w), R32!(6));
+
+            let v = SparseVector::<T>::from_test_data(vec![2f64, 0f64]);
+            let w = SparseVector::from_test_data(vec![0f64, 3f64]);
+            assert_eq!(v.inner_product(&w), R32!(0));
+
+            let v = SparseVector::<T>::from_test_data(vec![0f64, 0f64, 0f64]);
+            let w = SparseVector::from_test_data(vec![0f64, 3f64, 7f64]);
+            assert_eq!(v.inner_product(&w), R32!(0));
+
+            let v = SparseVector::<T>::from_test_data(vec![2f64, 3f64]);
+            let w = SparseVector::from_test_data(vec![5f64, 7f64]);
+            assert_eq!(v.inner_product(&w), R32!(31));
+        }
+
+        #[test]
+        fn test_add_multiple_of_row() {
+            let v = SparseVector::from_test_data(vec![3f64]);
+            let w = SparseVector::from_test_data(vec![5f64]);
+            let result = v.add_multiple_of_row(R32!(4), &w);
+            assert_eq!(result, SparseVector::from_test_data(vec![23f64]));
+
+            let v = SparseVector::from_test_data(vec![0f64]);
+            let w = SparseVector::from_test_data(vec![0f64]);
+            let result = v.add_multiple_of_row(R32!(4), &w);
+            assert_eq!(result, SparseVector::from_test_data(vec![0f64]));
+
+            let v = SparseVector::from_test_data(vec![0f64, 3f64]);
+            let w = SparseVector::from_test_data(vec![5f64, 0f64]);
+            let result = v.add_multiple_of_row(R32!(4), &w);
+            assert_eq!(result, SparseVector::from_test_data(vec![20f64, 3f64]));
+
+            let v = SparseVector::from_test_data(vec![12f64]);
+            let w = SparseVector::from_test_data(vec![3f64]);
+            let result = v.add_multiple_of_row(R32!(-4), &w);
+            assert_eq!(result, SparseVector::from_test_data(vec![0f64]));
+
+            let v = SparseVector::from_test_data(vec![12f64, 0f64, 0f64]);
+            let w = SparseVector::from_test_data(vec![0f64, 0f64, 3f64]);
+            let result = v.add_multiple_of_row(R32!(-4), &w);
+            assert_eq!(result, SparseVector::from_test_data(vec![12f64, 0f64, -12f64]));
+        }
+
+        #[test]
+        fn test_multiply() {
+            let v = SparseVector::<T>::from_test_data(vec![3f64]);
+            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64]]);
+            assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![0f64]));
+
+            let v = SparseVector::<T>::from_test_data(vec![0f64]);
+            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64]]);
+            assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![0f64]));
+
+            let v = SparseVector::<T>::from_test_data(vec![0f64, 0f64]);
+            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64, 0f64], vec![0f64, 0f64]]);
+            assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![0f64, 0f64]));
+
+            let v = SparseVector::<T>::from_test_data(vec![2f64, 3f64]);
+            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![5f64, 7f64], vec![11f64, 13f64]]);
+            assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![43f64, 53f64]));
+        }
+
+        #[test]
+        fn test_remove_indices() {
+            let mut v = SparseVector::<T>::from_test_tuples(vec![(0, 3f64)], 3);
+            v.remove_indices(&vec![1]);
+            assert_eq!(v, SparseVector::from_test_tuples(vec![(0, 3f64)], 2));
+
+            let mut v = SparseVector::<T>::from_test_tuples(vec![(0, 3f64)], 3);
+            v.remove_indices(&vec![0]);
+            assert_eq!(v, SparseVector::from_test_tuples(vec![], 2));
+
+            let vs = vec![(2, 2f64), (3, 3f64), (5, 5f64), (10, 10f64)];
+            let mut v = SparseVector::<T>::from_test_tuples(vs, 11);
+            v.remove_indices(&vec![3, 4, 6]);
+            assert_eq!(v, SparseVector::from_test_tuples(vec![(2, 2f64), (3, 5f64), (7, 10f64)], 8));
+        }
+
+        #[test]
+        fn test_len() {
+            len::<T, SparseVector<T>>()
         }
     }
 }

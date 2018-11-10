@@ -1,246 +1,235 @@
-use std::collections::{HashMap, HashSet};
-
-use algorithm::simplex::data::{CostRow, Tableau};
-use algorithm::simplex::EPSILON;
-use algorithm::simplex::tableau_provider::TableauProvider;
-use data::linear_algebra::matrix::{DenseMatrix};
-use data::linear_program::elements::LinearProgramType;
-
-/// Solves a linear program using the Simplex method.
-pub fn solve<T>(provider: &T) -> Result<(Vec<(String, f64)>, f64), String>
-    where T: TableauProvider {
-    let artificial_tableau = Tableau::new_artificial(provider);
-    let (carry, basis) = match phase_one(artificial_tableau) {
-        PhaseOneResult::FoundBFS(carry, basis) => (carry, basis),
-        PhaseOneResult::Infeasible => return Err(format!("LP not feasible")),
-        PhaseOneResult::ArtificialRemain(tableau, artificial_basis_columns) => {
-//             TODO: MIPLIB problem 50v-10 doesn't work with this line, possibly because some constraints are redundant
-//            remove_artificial(tableau, artificial_basis_columns)
-            (tableau.carry(), tableau.basis_columns())
-        },
-    };
-
-    let tableau = Tableau::new(provider, carry, basis);
-    match phase_two(tableau) {
-        LinearProgramType::FiniteOptimum(optimum, cost) =>
-            Ok((provider.human_readable_bfs(optimum), cost)),
-        LinearProgramType::Infeasible => Err(format!("LP infeasible")),
-        LinearProgramType::Unbounded => Err(format!("LP unbounded")),
-    }
-}
+//! # High-level Simplex logic
+//!
+//! High level methods implementing the simplex algorithm. The details of this logic are hidden away
+//! mostly in the `Tableau` type.
+use crate::algorithm::simplex::data::Artificial;
+use crate::algorithm::simplex::data::NonArtificial;
+use crate::algorithm::simplex::data::Tableau;
+use crate::algorithm::simplex::matrix_provider::MatrixProvider;
+use crate::algorithm::simplex::strategy::pivot_rule::PivotRule;
+use crate::data::linear_program::elements::LinearProgramType;
+use crate::data::number_types::traits::{Field, OrderedField};
 
 /// Reduces the artificial cost of the basic feasible solution to zero, if possible. In doing so, a
 /// basic feasible solution to the `CanonicalForm` linear program is found.
-fn phase_one<T>(mut tableau: Tableau<T>) -> PhaseOneResult<T> where T: TableauProvider {
-    let mut artificial_basis_columns = (0..tableau.nr_rows()).collect::<HashSet<_>>();
-
+///
+/// # Arguments
+///
+/// * `tableau` - Artificial tableau with a valid basis. This basis will typically consist of only
+/// artificial variables.
+///
+/// # Return value
+///
+/// Whether the tableau might allow a basic feasible solution without artificial variables.
+pub(crate) fn artificial_primal<'a, OF: OrderedField, MP: 'a + MatrixProvider<OF>, PR: PivotRule<Artificial>>(
+    tableau: &'a mut Tableau<OF, Artificial, MP>,
+) -> FeasibilityResult {
+    let mut i = 0;
     loop {
-        match (0..tableau.nr_columns())
-            .filter(|column| !tableau.is_in_basis(column) || artificial_basis_columns.contains(column))
-            .find(|column| tableau.relative_cost(CostRow::Artificial, *column) < -EPSILON) {
-            Some(column_nr) => {
+        debug_assert!(tableau.debug_assert_is_in_basic_feasible_solution_state());
+
+        i += 1;
+        if i % 100 == 0 {
+            println!("{} {:?}", i, tableau.objective_function_value());
+        }
+
+        let mut rule = PR::new();
+        match rule.select_primal_pivot_column(tableau) {
+            Some((column_nr, cost)) => {
                 let column = tableau.generate_column(column_nr);
-                let pivot_row = tableau.find_pivot_row(&column);
-                artificial_basis_columns.remove(tableau.get_basis_column(&pivot_row).unwrap());
-                tableau.bring_into_basis(pivot_row, column_nr, &column)
+                match tableau.select_primal_pivot_row(&column) {
+                    Some(row_nr) => tableau.bring_into_basis(column_nr, row_nr, &column, cost),
+                    None => panic!("Artificial cost can not be unbounded."),
+                }
             },
-            None => break if tableau.cost(CostRow::Artificial) < EPSILON {
-                if artificial_basis_columns.is_empty() {
-                    PhaseOneResult::FoundBFS(tableau.carry(), tableau.basis_columns())
+            // TODO: We accept numerical errors to swing the objective function even below the trimming range by requiring `<= 0` instead of `== 0`
+            None => break if tableau.objective_function_value() <= OF::additive_identity() {
+                if tableau.has_artificial_in_basis() {
+                    let rows_to_remove = remove_artificial_basis_variables(tableau);
+                    FeasibilityResult::Feasible(Rank::Deficient(rows_to_remove))
                 } else {
-                    PhaseOneResult::ArtificialRemain(tableau, artificial_basis_columns)
+                    FeasibilityResult::Feasible(Rank::Full)
                 }
             } else {
-                PhaseOneResult::Infeasible
+                FeasibilityResult::Infeasible
             },
         }
     }
+}
+
+/// LP's can be either feasible (allowing at least one solution) or infeasible (allowing no
+/// solutions).
+///
+/// If the problem is feasible, it can either have full rank, or be rank deficient.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum FeasibilityResult {
+    Feasible(Rank),
+    Infeasible,
+}
+
+/// A matrix or linear program either has full rank, or be rank deficient.
+///
+/// In case it is rank deficient, a sorted, deduplicated list of (row)indices should be provided,
+/// that when removed, makes the matrix or linear program full rank.
+#[derive(Debug, Eq, PartialEq)]
+pub (crate) enum Rank {
+    Full,
+    /// The `Vec<usize>` is sorted and contains no duplicate values.
+    Deficient(Vec<usize>),
 }
 
 /// Removes all artificial variables from the tableau by making a basis change "at zero level", or
 /// without change of cost of the current solution.
-fn remove_artificial<T>(mut tableau: Tableau<T>, artificials: HashSet<usize>) -> (DenseMatrix, HashMap<usize, usize>)
-    where T: TableauProvider {
-    for artificial in artificials.into_iter() {
-        debug_assert!(tableau.relative_cost(CostRow::Artificial, artificial).abs() < EPSILON);
+///
+/// # Arguments
+///
+/// * `tableau` - Tableau to change the basis for.
+///
+/// # Return value
+///
+/// A `Vec` with indices of rows that are redundant. Is sorted as a side effect of the algorithm.
+///
+/// Constraints containing only one variable (that is, they are actually bounds) are read as bounds
+/// instead of constraints. All bounds are linearly independent among each other, and with respect
+/// to all constraints. As such, they should never be among the redundant rows returned by this
+/// method.
+fn remove_artificial_basis_variables<'a, F: Field, MP>(
+    tableau: &mut Tableau<F, Artificial, MP>,
+) -> Vec<usize> where MP: 'a + MatrixProvider<F> {
+    let artificial_variable_indices = tableau.artificial_basis_columns();
+    let mut rows_to_remove = Vec::new();
 
-        let artificial_column = tableau.generate_artificial_column(artificial);
-        let pivot_row = artificial_column.values()
-            .skip_while(|(i, _)| *i < 2)
-            .find(|(_, v)| (1f64 - v).abs() < EPSILON)
-            .unwrap().0 - 1 - 1;
+    for artificial in artificial_variable_indices.into_iter() {
+        let pivot_row = artificial; // The problem was initialized with the artificial variable as a basis column, and it is still in the basis
+        let column_cost = (tableau.nr_artificial_variables()..tableau.nr_columns())
+            .filter(|j| !tableau.is_in_basis(j))
+            .map(|j| (j, tableau.relative_cost(j)))
+            // TODO: Check this zero comparison, is no tolerance needed?
+            .filter(|&(_, cost)| cost == F::additive_identity())
+            // TODO: Check this zero comparison, is no tolerance needed?
+            .filter(|&(j, _)| tableau.generate_element(pivot_row, j) != F::additive_identity())
+            .nth(0); // Pick the first one
 
-        let column = (0..tableau.nr_columns())
-            .filter(|j| !tableau.is_in_basis(&j))
-            .find(|&j| tableau.relative_cost(CostRow::Artificial, j).abs() < EPSILON);
-        if let Some(pivot_column) = column {
-            let column_data = tableau.generate_column(pivot_column);
-            tableau.bring_into_basis(pivot_row, pivot_column, &column_data);
+        if let Some((pivot_column, cost)) = column_cost {
+            let column = tableau.generate_column(pivot_column);
+            tableau.bring_into_basis(pivot_column, pivot_row, &column, cost);
         } else {
-            // The problem is overdetermined, matrix doesn't have full rank, constraints are redundant
-            // TODO: Remove row
+            rows_to_remove.push(artificial);
         }
-
-        debug_assert!(!tableau.is_in_basis(&artificial));
     }
 
-    (tableau.carry(), tableau.basis_columns())
+    debug_assert!(rows_to_remove.is_sorted());
+    rows_to_remove
 }
 
 /// Reduces the cost of the basic feasible solution to the minimum.
-fn phase_two<T>(mut tableau: Tableau<T>) -> LinearProgramType where T: TableauProvider {
+///
+/// While calling this method, a number of requirements should be satisfied:
+/// - There should be a valid basis (not necessarily optimal <=> dual feasible <=> c >= 0)
+/// - All constraint values need to be positive (primary feasibility)
+///
+/// TODO: Write debug tests for these requirements
+pub(crate) fn primal<'a, OF: OrderedField, MP: 'a + MatrixProvider<OF>, PR: PivotRule<NonArtificial>>(
+    tableau: &mut Tableau<OF, NonArtificial, MP>,
+) -> OptimizationResult<OF> {
     loop {
-        // TODO: when is an LP unbounded?
-        match tableau.profitable_column(CostRow::Actual) {
-            Some(column_nr) => {
-                let column = tableau.generate_column(column_nr);
-                let pivot_row = tableau.find_pivot_row(&column);
-                tableau.bring_into_basis(pivot_row, column_nr, &column);
+        debug_assert!(tableau.debug_assert_is_in_basic_feasible_solution_state());
+
+        println!("{:?}", tableau.objective_function_value());
+        let mut rule = PR::new();
+        match rule.select_primal_pivot_column(tableau) {
+            Some((column_index, cost)) => {
+                let column = tableau.generate_column(column_index);
+                match tableau.select_primal_pivot_row(&column) {
+                    Some(row_index) => tableau.bring_into_basis(
+                        column_index,
+                        row_index,
+                        &column,
+                        cost,
+                    ),
+                    None => break OptimizationResult::Unbounded,
+                }
             },
-            None => break LinearProgramType::FiniteOptimum(tableau.current_bfs(),
-                                                           tableau.cost(CostRow::Actual)),
+            None => break OptimizationResult::FiniteOptimum(tableau.objective_function_value()),
         }
     }
 }
 
-/// After the first phase, a basic feasible solution is found, the problem is found to be
-/// infeasible, or artificial variables remain in the basis.
-#[derive(Debug)]
-enum PhaseOneResult<'a, T: 'a> where T: TableauProvider {
-    FoundBFS(DenseMatrix, HashMap<usize, usize>),
-    Infeasible,
-    ArtificialRemain(Tableau<'a, T>, HashSet<usize>),
+#[derive(Eq, PartialEq, Debug)]
+pub(crate) enum OptimizationResult<OF: OrderedField> {
+    FiniteOptimum(OF),
+    Unbounded,
+}
+
+impl<OF: OrderedField> Into<LinearProgramType<OF>> for OptimizationResult<OF> {
+    fn into(self) -> LinearProgramType<OF> {
+        match self {
+            OptimizationResult::FiniteOptimum(obj) => LinearProgramType::FiniteOptimum(obj),
+            OptimizationResult::Unbounded => LinearProgramType::Unbounded,
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use num::FromPrimitive;
+    use num::rational::Ratio;
 
-    use super::*;
-    use algorithm::simplex::tableau_provider::network::ShortestPathNetwork;
-    use algorithm::simplex::tableau_provider::matrix_data::MatrixData;
-    use data::linear_program::canonical_form::CanonicalForm;
-    use data::linear_algebra::matrix::{Matrix, SparseMatrix};
-    use data::linear_algebra::vector::DenseVector;
-    use data::linear_program::elements::Variable;
-    use data::linear_algebra::vector::{SparseVector, Vector};
-    use data::linear_program::elements::VariableType;
-
-    fn matrix_data() -> MatrixData {
-        let data = SparseMatrix::from_data(vec![vec![3f64, 2f64, 1f64, 0f64, 0f64],
-                                                vec![5f64, 1f64, 1f64, 1f64, 0f64],
-                                                vec![2f64, 5f64, 1f64, 0f64, 1f64]]);
-        let cost = SparseVector::from_data(vec![1f64, 1f64, 1f64, 1f64, 1f64]);
-        let b = DenseVector::from_data(vec![1f64, 2f64, 3f64]);
-        let column_info = vec![String::from("X1"),
-                               String::from("X2"),
-                               String::from("X3"),
-                               String::from("X4"),
-                               String::from("X5")];
-        MatrixData::new(data, cost, b, column_info)
-    }
-
-    fn tableau(data: &MatrixData) -> Tableau<MatrixData> {
-        let carry = DenseMatrix::from_data(vec![vec![-6f64, 1f64, -1f64, -1f64],
-                                                vec![0f64, 1f64, 1f64, 1f64],
-                                                vec![1f64, 1f64, 0f64, 0f64],
-                                                vec![2f64, -1f64, 1f64, 0f64],
-                                                vec![3f64, -1f64, 0f64, 1f64]]);
-        let mut basis_columns = HashMap::new();
-        basis_columns.insert(0, 2);
-        basis_columns.insert(1, 3);
-        basis_columns.insert(2, 4);
-
-        Tableau::new(data, carry, basis_columns)
-    }
+    use crate::algorithm::simplex::data::{Artificial, Tableau};
+    use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
+    use crate::algorithm::simplex::solve_relaxation;
+    use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
+    use crate::data::linear_program::elements::LinearProgramType;
+    use crate::R64;
+    use crate::tests::problem_2::{matrix_data_form, tableau_form};
 
     #[test]
     fn test_simplex() {
-        let data = matrix_data();
-        let mut tableau = tableau(&data);
-        if let LinearProgramType::FiniteOptimum(_, cost) = loop {
-            match tableau.profitable_column(CostRow::Actual) {
-                Some(column_nr) => {
-                    let column = tableau.generate_column(column_nr);
-                    let pivot_row = tableau.find_pivot_row(&column);
-                    tableau.bring_into_basis(pivot_row, column_nr, &column)
-                },
-                None => break LinearProgramType::FiniteOptimum(tableau.current_bfs(),
-                                                               tableau.cost(CostRow::Actual)),
-            }
-        } {
-            assert_abs_diff_eq!(cost, 9f64 / 2f64);
-        } else {
-            assert!(false);
-        }
-
-    }
-
-    fn lp_canonical() -> CanonicalForm {
-        let data = SparseMatrix::from_data(vec![vec![3f64, 2f64, 1f64, 0f64, 0f64],
-                                                vec![5f64, 1f64, 1f64, 1f64, 0f64],
-                                                vec![2f64, 5f64, 1f64, 0f64, 1f64]]);
-        let b = DenseVector::from_data(vec![1f64,
-                                            3f64,
-                                            4f64]);
-        let cost = SparseVector::from_data(vec![1f64, 1f64, 1f64, 1f64, 1f64]);
-        let column_info = vec![Variable { name: "X1".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
-                               Variable { name: "X2".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
-                               Variable { name: "X3".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
-                               Variable { name: "X4".to_string(), variable_type: VariableType::Continuous, offset: 0f64, },
-                               Variable { name: "X5".to_string(), variable_type: VariableType::Continuous, offset: 0f64, }];
-
-        CanonicalForm::new(data, b, cost, 0f64, column_info, Vec::new())
-    }
-
-    #[test]
-    fn test_phase_one() {
-        let canonical = lp_canonical();
-        let data = MatrixData::from(canonical);
-        let tableau = Tableau::new_artificial(&data);
-        match phase_one(tableau) {
-            PhaseOneResult::FoundBFS(_, map) => {
-                let mut expected = HashMap::new();
-                expected.insert(0, 1);
-                expected.insert(1, 3);
-                expected.insert(2, 4);
-                assert_eq!(map, expected);
-            },
-            PhaseOneResult::Infeasible => assert!(false),
-            PhaseOneResult::ArtificialRemain(_, _) => assert!(false),
+        let data = matrix_data_form::<Ratio<i32>>();
+        let mut tableau = tableau_form(&data);
+        match primal::<_, _, FirstProfitable>(&mut tableau) {
+            OptimizationResult::FiniteOptimum(value) => assert_eq!(value, Ratio::<i32>::new(9, 2)),
+            _ => assert!(false),
         }
     }
 
     #[test]
-    fn test_phase_two() {
-        // TODO
+    fn test_finding_bfs() {
+        let data = matrix_data_form::<Ratio<i64>>();
+        let mut tableau = Tableau::<_, Artificial, _>::new(&data);
+        assert_eq!(artificial_primal::<_, _, FirstProfitable>(&mut tableau), FeasibilityResult::Feasible(Rank::Full));
     }
 
-    #[test]
-    fn test_solve_matrix() {
-        let data = MatrixData::from(lp_canonical());
-        let result = solve(&data).unwrap();
-        let expected = (vec![(String::from("X1"), 0f64),
-                             (String::from("X2"), 0.5f64),
-                             (String::from("X3"), 0f64),
-                             (String::from("X4"), 2.5f64),
-                             (String::from("X5"), 1.5f64)], 4.5f64);
+    //    #[test]
+    //    fn test_phase_two() {
+    //        // TODO
+    //    }
 
-        for i in 0..expected.0.len() {
-            assert_eq!(result.0[i].0, expected.0[i].0);
-            assert_abs_diff_eq!(result.0[i].1, expected.0[i].1);
-        }
-        assert_abs_diff_eq!(result.1, expected.1);
-    }
+   #[test]
+   #[ignore]
+   fn test_solve_matrix() {
+       let data = matrix_data_form();
+       let result = solve_relaxation::<_, _, FirstProfitable, FirstProfitable>(&data);
+       // let expected = vec![
+       //     (String::from("X1"), 0f64),
+       //     (String::from("X2"), 0.5f64),
+       //     (String::from("X3"), 0f64),
+       //     (String::from("X4"), 2.5f64),
+       //     (String::from("X5"), 1.5f64),
+       // ];
+        assert_eq!(result, LinearProgramType::FiniteOptimum(R64!(4.5)));
+   }
 
-    #[test]
-    fn test_solve_shortest_path() {
-        let data = SparseMatrix::from_data(vec![vec![0f64, 1f64, 0f64, 2f64, 0f64],
-                                                vec![0f64, 0f64, 1f64, 1f64, 0f64],
-                                                vec![0f64, 0f64, 0f64, 1f64, 1f64],
-                                                vec![0f64, 0f64, 0f64, 0f64, 2f64],
-                                                vec![0f64, 0f64, 0f64, 0f64, 0f64]]);
-        let graph = ShortestPathNetwork::new(data, 0, 4);
-        let result = solve(&graph).unwrap().1;
-        assert_eq!(result, 3f64);
-    }
+    // TODO
+   // #[test]
+   // fn test_solve_shortest_path() {
+   //     let data = SparseMatrix::from_data(vec![vec![0f64, 1f64, 0f64, 2f64, 0f64],
+   //                                             vec![0f64, 0f64, 1f64, 1f64, 0f64],
+   //                                             vec![0f64, 0f64, 0f64, 1f64, 1f64],
+   //                                             vec![0f64, 0f64, 0f64, 0f64, 2f64],
+   //                                             vec![0f64, 0f64, 0f64, 0f64, 0f64]]);
+   //     let graph = ShortestPathNetwork::new(data, 0, 4);
+   //     let result = solve(&graph).unwrap().1;
+   //     assert_eq!(result, 3f64);
+   // }
 }

@@ -1,4 +1,4 @@
-/// Tokens used in MPS files
+//! # Tokens used in MPS files
 
 /// Indicates the start of a comment.
 pub const COMMENT_INDICATOR: &str = "*";
@@ -27,4 +27,3 @@ pub const START_OF_INTEGER: &str = "'INTORG'";
 ///
 /// Expected only on a line with a `COLUMN_SECTION_MARKER`.
 pub const END_OF_INTEGER: &str = "'INTEND'";
-

@@ -1,24 +1,29 @@
 //! # Reading and writing of linear programs
 //!
 //! This module provides read and write functionality for linear program formats.
+use std::convert::TryInto;
 use std::f64;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use data::linear_program::general_form::GeneralForm;
-use io::error::ImportError;
+use crate::data::linear_program::general_form::GeneralForm;
+use crate::data::number_types::traits::RealField;
+use crate::io::error::ImportError;
 
-
-mod mps;
 pub mod error;
+pub mod mps;
 
-pub const EPSILON: f64 = f64::EPSILON;
-
+/// Allowable numerical error used for equality testing in this module.
+///
+/// Because none of the values that are being read or written are modified or calculated with, this
+/// tolerance allows only for rounding from values with a higher precision than f64.
+const EPSILON: f64 = f64::EPSILON;
 
 /// The `import` function takes a file path and returns, if successful, a struct which can be
 /// converted to a linear program in general form.
-pub fn import(file_path: &Path) -> Result<impl Into<GeneralForm>, ImportError> {
+pub fn import<F: RealField>(file_path: &Path) -> Result<impl TryInto<GeneralForm<F>>, ImportError> {
+    // Open and read the file
     let mut program = String::new();
     File::open(&file_path)
         .map_err(ImportError::IO)?
@@ -29,14 +34,18 @@ pub fn import(file_path: &Path) -> Result<impl Into<GeneralForm>, ImportError> {
     match file_path.extension() {
         Some(extension) => match extension.to_str() {
             Some("mps") => mps::import(&program),
-            Some(extension_string) => Err(ImportError::FileExtension(
-                format!("Could not recognise file extension \"{}\" of file: {:?}",
-                        extension_string, file_path))),
-            None => Err(ImportError::FileExtension(
-                format!("Could not convert OsStr to &str, probably invalid unicode: {:?}",
-                        extension))),
+            Some(extension_string) => Err(ImportError::FileExtension(format!(
+                "Could not recognise file extension \"{}\" of file: {:?}",
+                extension_string, file_path
+            ))),
+            None => Err(ImportError::FileExtension(format!(
+                "Could not convert OsStr to &str, probably invalid unicode: {:?}",
+                extension
+            ))),
         },
-        None => Err(ImportError::FileExtension(format!("Could not read extension from file path: {:?}",
-                                                       file_path))),
+        None => Err(ImportError::FileExtension(format!(
+            "Could not read extension from file path: {:?}",
+            file_path
+        ))),
     }
 }

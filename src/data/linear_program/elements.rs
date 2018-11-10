@@ -1,6 +1,8 @@
+//! # Building blocks to describe linear programs.
+#![allow(missing_docs)]
 use std::ops::Not;
 
-use data::linear_algebra::vector::SparseVector;
+use crate::data::number_types::traits::OrderedField;
 
 /// A `Constraint` is a type of (in)equality.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -29,17 +31,16 @@ impl Not for VariableType {
 }
 
 /// After the second phase, either an optimum is found or the problem is determined to be unbounded.
-#[derive(Debug)]
-pub enum LinearProgramType {
-    FiniteOptimum(SparseVector, f64),
+#[derive(Debug, Eq, PartialEq)]
+pub enum LinearProgramType<OF: OrderedField> {
+    FiniteOptimum(OF),
     Infeasible,
     Unbounded,
 }
 
-/// A variable is named, of continuous or integer type and may be shifted.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Variable {
-    pub name: String,
-    pub variable_type: VariableType,
-    pub offset: f64,
+/// Direction of optimization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Objective {
+    Maximize,
+    Minimize,
 }

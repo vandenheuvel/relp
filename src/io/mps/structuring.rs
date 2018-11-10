@@ -1,29 +1,34 @@
 //! Organizing data read in the `parsing` module, and checking the linear program for
 //! consistency.
-use std::convert::TryFrom;
 use std::collections::HashMap;
-use io::mps::Constraint;
-use io::error::LinearProgramError;
-use io::mps::Rhs;
-use io::mps::Bound;
-use io::mps::BoundType;
-use data::linear_program::general_form::GeneralForm;
-use data::linear_program::elements::ConstraintType;
-use data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
-use data::linear_algebra::matrix::{Matrix, SparseMatrix};
-use data::linear_program::elements::Variable as ShiftedVariable;
-use io::mps::parsing::UnstructuredMPS;
-use io::mps::Variable;
-use io::mps::parsing::UnstructuredRow;
-use io::mps::parsing::UnstructuredColumn;
-use io::mps::parsing::UnstructuredRhs;
-use io::mps::parsing::UnstructuredBound;
+use std::convert::{identity, TryInto};
+use std::convert::TryFrom;
+
 use approx::AbsDiffEq;
-use io::EPSILON;
-use std::convert::identity;
+
+use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, MatrixOrder, RowMajorOrdering, SparseMatrix};
+use crate::data::linear_algebra::SparseTuples;
+use crate::data::linear_algebra::vector::{DenseVector, Vector};
+use crate::data::linear_program::elements::{ConstraintType, VariableType};
+use crate::data::linear_program::elements::Objective;
+use crate::data::linear_program::general_form::GeneralForm;
+use crate::data::linear_program::general_form::Variable as ShiftedVariable;
+use crate::data::number_types::traits::RealField;
+use crate::io::EPSILON;
+use crate::io::error::InconsistencyError;
+use crate::io::mps::Bound;
+use crate::io::mps::BoundType;
+use crate::io::mps::Constraint;
+use crate::io::mps::parsing::UnstructuredBound;
+use crate::io::mps::parsing::UnstructuredColumn;
+use crate::io::mps::parsing::UnstructuredMPS;
+use crate::io::mps::parsing::UnstructuredRhs;
+use crate::io::mps::parsing::UnstructuredRow;
+use crate::io::mps::Rhs;
+use crate::io::mps::Variable;
 
 impl<'a> TryFrom<UnstructuredMPS<'a>> for MPS {
-    type Error = LinearProgramError;
+    type Error = InconsistencyError;
 
     /// Try to convert into an `MPS` instance.
     ///
@@ -40,16 +45,17 @@ impl<'a> TryFrom<UnstructuredMPS<'a>> for MPS {
     fn try_from(mut unstructured_mps: UnstructuredMPS<'a>) -> Result<MPS, Self::Error> {
         let (row_names, row_index) = build_row_index(&unstructured_mps.rows);
         let rows = order_rows(&unstructured_mps.rows, &row_index)?;
-        let (cost_values, columns, column_names) =
-            build_columns(&mut unstructured_mps.columns, &unstructured_mps.cost_row_name, &row_index)?;
+        let (cost_values, columns, column_names) = build_columns(
+            &mut unstructured_mps.columns,
+            &unstructured_mps.cost_row_name,
+            &row_index,
+        )?;
         let column_index = build_column_index(&column_names);
         let rhss = build_rhss(&mut unstructured_mps.rhss, &row_index)?;
         let bounds = build_bounds(&mut unstructured_mps.bounds, &column_index)?;
         let name = unstructured_mps.name.to_string();
         let cost_row_name = unstructured_mps.cost_row_name.to_string();
-        let row_names = row_names.into_iter()
-            .map(|name| name.to_string())
-            .collect();
+        let row_names = row_names.into_iter().map(|name| name.to_string()).collect();
 
         Ok(MPS::new(
             name,
@@ -103,15 +109,15 @@ fn build_row_index<'a>(
 /// `Constraint`s if successful, a `LinearProgramError` if not.
 fn order_rows<'a>(
     unstructured_rows: &Vec<UnstructuredRow<'a>>,
-    index: &HashMap<&'a str, usize>
-) -> Result<Vec<Constraint>, LinearProgramError> {
+    index: &HashMap<&'a str, usize>,
+) -> Result<Vec<Constraint>, InconsistencyError> {
     let mut rows: Vec<Constraint> = Vec::with_capacity(unstructured_rows.len());
 
     for &UnstructuredRow { name, constraint_type, } in unstructured_rows.iter() {
         rows.push(Constraint {
             name: match index.get(name) {
                 Some(&index) => index,
-                None => return Err(LinearProgramError::new(format!("Unknown row: {}", name))),
+                None => return Err(InconsistencyError::new(format!("Unknown row: {}", name))),
             },
             constraint_type,
         });
@@ -143,7 +149,7 @@ fn build_columns<'a>(
     unstructured_columns: &mut Vec<UnstructuredColumn<'a>>,
     cost_row_name: &'a str,
     row_index: &HashMap<&'a str, usize>,
-) -> Result<(Vec<(usize, f64)>, Vec<Variable>, Vec<String>), LinearProgramError> {
+) -> Result<(Vec<(usize, f64)>, Vec<Variable>, Vec<String>), InconsistencyError> {
     unstructured_columns.sort_by_key(|&UnstructuredColumn { name, .. }| name);
 
     let mut cost_values = Vec::new();
@@ -170,7 +176,7 @@ fn build_columns<'a>(
         } else {
             let index = match row_index.get(row_name) {
                 Some(&index) => index,
-                None => return Err(LinearProgramError::new(format!("Row name \"{}\" not known.", row_name))),
+                None => return Err(InconsistencyError::new(format!("Row name \"{}\" not known.", row_name))),
             };
             values.push((index, value));
         }
@@ -222,7 +228,7 @@ fn build_column_index(column_names: &Vec<String>) -> HashMap<String, usize> {
 fn build_rhss<'a>(
     unstructured_rhss: &mut Vec<UnstructuredRhs<'a>>,
     row_index: &HashMap<&'a str, usize>,
-) -> Result<Vec<Rhs>, LinearProgramError> {
+) -> Result<Vec<Rhs>, InconsistencyError> {
     unstructured_rhss.sort_by_key(|&UnstructuredRhs { name, .. }| name);
 
     let mut rhss = Vec::new();
@@ -237,7 +243,7 @@ fn build_rhss<'a>(
         }
         values.push((match row_index.get(row_name) {
             Some(&index) => index,
-            None => return Err(LinearProgramError::new(format!("Row name \"{}\" not known.", row_name))),
+            None => return Err(InconsistencyError::new(format!("Row name \"{}\" not known.", row_name))),
         }, value));
     }
     rhss.push(Rhs { name: current_name.to_string(), values, });
@@ -264,7 +270,7 @@ fn build_rhss<'a>(
 fn build_bounds<'a>(
     unstructured_bounds: &mut Vec<UnstructuredBound<'a>>,
     column_index: &HashMap<String, usize>,
-) -> Result<Vec<Bound>, LinearProgramError> {
+) -> Result<Vec<Bound>, InconsistencyError> {
     unstructured_bounds.sort_by_key(|&UnstructuredBound { name, .. }| name);
 
     let mut bounds = Vec::new();
@@ -277,10 +283,14 @@ fn build_bounds<'a>(
             bound_name = name;
             values = Vec::new();
         }
-        values.push((bound_type, match column_index.get(column_name) {
-            Some(&index) => index,
-            None => return Err(LinearProgramError::new(format!("Variable \"{}\" not known", column_name))),
-        }, value));
+        values.push((
+            bound_type,
+            match column_index.get(column_name) {
+                Some(&index) => index,
+                None => return Err(InconsistencyError::new(format!("Variable \"{}\" not known", column_name))),
+            },
+            value,
+        ));
     }
     bounds.push(Bound { name: bound_name.to_string(), values, });
 
@@ -335,15 +345,17 @@ impl MPS {
     /// # Return value
     ///
     /// All data collected in the `MPS` type.
-    pub(super) fn new(name: String,
-                      cost_row_name: String,
-                      cost_values: Vec<(usize, f64)>,
-                      row_names: Vec<String>,
-                      rows: Vec<Constraint>,
-                      column_names: Vec<String>,
-                      columns: Vec<Variable>,
-                      rhss: Vec<Rhs>,
-                      bounds: Vec<Bound>) -> MPS {
+    pub(crate) fn new(
+        name: String,
+        cost_row_name: String,
+        cost_values: Vec<(usize, f64)>,
+        row_names: Vec<String>,
+        rows: Vec<Constraint>,
+        column_names: Vec<String>,
+        columns: Vec<Variable>,
+        rhss: Vec<Rhs>,
+        bounds: Vec<Bound>,
+    ) -> MPS {
         MPS {
             name,
             cost_row_name,
@@ -358,7 +370,9 @@ impl MPS {
     }
 }
 
-impl Into<GeneralForm> for MPS {
+impl<RF: RealField> TryInto<GeneralForm<RF>> for MPS {
+    type Error = InconsistencyError;
+
     /// Convert an `MPS` into a `GeneralForm` linear program.
     ///
     /// # Arguments
@@ -368,59 +382,189 @@ impl Into<GeneralForm> for MPS {
     /// # Return value
     ///
     /// A linear program in general form.
-    fn into(self) -> GeneralForm {
-        let (m, n) = (self.rows.len() + self.bounds[0].values.len(), self.columns.len());
+    fn try_into(self) -> Result<GeneralForm<RF>, Self::Error> {
+        let rows = compute_rows(&self.rows, &self.columns)?;
+        let constraints = self.rows.iter()
+            .map(|ref row| row.constraint_type)
+            .collect::<Vec<_>>();
+        let b = compute_b(&self.rhss, &self.rows, &constraints)?;
+        let cost_values = compute_cost_values(&self.cost_values)?;
+        let mut variable_info = compute_variable_info(&self.columns, &self.column_names, &cost_values);
+        process_bounds(&mut variable_info, &self.bounds)?;
 
-        let mut data = SparseMatrix::zeros(m, n);
-        for (column_index, column) in self.columns.iter().enumerate() {
-            for &(row_index, value) in &column.values {
-                data.set_value(row_index, column_index, value);
+        Ok(GeneralForm::new(
+            Objective::Minimize,
+            rows,
+            constraints,
+            b,
+            variable_info,
+            RF::zero(),
+        ))
+    }
+}
+
+fn compute_rows<RF: RealField>(
+    rows: &Vec<Constraint>,
+    columns: &Vec<Variable>,
+) -> Result<SparseMatrix<RF, RowMajorOrdering>, InconsistencyError> {
+    let column_major_data = columns.iter().map(|column| {
+        column.values.clone().into_iter()
+            .map(|(i, v)| {
+                if let Some(number) = RF::from_f64(v) {
+                    Ok((i, number))
+                } else {
+                    Err(InconsistencyError::new(format!("Couldn't convert number: {}", v)))
+                }
+            })
+            .collect::<Result<SparseTuples<_>, _>>()
+    }).collect::<Result<Vec<SparseTuples<_>>, _>>()?;
+    let columns = ColumnMajorOrdering::new(
+        column_major_data,
+        rows.len(),
+        columns.len(),
+    );
+    let rows = SparseMatrix::from_column_major_ordered_matrix_although_this_is_expensive(&columns);
+
+    Ok(rows)
+}
+
+fn compute_b<RF: RealField>(
+    rhss: &Vec<Rhs>,
+    rows: &Vec<Constraint>,
+    constraints: &Vec<ConstraintType>,
+) -> Result<DenseVector<RF>, InconsistencyError> {
+    let mut b = DenseVector::constant(RF::additive_identity(), rows.len());
+    for rhs in rhss.iter() {
+        for &(index, value) in &rhs.values {
+            if let Some(value) = RF::from_f64(value) {
+                let current = b.get_value(index);
+                if current == RF::zero() || match constraints[index] {
+                    ConstraintType::Equal if value != current => {
+                        return Err(
+                            InconsistencyError::new(
+                                format!("A constraint can't equal both {} and {}", current, value),
+                            )
+                        )
+                    },
+                    ConstraintType::Less if value < current => true,
+                    ConstraintType::Greater if value > current => true,
+                    _ => false,
+                } {
+                    b.set_value(index, value);
+                }
+            } else {
+                return Err(InconsistencyError::new(format!("Couldn't convert f64: {}", value)));
             }
         }
+    }
 
-        let cost = SparseVector::from_tuples(self.cost_values.clone(), n);
+    Ok(b)
+}
 
-        let mut row_info: Vec<ConstraintType> = self.rows.iter()
-            .map(|ref row| row.constraint_type).collect();
+fn compute_cost_values<RF: RealField>(
+    cost_values: &Vec<(usize, f64)>,
+) -> Result<HashMap<usize, RF>, InconsistencyError> {
+    cost_values.iter()
+        .map(|&(i, cost)| match RF::from_f64(cost) {
+            Some(value) => Ok((i, value)),
+            None => Err(InconsistencyError::new(format!("Couldn't convert f64: {}", cost))),
+        })
+        .collect()
+}
 
-        let mut b = DenseVector::zeros(m);
-        // TODO: Use all RHSs
-        if self.rhss.len() > 1 {
-            unimplemented!("Only one RHS is supported.");
+fn compute_variable_info<RF: RealField>(
+    columns: &Vec<Variable>,
+    column_names: &Vec<String>,
+    cost_values: &HashMap<usize, RF>,
+) -> Vec<ShiftedVariable<RF>> {
+    columns.iter().enumerate().map(|(j, variable)| {
+        ShiftedVariable {
+            name: column_names[variable.name].clone(),
+            variable_type: variable.variable_type,
+            cost: (&cost_values.get(&j)).map_or(RF::zero(), |&v| v),
+            upper_bound: None,
+            lower_bound: None,
+            shift: RF::zero(),
+            flipped: false
         }
-        for &(index, value) in self.rhss[0].values.iter() {
-            b.set_value(index, value);
-        }
-        let mut nr_bounds_added = 0;
-        for ref bound in self.bounds.iter() {
-            for &(bound_type, variable_index, value) in bound.values.iter() {
-                let row_index = self.rows.len() + nr_bounds_added;
-                b.set_value(row_index, value);
-                data.set_value(row_index, variable_index, 1f64);
-                row_info.push(match bound_type {
-                    BoundType::LowerContinuous      => ConstraintType::Greater,
-                    BoundType::UpperContinuous      => ConstraintType::Less,
-                    BoundType::Fixed                => ConstraintType::Equal,
-                    BoundType::Free                 => unimplemented!(),
-                    BoundType::LowerMinusInfinity   => ConstraintType::Greater,
-                    BoundType::UpperInfinity        => ConstraintType::Less,
-                    BoundType::Binary               => unimplemented!(),
-                    BoundType::LowerInteger         => ConstraintType::Greater,
-                    BoundType::UpperInteger         => ConstraintType::Less,
-                    BoundType::SemiContinuous       => unimplemented!(),
-                });
-                nr_bounds_added += 1;
+    }).collect()
+}
+
+fn process_bounds<RF: RealField>(
+    variable_info: &mut Vec<ShiftedVariable<RF>>,
+    bounds: &Vec<Bound>,
+) -> Result<(), InconsistencyError> {
+    let mut variable_is_touched = vec![false; variable_info.len()];
+    for ref bound in bounds.iter() {
+        for &(bound_type, variable_index, raw_value) in bound.values.iter() {
+            variable_is_touched[variable_index] = true;
+            if let Some(value) = RF::from_f64(raw_value) {
+                let variable = &mut variable_info[variable_index];
+                match bound_type {
+                    BoundType::LowerContinuous    => replace_existing_with(&mut variable.lower_bound, value, RF::max),
+                    BoundType::UpperContinuous    => {
+                        if variable.lower_bound.is_none() {
+                            variable.lower_bound = Some(RF::zero());
+                        }
+                        replace_existing_with(&mut variable.upper_bound, value, RF::min);
+                    },
+                    BoundType::Fixed              => {
+                        // If there already is a known bound value for this variable, there
+                        // won't be any feasible values left after the below two statements.
+                        replace_existing_with(&mut variable.lower_bound, value, RF::max);
+                        replace_existing_with(&mut variable.upper_bound, value, RF::min);
+                    }
+                    BoundType::Free               => {
+                        if variable.lower_bound.or(variable.upper_bound.clone()).is_some() {
+                            return Err(InconsistencyError::new(
+                                format!("Variable {} can't be bounded and free", variable.name),
+                            ))
+                        }
+                    },
+                    BoundType::LowerMinusInfinity => replace_existing_with(&mut variable.upper_bound, RF::zero(), RF::min),
+                    BoundType::UpperInfinity      => replace_existing_with(&mut variable.lower_bound, RF::zero(), RF::max),
+                    BoundType::Binary             => {
+                        replace_existing_with(&mut variable.lower_bound, RF::zero(), RF::max);
+                        replace_existing_with(&mut variable.upper_bound, RF::one(), RF::min);
+                        variable.variable_type = VariableType::Integer;
+                    }
+                    BoundType::LowerInteger       => {
+                        replace_existing_with(&mut variable.lower_bound, value, RF::max);
+                        variable.variable_type = VariableType::Integer;
+                    },
+                    BoundType::UpperInteger       => {
+                        if variable.lower_bound.is_none() {
+                            variable.lower_bound = Some(RF::zero());
+                        }
+                        replace_existing_with(&mut variable.upper_bound, value, RF::min);
+                        variable.variable_type = VariableType::Integer;
+                    },
+                    BoundType::SemiContinuous     => unimplemented!(),
+                }
+            } else {
+                return Err(InconsistencyError::new(format!("Couldn't convert f64: {}", raw_value)))
             }
         }
+    }
 
-        let column_info = self.columns.iter()
-            .map(|ref variable| ShiftedVariable {
-                name: self.column_names[variable.name].clone(),
-                variable_type: variable.variable_type,
-                offset: 0f64,
-            }).collect();
+    fill_in_default_bounds(variable_info, variable_is_touched);
 
-        GeneralForm::new(data, b, cost, 0f64, column_info, Vec::new(), row_info)
+    Ok(())
+}
+
+fn replace_existing_with<RF: RealField, F: Fn(RF, RF) -> RF>(option: &mut Option<RF>, new_value: RF, f: F) {
+    if let Some(ref mut existing_value) = option {
+        *existing_value = f(*existing_value, new_value);
+    } else {
+        *option = Some(new_value);
+    }
+}
+
+fn fill_in_default_bounds<RF: RealField>(variables: &mut Vec<ShiftedVariable<RF>>, touched: Vec<bool>) {
+    for (j, touched) in touched.into_iter().enumerate() {
+        if !touched {
+            variables[j].lower_bound = Some(RF::zero());
+        }
     }
 }
 
@@ -431,7 +575,7 @@ impl AbsDiffEq for MPS {
         EPSILON
     }
 
-    fn abs_diff_eq(&self, other: &Self, epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
+    fn abs_diff_eq(&self, other: &Self, _epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
         self.name == other.name &&
             self.cost_row_name == other.cost_row_name &&
             self.cost_values.iter().zip(other.cost_values.iter())
@@ -450,22 +594,5 @@ impl AbsDiffEq for MPS {
             self.bounds.iter().zip(other.bounds.iter())
                 .map(|(column1, column2)| abs_diff_eq!(column1, column2))
                 .all(identity)
-    }
-}
-
-/// Testing the structuring of parsed information.
-#[cfg(test)]
-mod test {
-    use data::linear_program::general_form::GeneralForm;
-    use io::mps::test::lp_mps;
-    use io::mps::test::lp_general;
-
-    /// Convert a `MPS` instance into `GeneralForm`.
-    #[test]
-    fn convert_to_general_lp() {
-        let result: GeneralForm = lp_mps().into();
-        let expected = lp_general();
-
-        assert_eq!(format!("{:?}", result), format!("{:?}", expected));
     }
 }

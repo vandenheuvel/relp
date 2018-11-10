@@ -1,20 +1,36 @@
-use std::convert::Into;
-use std::fmt;
-use std::error::Error;
-use std::io;
+//! # Error reporting for reading of linear program files
+//!
+//! A collection of enums and structures describing any problems encountered during reading and
+//! parsing.
 use core::fmt::Display;
+use std::convert::Into;
+use std::error::Error;
+use std::fmt;
+use std::io;
+use std::ops::Deref;
 
-/// A `ReadError` is created when an error was encountered during IO or parsing.
-///
-/// # Note
+/// An `ImportError` is created when an error was encountered during IO or parsing.
 ///
 /// It is the highest error in the io error hierarchy.
 #[derive(Debug)]
 pub enum ImportError {
+    /// The file extension of the provided file path is not known or supported.
+    ///
+    /// The contained `String` is a message for the end user.
     FileExtension(String),
+    /// The file to read isn't found, or the reading of file couldn't start or was interrupted.
     IO(io::Error),
+    /// Contents of the file could not be parsed into a linear program.
+    ///
+    /// # Note
+    ///
+    /// If the linear program is inconsistent, that will not be represented with this error. This
+    /// variant should only be created for syntactically incorrect files.
     Parse(ParseError),
-    LinearProgram(LinearProgramError),
+    /// There is a logical inconsistency in the linear program described by a file.
+    ///
+    /// For example, a bound might be given for a variable which is not known.
+    LinearProgram(InconsistencyError),
 }
 
 impl Display for ImportError {
@@ -29,25 +45,15 @@ impl Display for ImportError {
 }
 
 impl Error for ImportError {
-    fn description(&self) -> &str {
-        match self {
-            ImportError::FileExtension(description) => description,
-            ImportError::IO(error) => error.description(),
-            ImportError::Parse(error) => error.description(),
-            ImportError::LinearProgram(error) => error.description(),
-        }
-    }
-
-    fn cause(&self) -> Option<&Error> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             ImportError::FileExtension(_) => None,
-            ImportError::IO(error) => error.cause(),
-            ImportError::Parse(error) => error.cause(),
-            ImportError::LinearProgram(error) => None,
+            ImportError::IO(error) => error.source(),
+            ImportError::Parse(error) => error.source(),
+            ImportError::LinearProgram(_error) => None,
         }
     }
 }
-
 
 /// A `ParseError` represents all errors encountered during parsing.
 ///
@@ -56,7 +62,7 @@ impl Error for ImportError {
 #[derive(Debug)]
 pub struct ParseError {
     description: String,
-    cause: Option<ParseErrorCause>,
+    source: Option<ParseErrorSource>,
 }
 
 /// A `ParseErrorCause` can be used with a `ParseError` to describe its cause.
@@ -64,14 +70,14 @@ pub struct ParseError {
 /// It can be either a file line number and line contents, or another `ParseError` with its own
 /// description and optionally, a cause.
 #[derive(Debug)]
-enum ParseErrorCause {
+enum ParseErrorSource {
     FileLocation(u64, String),
     Nested(Box<ParseError>),
 }
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ParseError: {}", self.description())
+        write!(f, "ParseError: {}", self.to_string())
     }
 }
 
@@ -90,8 +96,8 @@ impl Error for ParseError {
     /// # Return value
     ///
     /// Option<&Error> which may be a `ParseErrorCause`.
-    fn cause(&self) -> Option<&Error> {
-        if let Some(ParseErrorCause::Nested(ref error)) = self.cause {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        if let Some(ParseErrorSource::Nested(ref error)) = self.source {
             Some(error)
         } else { None }
     }
@@ -108,7 +114,7 @@ impl ParseError {
     ///
     /// * A `ParseError` instance without a cause.
     pub fn new(description: impl Into<String>) -> ParseError {
-        ParseError { description: description.into(), cause: None, }
+        ParseError { description: description.into(), source: None, }
     }
 
     /// Create a new `ParseError` instance with a `FileLocation` as a cause.
@@ -121,11 +127,14 @@ impl ParseError {
     /// # Return value
     ///
     /// A new `ParseError` instance with a `FileLocation` cause.
-    pub fn with_file_location(description: impl Into<String>, file_location: FileLocation) -> ParseError {
+    pub fn with_file_location(
+        description: impl Into<String>,
+        file_location: FileLocation,
+    ) -> ParseError {
         let (line_number, line) = file_location;
         ParseError {
             description: description.into(),
-            cause: Some(ParseErrorCause::FileLocation(line_number, line.to_string())),
+            source: Some(ParseErrorSource::FileLocation(line_number, line.to_string())),
         }
     }
 
@@ -142,7 +151,7 @@ impl ParseError {
     pub fn with_cause(description: impl Into<String>, parse_error: ParseError) -> ParseError {
         ParseError {
             description: description.into(),
-            cause: Some(ParseErrorCause::Nested(Box::new(parse_error))),
+            source: Some(ParseErrorSource::Nested(Box::new(parse_error))),
         }
     }
 
@@ -152,31 +161,32 @@ impl ParseError {
     ///
     /// A new `ParseError` instance.
     fn chain_description(&self) -> Vec<String> {
-        let mut descriptions = vec![self.description().to_string()];
+        let mut descriptions = vec![self.to_string()];
 
-        if let Some(ref cause) = self.cause {
-            match cause {
-                ParseErrorCause::FileLocation(line_number, line) => {
+        if let Some(ref source) = self.source {
+            match source {
+                ParseErrorSource::FileLocation(line_number, line) => {
                     descriptions.push(format!("\tCaused at line\t{}:\t{}", line_number, line));
-                },
-                ParseErrorCause::Nested(error) => {
+                }
+                ParseErrorSource::Nested(error) => {
                     descriptions.append(&mut error.chain_description());
-                },
+                }
             }
         }
 
         descriptions
     }
+
     /// Get the source of this error.
     ///
     /// # Return value
     ///
     /// The source of this error, or self.
-    fn source(&self) -> &ParseError {
-        if let Some(ParseErrorCause::Nested(ref error)) = self.cause {
-            error
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        if let Some(ParseErrorSource::Nested(ref error)) = self.source {
+            Some(error.deref() as &dyn Error)
         } else {
-            &self
+            Some(self as &dyn Error)
         }
     }
 }
@@ -191,28 +201,33 @@ pub(super) type FileLocation<'a> = (u64, &'a str);
 /// This `Error` is not returned when the linear program is unfeasible or unbounded. It is meant
 /// only for descriptions of linear programs, and should not be used after the importing process.
 #[derive(Debug)]
-pub struct LinearProgramError {
+pub struct InconsistencyError {
     description: String,
 }
 
-impl Display for LinearProgramError {
+impl InconsistencyError {
+    /// Wrap a text in a `LinearProgramError`.
+    ///
+    /// # Arguments
+    ///
+    /// * `description` - A human-readable text mean for the end user.
+    ///
+    /// # Returns
+    ///
+    /// A `LinearProgramError`.
+    pub fn new(description: impl Into<String>) -> InconsistencyError {
+        InconsistencyError { description: description.into(), }
+    }
+}
+
+impl Display for InconsistencyError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ProgramError: {}", self.description())
+        write!(f, "ProgramError: {}", self.to_string())
     }
 }
 
-impl Error for LinearProgramError {
-    fn description(&self) -> &str {
-        self.description.as_str()
-    }
-
-    fn cause(&self) -> Option<&Error> {
+impl Error for InconsistencyError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(self)
-    }
-}
-
-impl LinearProgramError {
-    pub fn new(description: impl Into<String>) -> LinearProgramError {
-        LinearProgramError { description: description.into(), }
     }
 }
