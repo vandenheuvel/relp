@@ -1,4 +1,6 @@
-[![Build Status](https://travis-ci.com/vandenheuvel/rust-lp.svg?branch=master)](https://travis-ci.com/vandenheuvel/rust-lp)
+[![Build Status](https://travis-ci.com/vandenheuvel/rust-lp.svg?branch=master)](https://travis-ci.com/vandenheuvel/rust-lp) [![codecov](https://codecov.io/gh/vandenheuvel/rust-lp/branch/master/graph/badge.svg)](https://codecov.io/gh/vandenheuvel/rust-lp)
+
+
 
 # rust-lp
 A Linear Program solver written in Rust.

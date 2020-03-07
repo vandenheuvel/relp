@@ -1,3 +1,22 @@
 language: rust
 rust:
   - nightly
+addons:
+    apt:
+        packages:
+            - libssl-dev
+
+cache: cargo
+
+before_cache:
+ - cargo install cargo-tarpaulin
+
+script:
+ - cargo clean
+ - cargo build
+ - cargo test
+
+after_success:
+ - cargo tarpaulin --out Xml
+ - bash <(curl -s https://codecov.io/bash) 
+
