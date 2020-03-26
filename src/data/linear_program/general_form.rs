@@ -865,7 +865,7 @@ mod test {
             }, Variable {
                 name: "XFOUR".to_string(),
                 variable_type: VariableType::Continuous,
-                cost: R32!(229),
+                cost: R32!(-229),
                 lower_bound: None,
                 upper_bound: Some(R32!(131)),
                 shift: R32!(0),
@@ -874,15 +874,15 @@ mod test {
                 name: "XFIVE".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(233),
-                lower_bound: None,
-                upper_bound: None,
+                lower_bound: Some(R32!(0)),
+                upper_bound: Some(R32!(123)),
                 shift: R32!(0),
                 flipped: false
             }, Variable {
                 name: "XSIX".to_string(),
                 variable_type: VariableType::Continuous,
-                cost: R32!(239),
-                lower_bound: None,
+                cost: R32!(0),
+                lower_bound: Some(R32!(5)),
                 upper_bound: None,
                 shift: R32!(0),
                 flipped: false
@@ -905,15 +905,16 @@ mod test {
         let (remove_rows, remove_columns, columns_optimized_independently)
             = initial.substitute_extract_eliminate(&columns).unwrap();
         assert_eq!(remove_rows, vec![0, 1, 2].into_iter().collect());
-        assert_eq!(remove_columns, vec![0, 1, 3].into_iter().collect());
+        assert_eq!(remove_columns, vec![0, 1, 3, 5].into_iter().collect());
         assert_eq!(columns_optimized_independently, vec![3]);
         initial.remove_rows_and_columns(remove_rows, remove_columns);
 
-        let data = vec![vec![23f64, 29f64, 31f64]];
+        let data = vec![vec![23f64, 29f64]];
         let rows = RowMajorOrdering::from_test_data(&data);
         let b = DenseVector::from_test_data(vec![
-            109f64 - 17f64 * 101f64 / 2f64 - 19f64 * (103f64 - 101f64 / 2f64 * 3f64) / 5f64
+            109f64 - 17f64 * 101f64 / 2f64 - 19f64 * (103f64 - 101f64 / 2f64 * 3f64) / 5f64 - 31f64 * 5f64
         ]);
+        let constraints = vec![ConstraintType::Less];
         let fixed_cost = R32!(3);
         let column_info = vec![
             Variable {
@@ -933,21 +934,12 @@ mod test {
                 name: "XFIVE".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(233),
-                lower_bound: None,
-                upper_bound: None,
-                shift: R32!(0),
-                flipped: false
-            }, Variable {
-                name: "XSIX".to_string(),
-                variable_type: VariableType::Continuous,
-                cost: R32!(239),
-                lower_bound: None,
-                upper_bound: None,
+                lower_bound: Some(R32!(0)),
+                upper_bound: Some(R32!(123)),
                 shift: R32!(0),
                 flipped: false
             },
         ];
-        let constraints = vec![ConstraintType::Equal];
         let expected = GeneralForm::new(
             Objective::Minimize,
             rows,
