@@ -372,11 +372,11 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
     ///
     /// * `indices` - Columns to be removed, is assumed sorted.
     fn remove_major_indices(&mut self, indices: &Vec<usize>) {
-        debug_assert!(indices.len() < self.data.len());
+        debug_assert!(indices.len() < self.major_dimension_size);
         debug_assert!(indices.is_sorted());
         // All values are unique
         debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
-        debug_assert!(indices.iter().all(|&i| i < self.data.len()));
+        debug_assert!(indices.iter().all(|&i| i < self.major_dimension_size));
 
         remove_indices(&mut self.data, indices);
         self.major_dimension_size -= indices.len();
@@ -391,7 +391,7 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
         debug_assert!(indices.is_sorted());
         // All values are unique
         debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
-        debug_assert!(indices.iter().all(|&i| i < self.major_dimension_size));
+        debug_assert!(indices.iter().all(|&i| i < self.minor_dimension_size));
         debug_assert!(indices.len() < self.minor_dimension_size);
 
         for j in 0..self.major_dimension_size {

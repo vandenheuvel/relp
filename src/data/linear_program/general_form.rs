@@ -96,18 +96,15 @@ impl<OF: OrderedField> GeneralForm<OF> {
     pub fn derive_matrix_data(&mut self) -> Result<MatrixData<OF>, LinearProgramType<OF>> {
         self.canonicalize()?;
 
-        let variables = self.variables.iter()
-            .map(|variable| matrix_data::Variable {
-                cost: match self.objective {
-                    Objective::Minimize => variable.cost,
-                    Objective::Maximize => -variable.cost,
-                },
-                upper_bound: variable.upper_bound,
-                variable_type: variable.variable_type,
-            }).collect();
         let negative_free_variable_dummy_index = self.variables.iter().enumerate()
             .filter(|&(_, variable)| variable.is_free())
             .map(|(j, _)| j).collect();
+        let variables = self.variables.iter()
+            .map(|variable| matrix_data::Variable {
+                cost: variable.cost,
+                upper_bound: variable.upper_bound,
+                variable_type: variable.variable_type,
+            }).collect();
         let (b, (equality, upper, lower)) = self.split_constraints_by_type();
 
         Ok(MatrixData::new(
@@ -148,6 +145,7 @@ impl<OF: OrderedField> GeneralForm<OF> {
             drop(column_major); // This structure no longer matches the data in `self`
         }
         self.make_b_non_negative();
+        self.make_minimization_problem();
 
         Ok(())
     }
@@ -190,7 +188,11 @@ impl<OF: OrderedField> GeneralForm<OF> {
         }).collect::<Vec<_>>();
 
         // Columns and rows that needs to be considered.
-        let mut column_queue = (0..self.constraints.nr_columns()).collect::<HashSet<_>>();
+        let mut column_queue = (0..self.constraints.nr_columns())
+            .filter(|&j| {
+                column_counters[j] < 2 || self.variables[j].is_fixed().is_some()
+            })
+            .collect::<HashSet<_>>();
         let mut row_queue = (0..self.constraints.nr_rows())
             .filter(|&i| row_counters[i] < 2).collect::<HashSet<_>>();
 
@@ -205,7 +207,7 @@ impl<OF: OrderedField> GeneralForm<OF> {
                     &column_counters,
                 )? {
                     column_counters[modified_index] -= 1;
-                    if column_counters[modified_index] < 2 && !columns_marked_for_removal.contains(&modified_index){
+                    if column_counters[modified_index] < 2 || self.variables[modified_index].is_fixed().is_some() {
                         column_queue.insert(modified_index);
                     }
                 }
@@ -235,6 +237,102 @@ impl<OF: OrderedField> GeneralForm<OF> {
         }
 
         Ok((rows_marked_for_removal, columns_marked_for_removal, columns_optimized_independently))
+    }
+
+    /// See whether a row can be removed.
+    ///
+    /// This might happen when a row has no constraints, or when the row has just a single
+    /// constraint, which indicates that it is a bound (that can be represented differently in a
+    /// `GeneralForm`.
+    ///
+    /// # Arguments
+    ///
+    /// * `constraint` - Index of row to investigate.
+    /// * `row_counters` - Amount of "meaningful" (no known solution value, not yet marked for
+    /// deletion) elements that are still left in a row.
+    /// * `column_counters` -  Amount of "meaningful" (no known solution value, corresponding row is
+    /// not yet marked for deletion) elements that are still left in a column.
+    ///
+    /// # Return value
+    ///
+    /// Result that indicates whether the linear program might still have a feasible solution (if
+    /// not, the `Result::Err` type will indicate that it is not). Inside there is an `Option` which
+    /// might contain the index of a variable that would be effected by the removal of the row under
+    /// consideration.
+    fn treat_row(
+        &mut self,
+        constraint: usize,
+        row_counters: &Vec<usize>,
+        column_counters: &Vec<usize>,
+    ) -> Result<Option<usize>, LinearProgramType<OF>> {
+        match row_counters[constraint] {
+            0 => {
+                self.treat_empty_row(constraint)?;
+                Ok(None)
+            },
+            // Remove if bound without slack
+            1 => self.treat_bound_without_slack(constraint, column_counters),
+            _ => panic!(),
+        }
+    }
+
+    /// Whether an empty constraint can be safely discarded.
+    ///
+    /// # Arguments
+    ///
+    /// * `constraint` - Index of row to investigate.
+    ///
+    /// # Return value
+    ///
+    /// `Result` indicating whether the linear program might still be feasible.
+    fn treat_empty_row(&self, constraint: usize) -> Result<(), LinearProgramType<OF>> {
+        if self.b.get_value(constraint) == OF::additive_identity() {
+            Err(LinearProgramType::Infeasible)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Modify bounds of a non-slack variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `constraint` - Index of a row with only a bound.
+    /// * `column_counters` - Amount of tuples in each column corresponding to a row that has not
+    /// yet been marked for deletion.
+    ///
+    /// # Return value
+    ///
+    /// `Result` indicating whether the linear program might still be feasible. Inside it, the
+    /// column that should be checked next.
+    fn treat_bound_without_slack(
+        &mut self,
+        constraint: usize,
+        column_counters: &Vec<usize>,
+    ) -> Result<Option<usize>, LinearProgramType<OF>> {
+        let &(column, value) = self.constraints.iter_row(constraint)
+            .filter(|&&(j, _)| column_counters[j] >= 2)
+            .filter(|&&(j, _)| self.variables[j].is_fixed().is_none())
+            .nth(0).unwrap();
+        let bound_value = self.b.get_value(constraint) / value;
+        match self.constraint_types[constraint] {
+            ConstraintType::Equal => {
+                self.variables[column].update_upper_bound(bound_value);
+                self.variables[column].update_lower_bound(bound_value);
+            },
+            ConstraintType::Greater => {
+                self.variables[column].update_lower_bound(bound_value);
+            },
+            ConstraintType::Less => {
+                self.variables[column].update_upper_bound(bound_value);
+            },
+        }
+
+        if !self.variables[column].has_feasible_value() {
+            Err(LinearProgramType::Infeasible)
+        } else {
+            Ok(Some(column))
+        }
     }
 
     /// See if a presolve operation can be applied to this column.
@@ -377,105 +475,6 @@ impl<OF: OrderedField> GeneralForm<OF> {
         }
     }
 
-    /// See whether a row can be removed.
-    ///
-    /// This might happen when a row has no constraints, or when the row has just a single
-    /// constraint, which indicates that it is a bound (that can be represented differently in a
-    /// `GeneralForm`.
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint` - Index of row to investigate.
-    /// * `row_counters` - Amount of "meaningful" (no known solution value, not yet marked for
-    /// deletion) elements that are still left in a row.
-    /// * `column_counters` -  Amount of "meaningful" (no known solution value, corresponding row is
-    /// not yet marked for deletion) elements that are still left in a column.
-    ///
-    /// # Return value
-    ///
-    /// Result that indicates whether the linear program might still have a feasible solution (if
-    /// not, the `Result::Err` type will indicate that it is not). Inside there is an `Option` which
-    /// might contain the index of a variable that would be effected by the removal of the row under
-    /// consideration.
-    fn treat_row(
-        &mut self,
-        constraint: usize,
-        row_counters: &Vec<usize>,
-        column_counters: &Vec<usize>,
-    ) -> Result<Option<usize>, LinearProgramType<OF>> {
-        match row_counters[constraint] {
-            0 => {
-                self.treat_empty_row(constraint)?;
-                Ok(None)
-            },
-            // Remove if bound without slack
-            1 => {
-                let column_to_check =  self.treat_bound_without_slack(constraint, column_counters)?;
-                Ok(Some(column_to_check))
-            },
-            _ => panic!(),
-        }
-    }
-
-    /// Whether an empty constraint can be safely discarded.
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint` - Index of row to investigate.
-    ///
-    /// # Return value
-    ///
-    /// `Result` indicating whether the linear program might still be feasible.
-    fn treat_empty_row(&self, constraint: usize) -> Result<(), LinearProgramType<OF>> {
-        if self.b.get_value(constraint) == OF::additive_identity() {
-            Err(LinearProgramType::Infeasible)
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Modify bounds of a non-slack variable.
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint` - Index of a row with only a bound.
-    /// * `column_counters` - Amount of tuples in each column corresponding to a row that has not
-    /// yet been marked for deletion.
-    ///
-    /// # Return value
-    ///
-    /// `Result` indicating whether the linear program might still be feasible. Inside it, the
-    /// column that should be checked next.
-    fn treat_bound_without_slack(
-        &mut self,
-        constraint: usize,
-        column_counters: &Vec<usize>,
-    ) -> Result<usize, LinearProgramType<OF>> {
-        let &(column, value) = self.constraints.iter_row(constraint)
-            .filter(|&&(j, _)| column_counters[j] >= 2)
-            .filter(|&&(j, _)| self.solution_value(j).is_none())
-            .nth(0).unwrap();
-        let bound_value = self.b.get_value(constraint) / value;
-        match self.constraint_types[constraint] {
-            ConstraintType::Equal => {
-                self.variables[column].update_upper_bound(bound_value);
-                self.variables[column].update_lower_bound(bound_value);
-            },
-            ConstraintType::Greater => {
-                self.variables[column].update_lower_bound(bound_value);
-            },
-            ConstraintType::Less => {
-                self.variables[column].update_upper_bound(bound_value);
-            },
-        }
-
-        if !self.variables[column].has_feasible_value() {
-            Err(LinearProgramType::Infeasible)
-        } else {
-            Ok(column)
-        }
-    }
-
     /// Sets variables that can be optimized independently of all others to their maximum values.
     ///
     /// # Arguments
@@ -603,28 +602,6 @@ impl<OF: OrderedField> GeneralForm<OF> {
         }
     }
 
-    /// Multiply the constraints by a constant such that the constraint value is >= 0.
-    ///
-    /// This is a step towards representing a `GeneralForm` problem in `CanonicalForm`.
-    fn make_b_non_negative(&mut self) {
-        let rows_to_negate = self.b.iter_values()
-            .enumerate()
-            .filter(|&(_, &v)| v < OF::additive_identity())
-            .map(|(i, _)| i)
-            .collect();
-
-        self.constraints.change_row_signs(&rows_to_negate);
-        for row in rows_to_negate.into_iter() {
-            self.constraint_types[row] = match self.constraint_types[row] {
-                ConstraintType::Greater => ConstraintType::Less,
-                ConstraintType::Equal => ConstraintType::Equal,
-                ConstraintType::Less => ConstraintType::Greater,
-            };
-            let old = self.b.get_value(row);
-            self.b.set_value(row, -old);
-        }
-    }
-
     /// Remove a set of rows and columns from the constraint data.
     ///
     /// Constraints might have been determined redundant, or perhaps they represented a variable
@@ -652,6 +629,39 @@ impl<OF: OrderedField> GeneralForm<OF> {
 
         self.constraints.remove_columns_although_this_matrix_is_row_ordered(&columns);
         remove_indices(&mut self.variables, &columns);
+    }
+
+    /// Multiply the constraints by a constant such that the constraint value is >= 0.
+    ///
+    /// This is a step towards representing a `GeneralForm` problem in `CanonicalForm`.
+    fn make_b_non_negative(&mut self) {
+        let rows_to_negate = self.b.iter_values()
+            .enumerate()
+            .filter(|&(_, &v)| v < OF::additive_identity())
+            .map(|(i, _)| i)
+            .collect();
+
+        self.constraints.change_row_signs(&rows_to_negate);
+        for row in rows_to_negate.into_iter() {
+            self.constraint_types[row] = match self.constraint_types[row] {
+                ConstraintType::Greater => ConstraintType::Less,
+                ConstraintType::Equal => ConstraintType::Equal,
+                ConstraintType::Less => ConstraintType::Greater,
+            };
+            let old = self.b.get_value(row);
+            self.b.set_value(row, -old);
+        }
+    }
+
+    /// Make this a minimization problem by multiplying the cost function by -1.
+    fn make_minimization_problem(&mut self) {
+        if self.objective == Objective::Maximize {
+            self.objective = Objective::Minimize;
+
+            for variable in &mut self.variables {
+                variable.cost = -variable.cost;
+            }
+        }
     }
 
     /// Split the constraints out per type.
@@ -809,6 +819,146 @@ mod test {
     use crate::R32;
 
     type T = Ratio<i32>;
+
+    #[test]
+    fn test_eliminate() {
+        let data = vec![
+            // Column 3 should be removed because empty
+            vec![2f64, 0f64, 0f64, 0f64, 0f64, 0f64], // Should be removed because simple bound
+            vec![3f64, 5f64, 0f64, 0f64, 0f64, 0f64], // Should be removed because simple bound after removal of the row above
+            vec![7f64, 11f64, 13f64, 0f64, 0f64, 0f64], // Should be removed because of fixed variable after the removal of above two
+            vec![17f64, 19f64, 23f64, 0f64, 29f64, 31f64], // Row that should stay
+        ];
+        let columns = ColumnMajorOrdering::from_test_data(&data);
+        let rows = RowMajorOrdering::from_test_data(&data);
+        let b = DenseVector::from_test_data(vec![
+            101f64,
+            103f64,
+            107f64,
+            109f64,
+        ]);
+        let column_info = vec![
+            Variable {
+                name: "XONE".to_string(),
+                variable_type: VariableType::Continuous,
+                cost: R32!(211),
+                lower_bound: None,
+                upper_bound: None,
+                shift: R32!(0),
+                flipped: false
+            }, Variable {
+                name: "XTWO".to_string(),
+                variable_type: VariableType::Continuous,
+                cost: R32!(223),
+                lower_bound: Some((R32!(103) - R32!(101) / R32!(2) * R32!(3)) / R32!(5)),
+                upper_bound: None,
+                shift: R32!(0),
+                flipped: false
+            }, Variable {
+                name: "XTHREE".to_string(),
+                variable_type: VariableType::Continuous,
+                cost: R32!(227),
+                lower_bound: None,
+                upper_bound: None,
+                shift: R32!(0),
+                flipped: false
+            }, Variable {
+                name: "XFOUR".to_string(),
+                variable_type: VariableType::Continuous,
+                cost: R32!(229),
+                lower_bound: None,
+                upper_bound: Some(R32!(131)),
+                shift: R32!(0),
+                flipped: false
+            }, Variable {
+                name: "XFIVE".to_string(),
+                variable_type: VariableType::Continuous,
+                cost: R32!(233),
+                lower_bound: None,
+                upper_bound: None,
+                shift: R32!(0),
+                flipped: false
+            }, Variable {
+                name: "XSIX".to_string(),
+                variable_type: VariableType::Continuous,
+                cost: R32!(239),
+                lower_bound: None,
+                upper_bound: None,
+                shift: R32!(0),
+                flipped: false
+            },
+        ];
+        let constraints = vec![
+            ConstraintType::Equal,
+            ConstraintType::Less,
+            ConstraintType::Greater,
+            ConstraintType::Equal,
+        ];
+        let mut initial = GeneralForm::new(
+            Objective::Minimize,
+            rows,
+            constraints,
+            b,
+            column_info,
+            R32!(0),
+        );
+        let (remove_rows, remove_columns, columns_optimized_independently)
+            = initial.substitute_extract_eliminate(&columns).unwrap();
+        assert_eq!(remove_rows, vec![0, 1, 2].into_iter().collect());
+        assert_eq!(remove_columns, vec![0, 1, 3].into_iter().collect());
+        assert_eq!(columns_optimized_independently, vec![3]);
+        initial.remove_rows_and_columns(remove_rows, remove_columns);
+
+        let data = vec![vec![23f64, 29f64, 31f64]];
+        let rows = RowMajorOrdering::from_test_data(&data);
+        let b = DenseVector::from_test_data(vec![
+            109f64 - 17f64 * 101f64 / 2f64 - 19f64 * (103f64 - 101f64 / 2f64 * 3f64) / 5f64
+        ]);
+        let fixed_cost = R32!(3);
+        let column_info = vec![
+            Variable {
+                name: "XTHREE".to_string(),
+                variable_type: VariableType::Continuous,
+                cost: R32!(227),
+                lower_bound: Some(
+                    (R32!(107)
+                        - R32!(7) * (R32!(101) / R32!(2))
+                        - R32!(11) * ((R32!(103) - R32!(101) / R32!(2) * R32!(3)) / R32!(5))
+                    ) / R32!(13)
+                ),
+                upper_bound: None,
+                shift: R32!(0),
+                flipped: false
+            }, Variable {
+                name: "XFIVE".to_string(),
+                variable_type: VariableType::Continuous,
+                cost: R32!(233),
+                lower_bound: None,
+                upper_bound: None,
+                shift: R32!(0),
+                flipped: false
+            }, Variable {
+                name: "XSIX".to_string(),
+                variable_type: VariableType::Continuous,
+                cost: R32!(239),
+                lower_bound: None,
+                upper_bound: None,
+                shift: R32!(0),
+                flipped: false
+            },
+        ];
+        let constraints = vec![ConstraintType::Equal];
+        let expected = GeneralForm::new(
+            Objective::Minimize,
+            rows,
+            constraints,
+            b,
+            column_info,
+            R32!(42462) / R32!(5),
+        );
+
+        assert_eq!(initial, expected);
+    }
 
     /// If a simple equality bound is found, remember the solution value and remove the row and
     /// column
