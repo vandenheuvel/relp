@@ -246,12 +246,17 @@ impl<F: Field> SparseVector<F> {
                 j += 1;
             } else {
                 // self.data[i].0 > other.data[j].0
-                new_tuples.push((other.data[j].0, multiple * other.data[j].1));
+                let new_value = multiple * other.data[j].1;
+                if new_value != F::additive_identity() {
+                    new_tuples.push((other.data[j].0, multiple * other.data[j].1));
+                }
                 j += 1;
             }
         }
         new_tuples.extend_from_slice(&self.data[i..]);
-        new_tuples.extend(other.data[j..].iter().map(|&(i, v)| (i, multiple * v)));
+        new_tuples.extend(other.data[j..].iter()
+            .map(|&(i, v)| (i, multiple * v))
+            .filter(|&(_, v)| v != F::additive_identity()));
 
         Self::new(new_tuples, self.len)
     }
@@ -292,6 +297,7 @@ impl<F: Field> SparseVector<F> {
         for (_, v) in self.data.iter_mut() {
             *v *= value;
         }
+        self.data.retain(|&(_, v)| v != F::additive_identity());
     }
 
     /// Divide each element of the vector by a value.
@@ -299,6 +305,7 @@ impl<F: Field> SparseVector<F> {
         for (_, v) in self.data.iter_mut() {
             *v /= value;
         }
+        self.data.retain(|&(_, v)| v != F::additive_identity());
     }
 }
 

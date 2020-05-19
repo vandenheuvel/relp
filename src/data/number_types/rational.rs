@@ -46,6 +46,7 @@ macro_rules! impl_rational {
 }
 impl_rational!(i32, R32);
 impl_rational!(i64, R64);
+impl_rational!(i128, R128);
 
 /// Shorthand for creating a rational number in tests.
 #[macro_export]
@@ -65,6 +66,16 @@ macro_rules! R64 {
     };
     ($numer:expr, $denom:expr) => {
         Ratio::<i64>::new($numer, $denom)
+    };
+}
+/// Shorthand for creating a rational number in tests.
+#[macro_export]
+macro_rules! R128 {
+    ($value:expr) => {
+        Ratio::<i128>::from_f64($value as f64).unwrap()
+    };
+    ($numer:expr, $denom:expr) => {
+        Ratio::<i128>::new($numer, $denom)
     };
 }
 

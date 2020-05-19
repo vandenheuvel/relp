@@ -1,28 +1,33 @@
 //! Helper methods for the accuracy of floating point calculations.
-use num::Float;
+use num::{Float, Signed, Integer, Unsigned, ToPrimitive};
 
 /// See the docstring of `candidate_to_round_to`: this function could be used instead of the simpler
 /// integer rounding.
-pub fn close_heuristic_fraction<F: Float>(value: F, epsilon: F) -> F {
+pub fn close_heuristic_fraction<F, N, D>(value: F, rounds: u32, epsilon: F) -> F
+where
+    F: Float,
+    N: Signed + Integer + ToPrimitive + Copy,
+    D: Unsigned + Integer + ToPrimitive + Copy,
+{
     debug_assert!(epsilon > F::zero());
 
     let floor = value.floor();
     let fraction = value - floor;
 
-    let close_fraction = if fraction < epsilon {
+    let (numerator, denominator) = if fraction < epsilon {
         // Close to zero
-        fraction
+        (N::zero(), D::one())
     } else if fraction > F::one() - epsilon {
         // Close to one
-        fraction + F::one()
+        (N::one(), D::one())
     } else {
         // Somewhere in the middle
-        let (mut numerator_lb, mut numerator_ub) = (0u64, 1u64);
-        let (mut denominator_lb, mut denominator_ub) = (1u64, 1u64);
-        let (mut numerator_middle, mut denominator_middle) = (1u64, 2u64);
+        let (mut numerator_lb, mut numerator_ub) = (N::zero(), N::one());
+        let (mut denominator_lb, mut denominator_ub) = (D::one(), D::one());
+        let (mut numerator_middle, mut denominator_middle) = (N::one(), D::one() + D::one());
 
-        loop {
-            if F::from(denominator_middle).unwrap() * (fraction + epsilon)  < F::from(numerator_middle).unwrap() {
+        for _ in 0..rounds {
+            if F::from(denominator_middle).unwrap() * (fraction + epsilon) < F::from(numerator_middle).unwrap() {
                 numerator_ub = numerator_middle;
                 denominator_ub = denominator_middle;
             } else if F::from(denominator_middle).unwrap() * (fraction - epsilon) > F::from(numerator_middle).unwrap() {
@@ -36,10 +41,10 @@ pub fn close_heuristic_fraction<F: Float>(value: F, epsilon: F) -> F {
             denominator_middle = denominator_lb + denominator_ub;
         }
 
-        F::from(numerator_middle).unwrap() / F::from(denominator_middle).unwrap()
+        (numerator_middle, denominator_middle)
     };
 
-    floor + close_fraction
+    floor + F::from(numerator).unwrap() / F::from(denominator).unwrap()
 }
 
 #[cfg(test)]
@@ -50,13 +55,13 @@ mod test {
     fn test_close_heuristic_fraction() {
         let epsilon = 1e-15f64;
         for x in vec![0.6584f64, 0.684684f64, 0.121484948f64] {
-            assert_relative_eq!(x, close_heuristic_fraction(x, epsilon));
+            assert_relative_eq!(x, close_heuristic_fraction::<_, i64, u64>(x, 50, epsilon));
         }
         for x in vec![984654.65484f64, 4984.6484684f64, -4681984.8484948f64] {
-            assert_abs_diff_eq!(x, close_heuristic_fraction(x, epsilon));
+            assert_abs_diff_eq!(x, close_heuristic_fraction::<_, i64, u64>(x, 50, epsilon));
         }
         for x in vec![0f64, 1e-16f64, 654654f64 - 1e-16f64] {
-            assert_abs_diff_eq!(x, close_heuristic_fraction(x, epsilon));
+            assert_abs_diff_eq!(x, close_heuristic_fraction::<_, i64, u64>(x, 50, epsilon));
         }
     }
 }

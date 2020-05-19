@@ -26,12 +26,12 @@ pub(crate) fn artificial_primal<'a, OF: OrderedField, MP: 'a + MatrixProvider<OF
 ) -> FeasibilityResult {
     let mut i = 0;
     loop {
-        debug_assert!(tableau.debug_assert_is_in_basic_feasible_solution_state());
+        // debug_assert!(tableau.debug_assert_is_in_basic_feasible_solution_state());
 
-        i += 1;
-        if i % 100 == 0 {
+        if i % 10 == 0 {
             println!("{} {:?}", i, tableau.objective_function_value());
         }
+        i += 1;
 
         let mut rule = PR::new();
         match rule.select_primal_pivot_column(tableau) {

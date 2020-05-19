@@ -24,6 +24,7 @@ pub struct SparseMatrix<F: Field, MO: MatrixOrder> {
     phantom_data: PhantomData<MO>,
 }
 
+/// The backend of a `SparseMatrix` can either be column or row major.
 pub trait MatrixOrder: Sized {
     fn new<F: Field>(
         data: Vec<SparseTuples<F>>,
@@ -33,8 +34,10 @@ pub trait MatrixOrder: Sized {
     fn from_test_data<RF: RealField>(rows: &Vec<Vec<f64>>) -> SparseMatrix<RF, Self>;
     fn identity<F: Field>(n: usize) -> SparseMatrix<F, Self>;
 }
+/// Row major sparse matrix ordering.
 #[derive(PartialEq, Eq, Debug)]
 pub struct RowMajorOrdering;
+/// Column major sparse matrix ordering.
 #[derive(PartialEq, Eq, Debug)]
 pub struct ColumnMajorOrdering;
 impl MatrixOrder for RowMajorOrdering {
@@ -206,9 +209,9 @@ impl<F: Field> SparseMatrix<F, ColumnMajorOrdering> {
     /// A column-major copy.
     pub fn from_row_ordered_tuples_although_this_is_expensive(
         rows: &Vec<SparseTuples<F>>,
-        nr_columns: usize,
+        current_nr_columns: usize,
     ) -> Self {
-        Self::from_minor_ordered_tuples(rows, nr_columns)
+        Self::from_minor_ordered_tuples(rows, current_nr_columns)
     }
 
     /// Remove columns from the matrix.
@@ -316,8 +319,8 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
         debug_assert!(data.iter().all(|v| v.is_sorted_by_key(|&(i, _)| i)));
         debug_assert!(data.iter()
             .map(|c| c.iter().map(|&(i, _)| i).max())
-            .all(|m| m.map_or(true, |max_row| max_row < major_dimension_size)));
-        debug_assert!(data.iter().all(|column| column.iter().all(|&(_, v)| v != F::additive_identity())));
+            .all(|m| m.map_or(true, |max_minor_index| max_minor_index < minor_dimension_size)));
+        debug_assert!(data.iter().all(|minor| minor.iter().all(|&(_, v)| v != F::additive_identity())));
 
         SparseMatrix {
             data,
@@ -334,8 +337,8 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
         let new_minor_dimension_size = data.len();
 
         let mut major_ordered = vec![Vec::new(); new_major_dimension_size];
-        for (i, row) in data.iter().enumerate() {
-            for &(j, value) in row.iter() {
+        for (i, minor) in data.iter().enumerate() {
+            for &(j, value) in minor.iter() {
                 major_ordered[j].push((i, value));
             }
         }

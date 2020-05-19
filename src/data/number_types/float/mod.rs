@@ -16,7 +16,7 @@ use num::traits::{One, Zero};
 use crate::data::number_types::float::numerical_precision::close_heuristic_fraction;
 use crate::data::number_types::traits::{DedekindComplete, Field, OrderedField, RealField};
 
-mod numerical_precision;
+pub mod numerical_precision;
 
 // TODO: How can fused multiply add be utilized?
 
@@ -94,9 +94,9 @@ impl<F: InnerF, OPS: InnerOPS> FECF<F, OPS> {
     /// computation rather than a computation result with (accumulated) rounding errors, round and reset
     /// the operations counter.
     fn trim_iid_rounding_errors(&mut self) {
-        if self.operations < OPS::from_u64(1e6 as u64).unwrap() {
-            return
-        }
+        // if self.operations < OPS::from_u64(1e6 as u64).unwrap() {
+        //     return
+        // }
 
         let candidate = self.candidate_to_round_to();
         if self.is_close_to_candidate(candidate, self.operations) {
@@ -119,7 +119,7 @@ impl<F: InnerF, OPS: InnerOPS> FECF<F, OPS> {
     /// Float representation (with rounding error, but only a single one) of a fraction that is close to
     /// the input.
     fn candidate_to_round_to(&self) -> F {
-        close_heuristic_fraction(self.value,Self::base_epsilon())
+        close_heuristic_fraction::<_, i64, u64>(self.value,30, Self::base_epsilon())
     }
 
     fn is_close_to_candidate(&self, candidate: F, operations: OPS) -> bool {
@@ -139,7 +139,7 @@ impl<F: InnerF, OPS: InnerOPS> FECF<F, OPS> {
     fn base_epsilon() -> F {
         // On a problem of size 2000 x 4000, this resulted in good results from 2 ** 14 to 2 ** 30
         // Let's go with 1_024 instead of 1_024 ** 2, because we also have f32 now, f32::eps == 1e-6
-        F::from(1e3).unwrap() * F::epsilon()
+        F::from(1e5).unwrap() * F::epsilon()
     }
 }
 
@@ -284,20 +284,20 @@ impl<F: InnerF, OPS: InnerOPS> Display for FECF<F, OPS> {
         write!(f, "({}, {})", self.value, self.operations)
     }
 }
-
-macro_rules! impl_shorthand {
-    ($macro_name:ident, $f_t:ident, $ops_t:ident) => {
-        /// Shorthand for creating a `FECF` number in tests.
-        #[macro_export]
-        macro_rules! $macro_name {
-            ($value:expr) => {
-                FiniteErrorControlledFloat::<$f_t, $ops_t>::from_f64($value as f64).unwrap()
-            };
-        }
-    }
+/// Shorthand for creating a `FECF` number in tests.
+#[macro_export]
+macro_rules! F32 {
+    ($value:expr) => {
+        FiniteErrorControlledFloat::<f32, u32>::from_f64($value as f64).unwrap()
+    };
 }
-impl_shorthand!(F32, f32, u32);
-impl_shorthand!(F64, f64, u64);
+/// Shorthand for creating a `FECF` number in tests.
+#[macro_export]
+macro_rules! F64 {
+    ($value:expr) => {
+        FiniteErrorControlledFloat::<f64, u64>::from_f64($value as f64).unwrap()
+    };
+}
 
 #[cfg(test)]
 mod test {

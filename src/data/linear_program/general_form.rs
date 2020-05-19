@@ -18,6 +18,7 @@ use crate::data::linear_algebra::SparseTuples;
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use crate::data::linear_program::elements::{ConstraintType, LinearProgramType, Objective, VariableType};
 use crate::data::number_types::traits::{Field, OrderedField};
+use crate::tests::problem_1::general_form;
 
 /// A linear program in general form.
 ///
@@ -133,7 +134,7 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// requires copying all constraint data once.
     pub(crate) fn canonicalize(&mut self) -> Result<(), LinearProgramType<OF>>{
         let column_major = SparseMatrix::from_row_ordered_tuples_although_this_is_expensive(
-            &self.constraints.data, self.constraints.nr_rows()
+            &self.constraints.data, self.constraints.nr_columns()
         );
 
         let (rows_to_remove, columns_to_remove, optimize_independently) =
@@ -164,7 +165,6 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// # Return value
     ///
     /// If the problem is not determined infeasible, a tuple containing:
-    ///
     /// * A set of rows that should be removed.
     /// * A set of columns that should be removed.
     /// * A vec of columns that can be independently maximized, also contained in the above set.
@@ -172,72 +172,57 @@ impl<OF: OrderedField> GeneralForm<OF> {
         &mut self,
         columns: &SparseMatrix<OF, ColumnMajorOrdering>,
     ) -> Result<(HashSet<usize>, HashSet<usize>, Vec<usize>), LinearProgramType<OF>> {
-        let mut columns_marked_for_removal = HashSet::new();
-        // This is a subset of `columns_marked_for_removal`.
-        let mut columns_optimized_independently = Vec::new();
-        let mut rows_marked_for_removal = HashSet::new();
+        let mut index = PresolveIndex::new(&self, columns);
 
-        // Amount of meaningful elements still in the column or row.
-        // The elements should be considered when the counter drops below 2. Variables should also
-        // be considered when a new bound on them is found.
-        let mut column_counters = (0..self.constraints.nr_columns()).map(|j| {
-            columns.data[j].len() + if self.variables[j].cost != OF::additive_identity() { 1 } else { 0 }
-        }).collect::<Vec<_>>();
-        let mut row_counters = (0..self.constraints.nr_rows()).map(|i| {
-            self.constraints.data[i].len()
-        }).collect::<Vec<_>>();
+        // TODO: Where should this be called?
+        // for i in 0..self.nr_constraints() {
+        //     self.normalize_constraint(i)
+        // }
 
-        // Columns and rows that needs to be considered.
-        let mut column_queue = (0..self.constraints.nr_columns())
-            .filter(|&j| {
-                column_counters[j] < 2 || self.variables[j].is_fixed().is_some()
-            })
-            .collect::<HashSet<_>>();
-        let mut row_queue = (0..self.constraints.nr_rows())
-            .filter(|&i| row_counters[i] < 2).collect::<HashSet<_>>();
-
-        while !column_queue.is_empty() || !row_queue.is_empty() {
+        while !index.column_queue.is_empty() || !index.row_queue.is_empty() {
             // Each row in the queue will be deleted and never looked at again. That's why we do
             // these first.
-            while let Some(&index) = row_queue.iter().next() {
-                row_queue.remove(&index);
-                if let Some(modified_index) = self.treat_row(
-                    index,
-                    &row_counters,
-                    &column_counters,
-                )? {
-                    column_counters[modified_index] -= 1;
-                    if column_counters[modified_index] < 2 || self.variables[modified_index].is_fixed().is_some() {
-                        column_queue.insert(modified_index);
+            while let Some(&row) = index.row_queue.iter().next() {
+                index.row_queue.remove(&row);
+                for modified_index in self.treat_row(row, &index)? {
+                    index.column_counters[modified_index] -= 1;
+                    if index.column_counters[modified_index] < 2 || self.variables[modified_index].is_fixed().is_some() {
+                        index.column_queue.insert(modified_index);
                     }
                 }
-                rows_marked_for_removal.insert(index);
+                index.rows_marked_for_removal.insert(row);
             }
 
             // Columns, on the other hand, are not necessarily deleted when they are checked for
             // whether they are fixed by their bounds.
-            if let Some(&index) = column_queue.iter().next() {
-                column_queue.remove(&index);
-                if let Some(item_removed_from_indices) = self.treat_column(
-                    index,
-                    &column_counters,
-                    &row_counters,
-                    &mut columns_optimized_independently,
-                    columns,
-                ) {
-                    columns_marked_for_removal.insert(index);
+            if let Some(&column) = index.column_queue.iter().next() {
+                index.column_queue.remove(&column);
+                if let Some(item_removed_from_indices) = self.treat_column(column,&mut index) {
+                    index.columns_marked_for_removal.insert(column);
                     for modified_index in item_removed_from_indices {
-                        row_counters[modified_index] -= 1;
-                        if row_counters[modified_index] < 2 && !rows_marked_for_removal.contains(&modified_index){
-                            row_queue.insert(modified_index);
+                        index.row_counters[modified_index] -= 1;
+                        if index.row_counters[modified_index] < 2 && !index.rows_marked_for_removal.contains(&modified_index){
+                            index.row_queue.insert(modified_index);
                         }
                     }
                 }
             }
         }
 
-        Ok((rows_marked_for_removal, columns_marked_for_removal, columns_optimized_independently))
+        Ok((
+            index.rows_marked_for_removal,
+            index.columns_marked_for_removal,
+            index.columns_optimized_independently,
+        ))
     }
+
+    // TODO
+    // fn normalize_constraint(&mut self, constraint: usize) {
+    //     let as_rationals = self.constraints.iter_row(constraint)
+    //         .map(|&(j, coefficient)| {
+    //             heuristic_fraction::<>(coefficient, 30, unimplemented!())
+    //         }).collect();
+    // }
 
     /// See whether a row can be removed.
     ///
@@ -262,17 +247,16 @@ impl<OF: OrderedField> GeneralForm<OF> {
     fn treat_row(
         &mut self,
         constraint: usize,
-        row_counters: &Vec<usize>,
-        column_counters: &Vec<usize>,
-    ) -> Result<Option<usize>, LinearProgramType<OF>> {
-        match row_counters[constraint] {
+        presolve_data: &PresolveIndex<OF>,
+    ) -> Result<Vec<usize>, LinearProgramType<OF>> {
+        match presolve_data.row_counters[constraint] {
             0 => {
                 self.treat_empty_row(constraint)?;
-                Ok(None)
+                Ok(Vec::with_capacity(0))
             },
             // Remove if bound without slack
-            1 => self.treat_bound_without_slack(constraint, column_counters),
-            _ => panic!(),
+            1 => self.treat_bound_without_slack(constraint, &presolve_data.column_counters),
+            _ => self.domain_propagate_by_activity_bounds(constraint, &presolve_data.column_counters),
         }
     }
 
@@ -309,7 +293,7 @@ impl<OF: OrderedField> GeneralForm<OF> {
         &mut self,
         constraint: usize,
         column_counters: &Vec<usize>,
-    ) -> Result<Option<usize>, LinearProgramType<OF>> {
+    ) -> Result<Vec<usize>, LinearProgramType<OF>> {
         let &(column, value) = self.constraints.iter_row(constraint)
             .filter(|&&(j, _)| column_counters[j] >= 2)
             .filter(|&&(j, _)| self.variables[j].is_fixed().is_none())
@@ -331,8 +315,145 @@ impl<OF: OrderedField> GeneralForm<OF> {
         if !self.variables[column].has_feasible_value() {
             Err(LinearProgramType::Infeasible)
         } else {
-            Ok(Some(column))
+            Ok(vec![column])
         }
+    }
+
+    /// Attempt to tighten bounds using activity bounds.
+    ///
+    /// See Achterberg (2007), algorithm 7.1.
+    ///
+    /// Should be called at most once on each constraint, due to the way elements are added to
+    /// `row_queue` in `substitute_extract_eliminate`.
+    ///
+    fn domain_propagate_by_activity_bounds(
+        &mut self,
+        constraint: usize,
+        presolve_index: &PresolveIndex<OF>,
+    ) -> Result<Vec<usize>, LinearProgramType<OF>> {
+        let (lower, upper) = presolve_index.activity_bounds[constraint];
+
+        if self.is_infeasible_due_to_activity_bounds(constraint, lower, upper) {
+            return Err(LinearProgramType::Infeasible);
+        }
+
+        match (self.constraint_types[constraint], self.redundant_constraint(constraint, lower, upper)) {
+            (_, None) => (),
+            (before, Some(to_remove)) if before == to_remove => {
+                return Ok(self.constraints.iter_row(constraint).map(|&(j, _)| j).collect());
+            },
+            (ConstraintType::Equal, Some(ConstraintType::Greater)) => self.constraint_types[constraint] = ConstraintType::Less,
+            (ConstraintType::Equal, Some(ConstraintType::Less)) => self.constraint_types[constraint] = ConstraintType::Greater,
+            _ => panic!(),
+        }
+
+        Ok(self.tighten_variable_bounds(constraint, lower, upper))
+    }
+
+    fn activity_bounds(&self, constraint: usize) -> (Option<OF>, Option<OF>) {
+        let (relevant_lower_bounds, relevant_upper_bounds): (Vec<_>, Vec<_>) = self.constraints.iter_row(constraint)
+            .map(|&(column, coefficient)| {
+                if coefficient > OF::additive_identity() {
+                    (self.variables[column].lower_bound, self.variables[column].upper_bound)
+                } else if coefficient < OF::additive_identity() {
+                    (self.variables[column].upper_bound, self.variables[column].lower_bound)
+                } else {
+                    panic!(
+                        "No coefficient should be zero at this point. (row, column, coefficient) = ({}, {}, {})",
+                        constraint, column, coefficient,
+                    )
+                }
+            }).unzip();
+        let sum_products = |bounds| self.constraints.iter_row(constraint).zip(bounds)
+            .map(|(&(_, coefficient), bound): (_, Option<OF>)| bound.map(|b| b * coefficient))
+            .sum();
+
+        (sum_products(relevant_lower_bounds), sum_products(relevant_upper_bounds))
+    }
+
+    // 4.
+    fn is_infeasible_due_to_activity_bounds(
+        &self,
+        constraint: usize,
+        activity_lower_bound: Option<OF>,
+        activity_upper_bound: Option<OF>,
+    ) -> bool {
+        let lower_violated = activity_upper_bound.map_or(false, |bound| self.b.get_value(constraint) > bound);
+        let upper_violated = activity_lower_bound.map_or(false, |bound| bound > self.b.get_value(constraint));
+
+        match self.constraint_types[constraint] {
+            ConstraintType::Greater => lower_violated,
+            ConstraintType::Less => upper_violated,
+            ConstraintType::Equal => lower_violated || upper_violated,
+        }
+    }
+
+    fn redundant_constraint(
+        &self,
+        constraint: usize,
+        activity_lower_bound: Option<OF>,
+        activity_upper_bound: Option<OF>,
+    ) -> Option<ConstraintType> {
+        let lower_redundant = activity_lower_bound.map_or(false, |bound| self.b.get_value(constraint) <= bound);
+        let upper_redundant = activity_upper_bound.map_or(false, |bound| bound <= self.b.get_value(constraint));
+
+        match (lower_redundant, upper_redundant) {
+            (false, false) => None,
+            (false, true) => Some(ConstraintType::Less),
+            (true, false) => Some(ConstraintType::Greater),
+            (true, true) => Some(ConstraintType::Equal),
+        }
+    }
+
+    /// TODO: Can this method show infeasibility?
+    /// TODO: When should variables be rechecked?
+    fn tighten_variable_bounds(
+        &mut self,
+        constraint: usize,
+        activity_lower_bound: Option<OF>,
+        activity_upper_bound: Option<OF>,
+    ) -> Vec<usize> {
+        let mut to_recheck = Vec::new();
+
+        for &(j, coefficient) in self.constraints.iter_row(constraint) {
+            let derived_bound = |activity: Option<OF>| {
+                activity.map(|bound| (self.b.get_value(constraint) - bound) / coefficient)
+            };
+            let first = if self.constraint_types[constraint] != ConstraintType::Less {
+                derived_bound(activity_upper_bound)
+            } else { None };
+            let second = if self.constraint_types[constraint] != ConstraintType::Greater {
+                derived_bound(activity_lower_bound)
+            } else { None };
+
+            // TODO: Rounding to integer bounds for integer problems
+            if coefficient > OF::additive_identity() {
+                if let Some(bound) = first {
+                    self.variables[j].update_lower_bound(bound);
+                }
+                if let Some(bound) = second {
+                    self.variables[j].update_upper_bound(bound);
+                }
+            } else if coefficient < OF::additive_identity() {
+                if let Some(bound) = first {
+                    self.variables[j].update_upper_bound(bound);
+                }
+                if let Some(bound) = second {
+                    self.variables[j].update_lower_bound(bound);
+                }
+            } else {
+                panic!(
+                    "No coefficient should be zero at this point. (row, column, coefficient) = ({}, {}, {})",
+                    constraint, j, coefficient,
+                )
+            }
+
+            if self.variables[j].is_fixed().is_some() {
+                to_recheck.push(j);
+            }
+        }
+
+        to_recheck
     }
 
     /// See if a presolve operation can be applied to this column.
@@ -356,30 +477,27 @@ impl<OF: OrderedField> GeneralForm<OF> {
     fn treat_column(
         &mut self,
         column: usize,
-        column_counters: &Vec<usize>,
-        row_counters: &Vec<usize>,
-        columns_optimized_independently: &mut Vec<usize>,
-        columns: &SparseMatrix<OF, ColumnMajorOrdering>,
+        presolve_data: &mut PresolveIndex<OF>,
     ) -> Option<Vec<usize>> {
         debug_assert!(self.solution_value(column).is_none());
 
-        match column_counters[column] {
+        match presolve_data.column_counters[column] {
             0 => {
                 // No interaction with any row or cost
                 Some(Vec::with_capacity(0))
             },
             1 => if self.variables[column].cost == OF::additive_identity() {
                 // Interaction with one row, this is essentially a slack column
-                    self.remove_if_slack_with_suitable_bounds(column, row_counters, columns)
+                    self.remove_if_slack_with_suitable_bounds(column, &presolve_data.row_counters, &presolve_data.columns)
                         .map(|row| vec![row])
                 } else {
                 // No interaction with any row, this variable is independent from the problem
-                columns_optimized_independently.push(column);
+                presolve_data.columns_optimized_independently.push(column);
 
                 Some(Vec::with_capacity(0))
             },
             // This variable can only be removed if it is fixed by it's bounds.
-            _ => self.substitute_if_fixed_variable(column, columns),
+            _ => self.substitute_if_fixed_variable(column, presolve_data.columns),
         }
     }
 
@@ -567,17 +685,20 @@ impl<OF: OrderedField> GeneralForm<OF> {
             }
 
             // Shift such that any lower bound is zero
-            if let Some(ref mut lower) = variable.lower_bound {
-                variable.shift = -*lower;
-                *lower += variable.shift;
-                if let Some(ref mut upper) = variable.upper_bound {
-                    *upper += variable.shift;
-                }
-                for &(i, coefficient) in columns.iter_column(j) {
-                    let old_b = self.b.get_value(i);
-                    self.b.set_value(i, old_b + coefficient * variable.shift);
-                }
-                self.fixed_cost += variable.cost * variable.shift;
+            match variable.lower_bound {
+                Some(ref mut lower) if *lower != OF::additive_identity() => {
+                    variable.shift = -*lower;
+                    *lower += variable.shift;
+                    if let Some(ref mut upper) = variable.upper_bound {
+                        *upper += variable.shift;
+                    }
+                    for &(i, coefficient) in columns.iter_column(j) {
+                        let old_b = self.b.get_value(i);
+                        self.b.set_value(i, old_b + coefficient * variable.shift);
+                    }
+                    self.fixed_cost += variable.cost * variable.shift;
+                },
+                _ => (),
             }
         }
 
@@ -736,6 +857,69 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// The number of columns / variables, which includes the slack columns / variables.
     pub fn nr_variables(&self) -> usize {
         self.constraints.nr_columns()
+    }
+}
+
+struct PresolveIndex<'a, F: Field> {
+    columns_marked_for_removal: HashSet<usize>,
+    /// This is a subset of `columns_marked_for_removal`.
+    columns_optimized_independently: Vec<usize>,
+    rows_marked_for_removal: HashSet<usize>,
+
+    /// Amount of meaningful elements still in the column or row.
+    /// The elements should be considered when the counter drops below 2. Variables should also be
+    /// considered when a new bound on them is found.
+    column_counters: Vec<usize>,
+    row_counters: Vec<usize>,
+
+    activity_bounds: Vec<(Option<F>, Option<F>)>,
+
+    row_queue: HashSet<usize>,
+    column_queue: HashSet<usize>,
+
+    columns: &'a SparseMatrix<F, ColumnMajorOrdering>,
+}
+
+impl<'a, OF: OrderedField> PresolveIndex<'a, OF> {
+    fn new(
+        general_form: &GeneralForm<OF>,
+        columns: &'a SparseMatrix<OF, ColumnMajorOrdering>,
+    ) -> Self {
+        let column_counters = (0..general_form.constraints.nr_columns()).map(|j| {
+            columns.data[j].len()
+                + if general_form.variables[j].cost != OF::additive_identity() { 1 } else { 0 }
+        }).collect::<Vec<_>>();
+        let row_counters = (0..general_form.constraints.nr_rows()).map(|i| {
+            general_form.constraints.data[i].len()
+        }).collect();
+
+        let column_queue = (0..general_form.constraints.nr_columns())
+            .filter(|&j| {
+                column_counters[j] < 2 || general_form.variables[j].is_fixed().is_some()
+            })
+            .collect();
+
+        Self {
+            columns_marked_for_removal: Default::default(),
+            columns_optimized_independently: Vec::new(),
+            rows_marked_for_removal: Default::default(),
+
+            column_counters,
+            row_counters,
+
+            activity_bounds: (0..general_form.nr_constraints())
+                .map(|constraint| general_form.activity_bounds(constraint))
+                .collect(),
+
+            column_queue,
+            row_queue: (0..general_form.constraints.nr_rows()).collect(),
+
+            columns,
+        }
+    }
+
+    fn delete_constraint(&mut self, constraint: usize) {
+        self.rows_marked_for_removal.insert(constraint);
     }
 }
 

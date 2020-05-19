@@ -384,10 +384,10 @@ impl<RF: RealField> TryInto<GeneralForm<RF>> for MPS {
     /// A linear program in general form.
     fn try_into(self) -> Result<GeneralForm<RF>, Self::Error> {
         let rows = compute_rows(&self.rows, &self.columns)?;
-        let constraints = self.rows.iter()
+        let constraint_types = self.rows.iter()
             .map(|ref row| row.constraint_type)
             .collect::<Vec<_>>();
-        let b = compute_b(&self.rhss, &self.rows, &constraints)?;
+        let b = compute_b(&self.rhss, &self.rows, &constraint_types)?;
         let cost_values = compute_cost_values(&self.cost_values)?;
         let mut variable_info = compute_variable_info(&self.columns, &self.column_names, &cost_values);
         process_bounds(&mut variable_info, &self.bounds)?;
@@ -395,7 +395,7 @@ impl<RF: RealField> TryInto<GeneralForm<RF>> for MPS {
         Ok(GeneralForm::new(
             Objective::Minimize,
             rows,
-            constraints,
+            constraint_types,
             b,
             variable_info,
             RF::zero(),
