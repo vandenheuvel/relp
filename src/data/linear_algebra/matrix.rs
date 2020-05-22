@@ -6,7 +6,6 @@
 use std::collections::HashSet;
 use std::iter::Iterator;
 use std::marker::PhantomData;
-use std::slice::Iter;
 
 use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuples;
@@ -31,7 +30,7 @@ pub trait MatrixOrder: Sized {
         nr_rows: usize,
         nr_columns: usize,
     ) -> SparseMatrix<F, Self>;
-    fn from_test_data<RF: RealField>(rows: &Vec<Vec<f64>>) -> SparseMatrix<RF, Self>;
+    fn from_test_data<RF: RealField>(rows: &Vec<Vec<f64>>, nr_columns: usize) -> SparseMatrix<RF, Self>;
     fn identity<F: Field>(n: usize) -> SparseMatrix<F, Self>;
 }
 /// Row major sparse matrix ordering.
@@ -45,13 +44,11 @@ impl MatrixOrder for RowMajorOrdering {
         SparseMatrix::from_major_ordered_tuples(rows, nr_rows, nr_columns)
     }
 
-    fn from_test_data<RF: RealField>(rows: &Vec<Vec<f64>>) -> SparseMatrix<RF, Self> {
-        debug_assert_ne!(rows.len(), 0);
-        debug_assert_ne!(rows[0].len(), 0);
-        debug_assert!(rows.iter().all(|v| v.len() == rows[0].len()));
-
+    fn from_test_data<RF: RealField>(rows: &Vec<Vec<f64>>, nr_columns: usize) -> SparseMatrix<RF, Self> {
+        if rows.len() > 0 {
+            debug_assert!(rows.iter().all(|v| v.len() == rows[0].len()));
+        }
         let nr_rows = rows.len();
-        let nr_columns = rows[0].len();
 
         let mut data = vec![vec![]; nr_rows];
         for (row_index, row) in rows.iter().enumerate() {
@@ -75,13 +72,12 @@ impl MatrixOrder for ColumnMajorOrdering {
         SparseMatrix::from_major_ordered_tuples(columns, nr_columns, nr_rows)
     }
 
-    fn from_test_data<RF: RealField>(rows: &Vec<Vec<f64>>) -> SparseMatrix<RF, Self> {
+    fn from_test_data<RF: RealField>(rows: &Vec<Vec<f64>>, nr_columns: usize) -> SparseMatrix<RF, Self> {
         debug_assert_ne!(rows.len(), 0);
         debug_assert_ne!(rows[0].len(), 0);
         debug_assert!(rows.iter().all(|v| v.len() == rows[0].len()));
 
         let nr_rows = rows.len();
-        let nr_columns = rows[0].len();
 
         let mut data = vec![vec![]; nr_columns];
         for (row_index, row) in rows.iter().enumerate() {
@@ -133,7 +129,7 @@ impl<F: Field> SparseMatrix<F, RowMajorOrdering> {
         self.remove_minor_indices(indices)
     }
 
-    pub fn iter_rows(&self) -> Iter<SparseTuples<F>> {
+    pub fn iter_rows(&self) -> impl Iterator<Item = &SparseTuples<F>> {
         self.data.iter()
     }
 
@@ -143,7 +139,7 @@ impl<F: Field> SparseMatrix<F, RowMajorOrdering> {
         SparseVector::new(self.data[i].clone(), self.nr_columns())
     }
 
-    pub fn iter_row(&self, i: usize) -> Iter<(usize, F)> {
+    pub fn iter_row(&self, i: usize) -> impl Iterator<Item = &(usize, F)> {
         debug_assert!(i < self.major_dimension_size);
 
         self.iter_major_index(i)
@@ -252,12 +248,12 @@ impl<F: Field> SparseMatrix<F, ColumnMajorOrdering> {
     }
 
     /// Iterating over it's inner `SparseTuple`'s.
-    pub fn iter_columns(&self) -> Iter<SparseTuples<F>> {
+    pub fn iter_columns(&self) -> impl Iterator<Item = &SparseTuples<F>> {
         self.data.iter()
     }
 
     /// Get all (`row`, `value`) tuples of column `j`.
-    pub fn iter_column(&self, j: usize) -> Iter<(usize, F)> {
+    pub fn iter_column(&self, j: usize) -> impl Iterator<Item = &(usize, F)> {
         debug_assert!(j < self.nr_columns());
 
         self.iter_major_index(j)
@@ -375,7 +371,7 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
     ///
     /// * `indices` - Columns to be removed, is assumed sorted.
     fn remove_major_indices(&mut self, indices: &Vec<usize>) {
-        debug_assert!(indices.len() < self.major_dimension_size);
+        debug_assert!(indices.len() <= self.major_dimension_size);
         debug_assert!(indices.is_sorted());
         // All values are unique
         debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
@@ -391,11 +387,11 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
     ///
     /// * `indices` - Rows to be removed, is assumed sorted.
     fn remove_minor_indices(&mut self, indices: &Vec<usize>) {
+        debug_assert!(indices.len() <= self.minor_dimension_size);
         debug_assert!(indices.is_sorted());
         // All values are unique
         debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
         debug_assert!(indices.iter().all(|&i| i < self.minor_dimension_size));
-        debug_assert!(indices.len() < self.minor_dimension_size);
 
         for j in 0..self.major_dimension_size {
             remove_sparse_indices(&mut self.data[j], indices);
@@ -416,7 +412,7 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
         )
     }
 
-    fn iter_major_index(&self, major_index: usize) -> Iter<(usize, F)> {
+    fn iter_major_index(&self, major_index: usize) -> impl Iterator<Item = &(usize, F)> {
         debug_assert!(major_index < self.major_dimension_size);
 
         self.data[major_index].iter()
@@ -473,7 +469,7 @@ pub mod test {
         ColumnMajorOrdering::from_test_data(&vec![
             vec![1f64, 2f64, 0f64],
             vec![0f64, 5f64, 6f64],
-        ])
+        ], 3)
     }
 
     #[test]
@@ -535,9 +531,9 @@ pub mod test {
                 vec![5f64, 6f64, 7f64, 8f64],
                 vec![9f64, 10f64, 11f64, 12f64],
             ];
-            let mut m = ColumnMajorOrdering::from_test_data::<T>(&data);
+            let mut m = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
             data.remove(remove_row);
-            let expected = ColumnMajorOrdering::from_test_data::<T>(&data);
+            let expected = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
 
             let mut to_remove = Vec::new();
             to_remove.push(remove_row);
@@ -554,12 +550,12 @@ pub mod test {
             vec![1f64, 2f64, 3f64, 4f64],
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
-        ]);
+        ], 4);
         let m2 = ColumnMajorOrdering::from_test_data::<T>(&vec![
             vec![1f64, 3f64, 4f64],
             vec![5f64, 7f64, 8f64],
             vec![9f64, 11f64, 12f64],
-        ]);
+        ], 3);
         let result = m1.concatenate_horizontally(m2);
         assert_eq!(result.nr_columns(), 4 + 3);
         assert_eq!(result.nr_rows(), 3);
@@ -567,11 +563,11 @@ pub mod test {
         let m1 = ColumnMajorOrdering::from_test_data::<T>(&vec![
             vec![1f64, 2f64],
             vec![9f64, 10f64],
-        ]);
+        ], 2);
         let m2 = ColumnMajorOrdering::from_test_data::<T>(&vec![
             vec![5f64, 7f64],
             vec![9f64, 11f64],
-        ]);
+        ], 2);
         let result = m1.concatenate_horizontally(m2);
         assert_eq!(result.nr_columns(), 2 + 2);
         assert_eq!(result.nr_rows(), 2);
@@ -585,13 +581,13 @@ pub mod test {
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let data = vec![
             vec![1f64, 3f64, 4f64],
             vec![5f64, 7f64, 8f64],
             vec![9f64, 11f64, 12f64],
         ];
-        let expected = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let expected = ColumnMajorOrdering::from_test_data::<T>(&data, 3);
         let to_remove = vec![1];
         m.remove_columns(&to_remove);
         let result = m;
@@ -603,13 +599,13 @@ pub mod test {
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let data = vec![
             vec![2f64, 3f64, 4f64],
             vec![6f64, 7f64, 8f64],
             vec![10f64, 11f64, 12f64],
         ];
-        let expected = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let expected = ColumnMajorOrdering::from_test_data::<T>(&data, 3);
         let to_remove = vec![0];
         m.remove_columns(&to_remove);
         let result = m;
@@ -621,13 +617,13 @@ pub mod test {
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let data = vec![
             vec![1f64, 2f64, 3f64],
             vec![5f64, 6f64, 7f64],
             vec![9f64, 10f64, 11f64],
         ];
-        let expected = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let expected = ColumnMajorOrdering::from_test_data::<T>(&data, 3);
         let to_remove = vec![3];
         m.remove_major_indices(&to_remove);
         let result = m;
@@ -639,13 +635,13 @@ pub mod test {
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let data = vec![
             vec![1f64, 4f64],
             vec![5f64, 8f64],
             vec![9f64, 12f64],
         ];
-        let expected = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let expected = ColumnMajorOrdering::from_test_data::<T>(&data, 2);
         let to_remove = vec![1, 2];
         m.remove_major_indices(&to_remove);
         let result = m;
@@ -660,12 +656,12 @@ pub mod test {
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let data = vec![
             vec![1f64, 2f64, 3f64, 4f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let expected = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let expected = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let to_remove = vec![1];
         m.remove_minor_indices(&to_remove);
         let result = m;
@@ -677,12 +673,12 @@ pub mod test {
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let data = vec![
             vec![1f64, 2f64, 3f64, 4f64],
             vec![5f64, 6f64, 7f64, 8f64],
         ];
-        let expected = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let expected = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let to_remove = vec![2];
         m.remove_minor_indices(&to_remove);
         let result = m;
@@ -694,12 +690,12 @@ pub mod test {
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let data = vec![
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let expected = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let expected = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let to_remove = vec![0];
         m.remove_minor_indices(&to_remove);
         let result = m;
@@ -711,11 +707,11 @@ pub mod test {
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let mut m = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let data = vec![
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let expected = ColumnMajorOrdering::from_test_data::<T>(&data);
+        let expected = ColumnMajorOrdering::from_test_data::<T>(&data, 4);
         let to_remove = vec![0, 1];
         m.remove_minor_indices(&to_remove);
         let result = m;
@@ -729,13 +725,13 @@ pub mod test {
             vec![5f64, 6f64, 7f64, 8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let mut m = RowMajorOrdering::from_test_data(&data);
+        let mut m = RowMajorOrdering::from_test_data(&data, 4);
         let data = vec![
             vec![1f64, 2f64, 3f64, 4f64],
             vec![-5f64, -6f64, -7f64, -8f64],
             vec![9f64, 10f64, 11f64, 12f64],
         ];
-        let expected = RowMajorOrdering::from_test_data::<T>(&data);
+        let expected = RowMajorOrdering::from_test_data::<T>(&data, 4);
         m.change_row_signs(&vec![1].into_iter().collect());
         assert_eq!(m, expected);
     }
@@ -743,11 +739,11 @@ pub mod test {
     #[test]
     fn test_identity() {
         let m = ColumnMajorOrdering::identity::<T>(1);
-        let expected = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![1f64]]);
+        let expected = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![1f64]], 1);
         assert_eq!(m, expected);
 
         let m = ColumnMajorOrdering::identity::<T>(2);
-        let expected = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![1f64, 0f64], vec![0f64, 1f64]]);
+        let expected = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![1f64, 0f64], vec![0f64, 1f64]], 2);
         assert_eq!(m, expected);
 
         let size = 133;

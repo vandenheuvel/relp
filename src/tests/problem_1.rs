@@ -288,7 +288,7 @@ pub fn general_form<RF: RealField>() -> GeneralForm<RF> {
         vec![1f64, 0f64, 1f64],
         vec![0f64, -1f64, 1f64],
     ];
-    let rows = RowMajorOrdering::from_test_data(&data);
+    let rows = RowMajorOrdering::from_test_data(&data, 3);
 
     let constraints = vec![
         ConstraintType::Less,
@@ -304,7 +304,6 @@ pub fn general_form<RF: RealField>() -> GeneralForm<RF> {
 
     let variables = vec![
         GeneralFormVariable {
-            name: "XONE".to_string(),
             variable_type: VariableType::Continuous,
             cost: RF!(1),
             lower_bound: Some(RF!(0)),
@@ -313,7 +312,6 @@ pub fn general_form<RF: RealField>() -> GeneralForm<RF> {
             flipped: false
         },
         GeneralFormVariable {
-            name: "YTWO".to_string(),
             variable_type: VariableType::Integer,
             cost: RF!(4),
             lower_bound: Some(RF!(-1)),
@@ -322,7 +320,6 @@ pub fn general_form<RF: RealField>() -> GeneralForm<RF> {
             flipped: false
         },
         GeneralFormVariable {
-            name: "ZTHREE".to_string(),
             variable_type: VariableType::Continuous,
             cost: RF!(9),
             lower_bound: Some(RF!(0)),
@@ -331,6 +328,7 @@ pub fn general_form<RF: RealField>() -> GeneralForm<RF> {
             flipped: false
         },
     ];
+    let variable_names = vec!["XONE".to_string(), "YTWO".to_string(), "ZTHREE".to_string()];
 
     GeneralForm::new(
         Objective::Minimize,
@@ -338,6 +336,7 @@ pub fn general_form<RF: RealField>() -> GeneralForm<RF> {
         constraints,
         b,
         variables,
+        variable_names,
         RF!(0),
     )
 }
@@ -348,7 +347,7 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
         vec![1f64, 0f64, 1f64],
         vec![0f64, -1f64, 1f64],
     ];
-    let constraints = RowMajorOrdering::from_test_data(&data);
+    let constraints = RowMajorOrdering::from_test_data(&data, 3);
 
     let constraint_types = vec![
         ConstraintType::Less,
@@ -364,7 +363,6 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
 
     let variables = vec![
         GeneralFormVariable {
-            name: "XONE".to_string(),
             variable_type: VariableType::Continuous,
             cost: RF!(1),
             lower_bound: Some(RF!(0)),
@@ -373,7 +371,6 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
             flipped: false
         },
         GeneralFormVariable {
-            name: "YTWO".to_string(),
             variable_type: VariableType::Integer,
             cost: RF!(4),
             lower_bound: Some(RF!(0)),
@@ -382,7 +379,6 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
             flipped: false
         },
         GeneralFormVariable {
-            name: "ZTHREE".to_string(),
             variable_type: VariableType::Continuous,
             cost: RF!(9),
             lower_bound: Some(RF!(0)),
@@ -391,6 +387,7 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
             flipped: false
         },
     ];
+    let variable_names = vec!["XONE".to_string(), "XTWO".to_string(), "XTHREE".to_string()];
 
     GeneralForm::new(
         Objective::Minimize,
@@ -398,6 +395,7 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
         constraint_types,
         b,
         variables,
+        variable_names,
         RF!(4),
     )
 }

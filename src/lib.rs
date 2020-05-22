@@ -10,6 +10,7 @@
 #[macro_use]
 extern crate approx;
 extern crate num;
+extern crate daggy;
 
 pub mod algorithm;
 pub mod io;

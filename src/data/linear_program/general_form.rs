@@ -7,7 +7,10 @@
 //! this problem form to e.g. a so called equivalent "canonical" representations where any free
 //! variables and inequalities are eliminated.
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+
+use daggy::{Dag, WouldCycle};
+use daggy::petgraph::data::Element;
 
 use crate::algorithm::simplex::matrix_provider::matrix_data;
 use crate::algorithm::simplex::matrix_provider::matrix_data::MatrixData;
@@ -16,9 +19,10 @@ use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, RowMajorOrdering}
 use crate::data::linear_algebra::matrix::SparseMatrix;
 use crate::data::linear_algebra::SparseTuples;
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
-use crate::data::linear_program::elements::{ConstraintType, LinearProgramType, Objective, VariableType};
+use crate::data::linear_program::elements::{BoundDirection, ConstraintType, LinearProgramType, Objective, VariableType};
+use crate::data::linear_program::general_form::OriginalVariable::Removed;
+use crate::data::linear_program::general_form::RemovedVariable::{FunctionOfOthers, Solved};
 use crate::data::number_types::traits::{Field, OrderedField};
-use crate::tests::problem_1::general_form;
 
 /// A linear program in general form.
 ///
@@ -41,28 +45,92 @@ pub struct GeneralForm<F: Field> {
 
     /// Constant in the cost function.
     fixed_cost: F,
-    /// Already known solution values.
-    solution_values: HashMap<String, F>,
+    /// Variables previously eliminated from the problem.
+    original_variables: Vec<(String, OriginalVariable<F>)>,
+    /// Mapping indices of unsolved variables to their index in the original problem.
+    from_active_to_original: Vec<usize>,
+}
+#[derive(Debug, Eq, PartialEq)]
+enum OriginalVariable<F> {
+    /// Index in the active problem.
+    Kept(usize),
+    /// Variable was removed
+    Removed(RemovedVariable<F>),
+}
+#[derive(Debug, Eq, PartialEq)]
+enum RemovedVariable<F> {
+    /// Simply a known value.
+    Solved(F),
+    /// Affine function of the form `b - <a, x>` where some of the `x` might be unknown.
+    FunctionOfOthers {
+        constant: F,
+        coefficients: SparseTuples<F>,
+    },
 }
 
-/// Check whether the dimensions of the `GeneralForm` are consistent meant for debugging.
-///
-/// # Note
-///
-/// Use only debug asserts in this macro.
+/// Check whether the dimensions of the `GeneralForm` are consistent. Meant for debugging.
 fn is_consistent<F: OrderedField>(general_form: &GeneralForm<F>) -> bool {
-    // Take the number of rows as a reference value
-    let m = general_form.constraints.nr_rows();
-    let b = general_form.b.len() == m;
-    let constraints = general_form.constraint_types.len() == m;
-    let rows = general_form.constraints.nr_rows() == m;
+    // Reference values
+    let nr_active_constraints = general_form.constraints.nr_rows();
+    let nr_active_variables = general_form.constraints.nr_columns();
 
-    // Take the number of columns as a reference value
-    let n = general_form.constraints.nr_columns();
-    let variables = general_form.variables.len() == n;
-    let columns = general_form.constraints.nr_columns() == n;
+    let b = general_form.b.len() == nr_active_constraints;
+    let constraints = general_form.constraint_types.len() == nr_active_constraints;
+    let rows = general_form.constraints.nr_rows() == nr_active_constraints;
 
-    return b && constraints && rows && variables && columns;
+
+    let variables = general_form.variables.len() == nr_active_variables;
+    let columns = general_form.constraints.nr_columns() == nr_active_variables;
+    let original_variables = {
+        let nr_original_variables = general_form.original_variables.len();
+        let size = nr_original_variables >= nr_active_variables;
+        let kept_increasing = general_form.original_variables.iter()
+            .filter_map(|(_, variable)| match variable {
+                OriginalVariable::Kept(index) => Some(*index),
+                _ => None,
+            })
+            .collect::<Vec<_>>() == (0..nr_active_variables).collect::<Vec<_>>();
+        let no_cycles = {
+            let nodes = (0..nr_original_variables).map(|j| {
+                Element::Node { weight: (), }
+            });
+            let edges = general_form.original_variables
+                .iter().enumerate()
+                .filter_map(|(target, (_, variable))| match variable {
+                    OriginalVariable::Removed(FunctionOfOthers{ constant: _, coefficients: els, }) => Some((els, target)),
+                    _ => None,
+                })
+                .flat_map(|(els, target)| {
+                    els.iter().map(move |&(j, _)| Element::<(), ()>::Edge { source: j, target, weight: (), })
+                });
+
+            if let Err(WouldCycle(_)) = Dag::<(), (), usize>::from_elements(nodes.chain(edges)) {
+                false
+            } else { true }
+        };
+
+        size && kept_increasing && no_cycles
+    };
+    let from_active_to_original = {
+        let size = general_form.from_active_to_original.len() == nr_active_variables;
+        let unique = general_form.from_active_to_original.iter().collect::<HashSet<_>>().len() == nr_active_variables;
+        let sorted = general_form.from_active_to_original.is_sorted();
+        let max = if nr_active_variables > 0 {
+            general_form.from_active_to_original[nr_active_variables - 1] < nr_active_variables
+        } else { true };
+
+        size && unique && sorted && max
+    };
+
+    return true
+        && b
+        && constraints
+        && rows
+        && variables
+        && columns
+        && original_variables
+        && from_active_to_original
+    ;
 }
 
 
@@ -74,16 +142,21 @@ impl<OF: OrderedField> GeneralForm<OF> {
         constraint_types: Vec<ConstraintType>,
         b: DenseVector<OF>,
         variables: Vec<Variable<OF>>,
+        variable_names: Vec<String>,
         fixed_cost: OF,
     ) -> Self {
-        let general_form = GeneralForm {
+        let nr_active_variables = variables.len();
+
+        let general_form = Self {
             objective,
             constraints,
             constraint_types,
             b,
             fixed_cost,
             variables,
-            solution_values: HashMap::new(),
+            original_variables: variable_names.into_iter().enumerate()
+                .map(|(j, name)| (name, OriginalVariable::Kept(j))).collect(),
+            from_active_to_original: (0..nr_active_variables).collect(),
         };
 
         debug_assert!(is_consistent(&general_form));
@@ -132,19 +205,9 @@ impl<OF: OrderedField> GeneralForm<OF> {
     ///
     /// To do the above, a column major representation of the constraint data is built. This
     /// requires copying all constraint data once.
-    pub(crate) fn canonicalize(&mut self) -> Result<(), LinearProgramType<OF>>{
-        let column_major = SparseMatrix::from_row_ordered_tuples_although_this_is_expensive(
-            &self.constraints.data, self.constraints.nr_columns()
-        );
-
-        let (rows_to_remove, columns_to_remove, optimize_independently) =
-            self.substitute_extract_eliminate(&column_major)?;
-        self.optimize_disjoint_variables(optimize_independently)?;
-        self.transform_variables(&rows_to_remove, &columns_to_remove, &column_major);
-        {
-            self.remove_rows_and_columns(rows_to_remove, columns_to_remove);
-            drop(column_major); // This structure no longer matches the data in `self`
-        }
+    pub(crate) fn canonicalize(&mut self) -> Result<(), LinearProgramType<OF>> {
+        self.presolve()?;
+        self.transform_variables();
         self.make_b_non_negative();
         self.make_minimization_problem();
 
@@ -158,6 +221,8 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// All rows should be considered only once, whereas column are considered more than once only
     /// when new bounds are added to the variable.
     ///
+    /// TODO: Normalization for numerical stability
+    ///
     /// # Arguments
     ///
     /// * `columns` - A column major representation of the constraint data.
@@ -168,61 +233,53 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// * A set of rows that should be removed.
     /// * A set of columns that should be removed.
     /// * A vec of columns that can be independently maximized, also contained in the above set.
-    fn substitute_extract_eliminate(
-        &mut self,
-        columns: &SparseMatrix<OF, ColumnMajorOrdering>,
-    ) -> Result<(HashSet<usize>, HashSet<usize>, Vec<usize>), LinearProgramType<OF>> {
-        let mut index = PresolveIndex::new(&self, columns);
+    fn presolve(&mut self) -> Result<(), LinearProgramType<OF>> {
+        let mut index = PresolveIndex::new(&self);
 
-        // TODO: Where should this be called?
-        // for i in 0..self.nr_constraints() {
-        //     self.normalize_constraint(i)
-        // }
-
-        while !index.column_queue.is_empty() || !index.row_queue.is_empty() {
-            // Each row in the queue will be deleted and never looked at again. That's why we do
-            // these first.
-            while let Some(&row) = index.row_queue.iter().next() {
-                index.row_queue.remove(&row);
-                for modified_index in self.treat_row(row, &index)? {
-                    index.column_counters[modified_index] -= 1;
-                    if index.column_counters[modified_index] < 2 || self.variables[modified_index].is_fixed().is_some() {
-                        index.column_queue.insert(modified_index);
-                    }
-                }
-                index.rows_marked_for_removal.insert(row);
-            }
-
-            // Columns, on the other hand, are not necessarily deleted when they are checked for
-            // whether they are fixed by their bounds.
-            if let Some(&column) = index.column_queue.iter().next() {
-                index.column_queue.remove(&column);
-                if let Some(item_removed_from_indices) = self.treat_column(column,&mut index) {
-                    index.columns_marked_for_removal.insert(column);
-                    for modified_index in item_removed_from_indices {
-                        index.row_counters[modified_index] -= 1;
-                        if index.row_counters[modified_index] < 2 && !index.rows_marked_for_removal.contains(&modified_index){
-                            index.row_queue.insert(modified_index);
-                        }
-                    }
-                }
-            }
+        while !index.queues_are_empty() {
+            self.presolve_step(&mut index)?;
         }
 
-        Ok((
-            index.rows_marked_for_removal,
-            index.columns_marked_for_removal,
-            index.columns_optimized_independently,
-        ))
+        self.optimize_disjoint_variables(&index.columns_optimized_independently)?;
+        self.remove_rows_and_columns(index);
+
+        debug_assert!(is_consistent(&self));
+        Ok(())
     }
 
-    // TODO
-    // fn normalize_constraint(&mut self, constraint: usize) {
-    //     let as_rationals = self.constraints.iter_row(constraint)
-    //         .map(|&(j, coefficient)| {
-    //             heuristic_fraction::<>(coefficient, 30, unimplemented!())
-    //         }).collect();
-    // }
+    fn presolve_step(&mut self, index: &mut PresolveIndex<OF>) -> Result<(), LinearProgramType<OF>> {
+        // Actions that are guaranteed to make the problem smaller
+        // Remove a row
+        if let Some(&row) = index.empty_row_queue.iter().next() {
+            self.remove_empty_row(row, index)?;
+            return Ok(());
+        }
+        // Remove a column
+        if let Some(&variable) = index.substitution_queue.iter().next() {
+            self.substitute_fixed_variable(variable, index);
+            return Ok(());
+        }
+        // Remove a bound
+        if let Some(&constraint) = index.bound_queue.iter().next() {
+            self.treat_bound_without_slack(constraint, index)?;
+            return Ok(());
+        }
+
+        // Actions not guaranteed to make the problem smaller
+        // Test whether a variable can be seen as a slack
+        if let Some(&variable) = index.slack_queue.iter().next() {
+            self.remove_if_slack_with_suitable_bounds(variable, index);
+            return Ok(());
+        }
+        // Domain propagation
+        if let Some(&constraint) = index.activity_queue.iter().next() {
+            self.domain_propagate_by_activity_bounds(constraint, index)?;
+            index.activity_queue.remove(&constraint);
+            return Ok(());
+        }
+
+        Ok(())
+    }
 
     /// See whether a row can be removed.
     ///
@@ -235,8 +292,6 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// * `constraint` - Index of row to investigate.
     /// * `row_counters` - Amount of "meaningful" (no known solution value, not yet marked for
     /// deletion) elements that are still left in a row.
-    /// * `column_counters` -  Amount of "meaningful" (no known solution value, corresponding row is
-    /// not yet marked for deletion) elements that are still left in a column.
     ///
     /// # Return value
     ///
@@ -244,23 +299,11 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// not, the `Result::Err` type will indicate that it is not). Inside there is an `Option` which
     /// might contain the index of a variable that would be effected by the removal of the row under
     /// consideration.
-    fn treat_row(
-        &mut self,
-        constraint: usize,
-        presolve_data: &PresolveIndex<OF>,
-    ) -> Result<Vec<usize>, LinearProgramType<OF>> {
-        match presolve_data.row_counters[constraint] {
-            0 => {
-                self.treat_empty_row(constraint)?;
-                Ok(Vec::with_capacity(0))
-            },
-            // Remove if bound without slack
-            1 => self.treat_bound_without_slack(constraint, &presolve_data.column_counters),
-            _ => self.domain_propagate_by_activity_bounds(constraint, &presolve_data.column_counters),
-        }
-    }
+
 
     /// Whether an empty constraint can be safely discarded.
+    ///
+    /// When this method gets called, the constraint should have already been marked for deletion.
     ///
     /// # Arguments
     ///
@@ -269,12 +312,52 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// # Return value
     ///
     /// `Result` indicating whether the linear program might still be feasible.
-    fn treat_empty_row(&self, constraint: usize) -> Result<(), LinearProgramType<OF>> {
-        if self.b.get_value(constraint) == OF::additive_identity() {
+    fn remove_empty_row(
+        &self,
+        constraint: usize,
+        index: &mut PresolveIndex<OF>,
+    ) -> Result<(), LinearProgramType<OF>> {
+        debug_assert_eq!(index.row_counters[constraint], 0);
+
+        if self.b.get_value(constraint) != OF::additive_identity() {
             Err(LinearProgramType::Infeasible)
         } else {
-            Ok(())
+            Ok(index.remove_constraint(constraint))
         }
+    }
+
+    /// If a variable is determined, substitute it in constraints in which it appears.
+    ///
+    /// # Arguments
+    ///
+    /// * `column` - Index of column under consideration.
+    /// * `columns` - Column major ordered sparsematrix of the constraints.
+    ///
+    /// # Return value
+    ///
+    /// `Option` indicating whether the variable was fixed. Inside it, a `Vec` of indices of rows
+    /// that were affected.
+    fn substitute_fixed_variable(
+        &mut self,
+        column: usize,
+        index: &mut PresolveIndex<OF>,
+    ) {
+        debug_assert!(self.variables[column].is_fixed().is_some());
+
+        let value = self.variables[column].is_fixed().unwrap();
+        let column_to_scan = index.iter_active_column(column)
+            .map(|&e| e).collect::<Vec<_>>();
+        index.column_counters[column] -= column_to_scan.len();
+        for (row, coefficient_value) in column_to_scan {
+            let old_b = self.b.get_value(row);
+            self.b.set_value(row, old_b - coefficient_value * value);
+            index.row_counters[row] -= 1;
+            index.readd_row_to_queues(row);
+        }
+        self.fixed_cost += self.variables[column].cost * value;
+
+        self.original_variables[column].1 = OriginalVariable::Removed(RemovedVariable::Solved(value));
+        index.remove_variable(column);
     }
 
     /// Modify bounds of a non-slack variable.
@@ -282,8 +365,6 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// # Arguments
     ///
     /// * `constraint` - Index of a row with only a bound.
-    /// * `column_counters` - Amount of tuples in each column corresponding to a row that has not
-    /// yet been marked for deletion.
     ///
     /// # Return value
     ///
@@ -292,212 +373,50 @@ impl<OF: OrderedField> GeneralForm<OF> {
     fn treat_bound_without_slack(
         &mut self,
         constraint: usize,
-        column_counters: &Vec<usize>,
-    ) -> Result<Vec<usize>, LinearProgramType<OF>> {
-        let &(column, value) = self.constraints.iter_row(constraint)
-            .filter(|&&(j, _)| column_counters[j] >= 2)
-            .filter(|&&(j, _)| self.variables[j].is_fixed().is_none())
+        index: &mut PresolveIndex<OF>,
+    ) -> Result<(), LinearProgramType<OF>> {
+        debug_assert_eq!(index.row_counters[constraint], 1);
+        debug_assert_eq!(self.iter_active_row(constraint, &index.column_counters).count(), 1);
+
+        let &(column, value) = self.iter_active_row(constraint, &index.column_counters)
             .nth(0).unwrap();
+        debug_assert_ne!(index.column_counters[column], 0);
+
         let bound_value = self.b.get_value(constraint) / value;
+        let mut changes = Vec::with_capacity(2);
         match self.constraint_types[constraint] {
+            ConstraintType::Greater => changes.push(BoundDirection::Lower),
+            ConstraintType::Less => changes.push(BoundDirection::Upper),
             ConstraintType::Equal => {
-                self.variables[column].update_upper_bound(bound_value);
-                self.variables[column].update_lower_bound(bound_value);
+                changes.push(BoundDirection::Lower);
+                changes.push(BoundDirection::Upper);
             },
-            ConstraintType::Greater => {
-                self.variables[column].update_lower_bound(bound_value);
-            },
-            ConstraintType::Less => {
-                self.variables[column].update_upper_bound(bound_value);
-            },
+        }
+        let mut bound_changed = false;
+        for direction in changes {
+            let change = match direction {
+                BoundDirection::Lower => self.variables[column].update_lower_bound(bound_value),
+                BoundDirection::Upper => self.variables[column].update_upper_bound(bound_value),
+            };
+            if change.is_some() {
+                bound_changed = true;
+            }
+            if let Some(Some(amount)) = change {
+                index.update_activity_bound(column, direction, amount);
+            }
         }
 
         if !self.variables[column].has_feasible_value() {
             Err(LinearProgramType::Infeasible)
         } else {
-            Ok(vec![column])
-        }
-    }
-
-    /// Attempt to tighten bounds using activity bounds.
-    ///
-    /// See Achterberg (2007), algorithm 7.1.
-    ///
-    /// Should be called at most once on each constraint, due to the way elements are added to
-    /// `row_queue` in `substitute_extract_eliminate`.
-    ///
-    fn domain_propagate_by_activity_bounds(
-        &mut self,
-        constraint: usize,
-        presolve_index: &PresolveIndex<OF>,
-    ) -> Result<Vec<usize>, LinearProgramType<OF>> {
-        let (lower, upper) = presolve_index.activity_bounds[constraint];
-
-        if self.is_infeasible_due_to_activity_bounds(constraint, lower, upper) {
-            return Err(LinearProgramType::Infeasible);
-        }
-
-        match (self.constraint_types[constraint], self.redundant_constraint(constraint, lower, upper)) {
-            (_, None) => (),
-            (before, Some(to_remove)) if before == to_remove => {
-                return Ok(self.constraints.iter_row(constraint).map(|&(j, _)| j).collect());
-            },
-            (ConstraintType::Equal, Some(ConstraintType::Greater)) => self.constraint_types[constraint] = ConstraintType::Less,
-            (ConstraintType::Equal, Some(ConstraintType::Less)) => self.constraint_types[constraint] = ConstraintType::Greater,
-            _ => panic!(),
-        }
-
-        Ok(self.tighten_variable_bounds(constraint, lower, upper))
-    }
-
-    fn activity_bounds(&self, constraint: usize) -> (Option<OF>, Option<OF>) {
-        let (relevant_lower_bounds, relevant_upper_bounds): (Vec<_>, Vec<_>) = self.constraints.iter_row(constraint)
-            .map(|&(column, coefficient)| {
-                if coefficient > OF::additive_identity() {
-                    (self.variables[column].lower_bound, self.variables[column].upper_bound)
-                } else if coefficient < OF::additive_identity() {
-                    (self.variables[column].upper_bound, self.variables[column].lower_bound)
-                } else {
-                    panic!(
-                        "No coefficient should be zero at this point. (row, column, coefficient) = ({}, {}, {})",
-                        constraint, column, coefficient,
-                    )
-                }
-            }).unzip();
-        let sum_products = |bounds| self.constraints.iter_row(constraint).zip(bounds)
-            .map(|(&(_, coefficient), bound): (_, Option<OF>)| bound.map(|b| b * coefficient))
-            .sum();
-
-        (sum_products(relevant_lower_bounds), sum_products(relevant_upper_bounds))
-    }
-
-    // 4.
-    fn is_infeasible_due_to_activity_bounds(
-        &self,
-        constraint: usize,
-        activity_lower_bound: Option<OF>,
-        activity_upper_bound: Option<OF>,
-    ) -> bool {
-        let lower_violated = activity_upper_bound.map_or(false, |bound| self.b.get_value(constraint) > bound);
-        let upper_violated = activity_lower_bound.map_or(false, |bound| bound > self.b.get_value(constraint));
-
-        match self.constraint_types[constraint] {
-            ConstraintType::Greater => lower_violated,
-            ConstraintType::Less => upper_violated,
-            ConstraintType::Equal => lower_violated || upper_violated,
-        }
-    }
-
-    fn redundant_constraint(
-        &self,
-        constraint: usize,
-        activity_lower_bound: Option<OF>,
-        activity_upper_bound: Option<OF>,
-    ) -> Option<ConstraintType> {
-        let lower_redundant = activity_lower_bound.map_or(false, |bound| self.b.get_value(constraint) <= bound);
-        let upper_redundant = activity_upper_bound.map_or(false, |bound| bound <= self.b.get_value(constraint));
-
-        match (lower_redundant, upper_redundant) {
-            (false, false) => None,
-            (false, true) => Some(ConstraintType::Less),
-            (true, false) => Some(ConstraintType::Greater),
-            (true, true) => Some(ConstraintType::Equal),
-        }
-    }
-
-    /// TODO: Can this method show infeasibility?
-    /// TODO: When should variables be rechecked?
-    fn tighten_variable_bounds(
-        &mut self,
-        constraint: usize,
-        activity_lower_bound: Option<OF>,
-        activity_upper_bound: Option<OF>,
-    ) -> Vec<usize> {
-        let mut to_recheck = Vec::new();
-
-        for &(j, coefficient) in self.constraints.iter_row(constraint) {
-            let derived_bound = |activity: Option<OF>| {
-                activity.map(|bound| (self.b.get_value(constraint) - bound) / coefficient)
-            };
-            let first = if self.constraint_types[constraint] != ConstraintType::Less {
-                derived_bound(activity_upper_bound)
-            } else { None };
-            let second = if self.constraint_types[constraint] != ConstraintType::Greater {
-                derived_bound(activity_lower_bound)
-            } else { None };
-
-            // TODO: Rounding to integer bounds for integer problems
-            if coefficient > OF::additive_identity() {
-                if let Some(bound) = first {
-                    self.variables[j].update_lower_bound(bound);
-                }
-                if let Some(bound) = second {
-                    self.variables[j].update_upper_bound(bound);
-                }
-            } else if coefficient < OF::additive_identity() {
-                if let Some(bound) = first {
-                    self.variables[j].update_upper_bound(bound);
-                }
-                if let Some(bound) = second {
-                    self.variables[j].update_lower_bound(bound);
-                }
-            } else {
-                panic!(
-                    "No coefficient should be zero at this point. (row, column, coefficient) = ({}, {}, {})",
-                    constraint, j, coefficient,
-                )
+            index.row_counters[constraint] -= 1;
+            index.column_counters[column] -= 1;
+            index.remove_constraint(constraint);
+            if bound_changed {
+                index.after_bound_change(column, &self.variables);
             }
-
-            if self.variables[j].is_fixed().is_some() {
-                to_recheck.push(j);
-            }
-        }
-
-        to_recheck
-    }
-
-    /// See if a presolve operation can be applied to this column.
-    ///
-    /// This operation can either marks the column for removal, or does nothing.
-    ///
-    /// # Arguments
-    ///
-    /// * `columns` - Index of the column under consideration.
-    /// * `column_counters` - Amount of meaningful elements left in each column. Directly determines
-    /// which method gets called from this one.
-    /// * `row_counters` - Amount of meaningful elements left in each row.
-    /// * `columns_optimized_independently` - Collects variables marked for independent
-    /// optimization.
-    /// * `columns` - Column major representation of the constraint data.
-    ///
-    /// # Return value
-    ///
-    /// A `Some` if the column was removed, with a `Vec` of all indices of rows a affected by this
-    /// removal.
-    fn treat_column(
-        &mut self,
-        column: usize,
-        presolve_data: &mut PresolveIndex<OF>,
-    ) -> Option<Vec<usize>> {
-        debug_assert!(self.solution_value(column).is_none());
-
-        match presolve_data.column_counters[column] {
-            0 => {
-                // No interaction with any row or cost
-                Some(Vec::with_capacity(0))
-            },
-            1 => if self.variables[column].cost == OF::additive_identity() {
-                // Interaction with one row, this is essentially a slack column
-                    self.remove_if_slack_with_suitable_bounds(column, &presolve_data.row_counters, &presolve_data.columns)
-                        .map(|row| vec![row])
-                } else {
-                // No interaction with any row, this variable is independent from the problem
-                presolve_data.columns_optimized_independently.push(column);
-
-                Some(Vec::with_capacity(0))
-            },
-            // This variable can only be removed if it is fixed by it's bounds.
-            _ => self.substitute_if_fixed_variable(column, presolve_data.columns),
+            index.readd_column_to_queues_based_on_counter(column, &self.variables);
+            Ok(())
         }
     }
 
@@ -523,74 +442,299 @@ impl<OF: OrderedField> GeneralForm<OF> {
     fn remove_if_slack_with_suitable_bounds(
         &mut self,
         column: usize,
-        row_counters: &Vec<usize>,
-        columns: &SparseMatrix<OF, ColumnMajorOrdering>,
-    ) -> Option<usize> {
-        let variable = &mut self.variables[column];
+        index: &mut PresolveIndex<OF>,
+    ) {
+        debug_assert_eq!(index.column_counters[column], 1);
+        debug_assert_eq!(self.variables[column].cost, OF::additive_identity());
+        debug_assert!(self.variables[column].is_fixed().is_none());
 
-        let (row, value)  = *columns.iter_column(column)
-            .filter(|&&(i, _)| row_counters[i] >= 2)
-            .next().unwrap();
-        let old_b = self.b.get_value(row);
-        match self.constraint_types[row] {
-            ConstraintType::Equal => {
-                if variable.lower_bound.is_none() || variable.upper_bound.is_none() {
-                    if let Some(lower_bound) = variable.lower_bound {
-                        self.constraint_types[row] = ConstraintType::Less;
-                        self.b.set_value(row, old_b - value * lower_bound);
-                    }
-                    if let Some(upper_bound) = variable.upper_bound {
-                        self.constraint_types[row] = ConstraintType::Greater;
-                        self.b.set_value(row, old_b - value * upper_bound);
-                    }
-                    Some(row)
-                } else {
-                    None
-                }
-            },
-            ConstraintType::Less => {
-                if let Some(lower_bound) = variable.lower_bound {
-                    self.b.set_value(row, old_b - value * lower_bound);
-                }
-                Some(row)
-            },
-            ConstraintType::Greater => {
-                if let Some(upper_bound) = variable.upper_bound {
-                    self.b.set_value(row, old_b - value * upper_bound);
-                }
-                Some(row)
-            },
+        let (row, coefficient, effective_bounds) = self.get_info(column, index);
+        let change = Self::get_change(effective_bounds, self.constraint_types[row]);
+
+        if let Some(maybe_new_bound) = change {
+            self.save_slack_value(row, column, coefficient, index);
+            self.maybe_update_bound(row, coefficient, maybe_new_bound, index);
+            index.row_counters[row] -= 1;
+            index.column_counters[column] -= 1;
+            index.remove_variable(column);
+        } else {
+            index.slack_queue.remove(&column);
         }
     }
 
-    /// If a variable is determined, substitute it in constraints in which it appears.
-    ///
-    /// # Arguments
-    ///
-    /// * `column` - Index of column under consideration.
-    /// * `columns` - Column major ordered sparsematrix of the constraints.
-    ///
-    /// # Return value
-    ///
-    /// `Option` indicating whether the variable was fixed. Inside it, a `Vec` of indices of rows
-    /// that were affected.
-    fn substitute_if_fixed_variable(
-        &mut self,
-        column: usize,
-        columns: &SparseMatrix<OF, ColumnMajorOrdering>,
-    ) -> Option<Vec<usize>> {
-        if let Some(value) = self.variables[column].is_fixed() {
-            let mut edited_rows = Vec::with_capacity(columns.data[column].len());
-            for &(i, coefficient_value) in columns.iter_column(column) {
-                let old_b = self.b.get_value(i);
-                self.b.set_value(i, old_b - coefficient_value * value);
-                edited_rows.push(i);
-            }
-            self.fixed_cost += self.variables[column].cost * value;
-            Some(edited_rows)
-        } else {
-            None
+    fn get_info(&self, column: usize, index: &PresolveIndex<OF>) -> (usize, OF, (Option<OF>, Option<OF>)) {
+        let (row, coefficient) = if let &[&pair] = index.iter_active_column(column)
+            .collect::<Vec<_>>().as_slice() {
+            pair
+        } else { panic!("Should be exactly one value.") };
+        let variable = &self.variables[column];
+        let effective_bounds = match coefficient.cmp(&OF::additive_identity()) {
+            Ordering::Greater => (variable.lower_bound, variable.upper_bound),
+            Ordering::Less => (variable.upper_bound, variable.lower_bound),
+            Ordering::Equal => panic!(),
+        };
+
+        (row, coefficient, effective_bounds)
+    }
+
+    fn get_change(bounds: (Option<OF>, Option<OF>), constraint_type: ConstraintType) -> Option<Option<(BoundDirection, OF)>> {
+        match bounds {
+            (Some(lower), Some(upper)) => match constraint_type {
+                ConstraintType::Less => Some(Some((BoundDirection::Upper, lower))),
+                ConstraintType::Equal => None,
+                ConstraintType::Greater => Some(Some((BoundDirection::Lower, upper))),
+            },
+            (Some(lower), None) => match constraint_type {
+                ConstraintType::Greater => Some(None),
+                _ => Some(Some((BoundDirection::Upper, lower))),
+            },
+            (None, Some(upper)) => match constraint_type {
+                ConstraintType::Less => Some(None),
+                _ => Some(Some((BoundDirection::Lower, upper))),
+            },
+            (None, None) => Some(None),
         }
+    }
+
+    fn save_slack_value(&mut self, row: usize, column: usize, coefficient: OF, index: &PresolveIndex<OF>) {
+        self.original_variables[column].1 = Removed(FunctionOfOthers {
+            constant: self.b.get_value(row) / coefficient,
+            coefficients: self.iter_active_row(row, &index.column_counters)
+                .filter(|&&(j, _)| j != column)
+                .map(|&(j, other_coefficient)| {
+                    (self.from_active_to_original[j], other_coefficient / coefficient)
+                })
+                .collect(),
+        });
+    }
+
+    fn maybe_update_bound(&mut self, row: usize, coefficient: OF, maybe_new_bound: Option<(BoundDirection, OF)>, index: &mut PresolveIndex<OF>) {
+        if let Some((direction, bound)) = maybe_new_bound {
+            let old_b = self.b.get_value(row);
+            self.b.set_value(row, old_b - coefficient * bound);
+            self.constraint_types[row] = match direction {
+                BoundDirection::Lower => ConstraintType::Greater,
+                BoundDirection::Upper => ConstraintType::Less,
+            };
+        } else {
+            index.remove_constraint_values(row, &self.constraints, &self.variables);
+            index.remove_constraint(row)
+        }
+    }
+
+    /// Attempt to tighten bounds using activity bounds.
+    ///
+    /// See Achterberg (2007), algorithm 7.1.
+    ///
+    /// TODO: parts 3 / 4 of 7.1
+    ///
+    /// Should be called at most once on each constraint, due to the way elements are added to
+    /// `row_queue` in `substitute_extract_eliminate`.
+    ///
+    fn domain_propagate_by_activity_bounds(
+        &mut self,
+        constraint: usize,
+        index: &mut PresolveIndex<OF>,
+    ) -> Result<(), LinearProgramType<OF>> {
+        // TODO: Recompute these (probably not here, but when things get substituted or bounds adjusted)
+        let (lower, upper) = self.compute_activity_bounds_if_necessary(constraint, index);
+
+        if self.is_infeasible_due_to_activity_bounds(constraint, lower, upper) {
+            return Err(LinearProgramType::Infeasible);
+        }
+
+        match (self.constraint_types[constraint], self.activity_implied_constraint(constraint, lower, upper)) {
+            (_, None) => (),
+            (_, Some(ConstraintType::Equal))
+                | (ConstraintType::Greater, Some(ConstraintType::Greater))
+                | (ConstraintType::Less, Some(ConstraintType::Less)) => {
+                index.remove_constraint_values(constraint, &self.constraints, &self.variables);
+                index.remove_constraint(constraint);
+                return Ok(());
+            },
+            (ConstraintType::Equal, Some(ConstraintType::Greater)) => {
+                // TODO: Reconsider this
+                // Could be removed, probably doesn't increase performance (introduces a slack)
+                self.constraint_types[constraint] = ConstraintType::Less;
+            },
+            (ConstraintType::Equal, Some(ConstraintType::Less)) => {
+                self.constraint_types[constraint] = ConstraintType::Greater;
+            },
+            (ConstraintType::Less, Some(ConstraintType::Greater)) | (ConstraintType::Greater, Some(ConstraintType::Less)) => {},
+        }
+
+        Ok(self.tighten_variable_bounds(constraint, index))
+    }
+
+    fn compute_activity_bounds_if_necessary(
+        &self,
+        constraint: usize,
+        presolve_index: &mut PresolveIndex<OF>,
+    ) -> (Option<OF>, Option<OF>) {
+        if presolve_index.activity_bounds[constraint].0.is_none() {
+            presolve_index.activity_bounds[constraint].0 = self.sum_products(
+                constraint,
+                self.activity_relevant_bounds(constraint, ConstraintType::Greater, presolve_index),
+                presolve_index,
+            );
+        }
+        if presolve_index.activity_bounds[constraint].1.is_none() {
+            presolve_index.activity_bounds[constraint].1 = self.sum_products(
+                constraint,
+                self.activity_relevant_bounds(constraint, ConstraintType::Less, presolve_index),
+                presolve_index,
+            );
+        }
+
+        presolve_index.activity_bounds[constraint]
+    }
+
+    fn activity_relevant_bounds(
+        &self,
+        constraint: usize,
+        constraint_type: ConstraintType,
+        index: &PresolveIndex<OF>,
+    ) -> Vec<Option<OF>> {
+        self.iter_active_row(constraint, &index.column_counters)
+            .map(|&(column, coefficient)| {
+                if coefficient > OF::additive_identity() {
+                    match constraint_type {
+                        ConstraintType::Greater => self.variables[column].lower_bound,
+                        ConstraintType::Less => self.variables[column].upper_bound,
+                        ConstraintType::Equal => panic!(),
+                    }
+
+                } else if coefficient < OF::additive_identity() {
+                    match constraint_type {
+                        ConstraintType::Greater => self.variables[column].upper_bound,
+                        ConstraintType::Less => self.variables[column].lower_bound,
+                        ConstraintType::Equal => panic!(),
+                    }
+                } else {
+                    panic!(
+                        "No coefficient should be zero at this point. (row, column, coefficient) = ({}, {}, {})",
+                        constraint, column, coefficient,
+                    )
+                }
+            })
+            .collect()
+    }
+
+    fn sum_products(
+        &self,
+        constraint: usize,
+        relevant_bounds: Vec<Option<OF>>,
+        index: &PresolveIndex<OF>,
+    ) -> Option<OF> {
+        self.iter_active_row(constraint, &index.column_counters).zip(relevant_bounds)
+            .map(|(&(_, coefficient), bound): (_, Option<OF>)| bound.map(|b| b * coefficient))
+            .sum()
+    }
+
+    // 4.
+    fn is_infeasible_due_to_activity_bounds(
+        &self,
+        constraint: usize,
+        activity_lower_bound: Option<OF>,
+        activity_upper_bound: Option<OF>,
+    ) -> bool {
+        let lower_violated = activity_upper_bound.map_or(false, |bound| bound < self.b.get_value(constraint));
+        let upper_violated = activity_lower_bound.map_or(false, |bound| bound > self.b.get_value(constraint));
+
+        match self.constraint_types[constraint] {
+            ConstraintType::Greater => lower_violated,
+            ConstraintType::Less => upper_violated,
+            ConstraintType::Equal => lower_violated || upper_violated,
+        }
+    }
+
+    fn activity_implied_constraint(
+        &self,
+        constraint: usize,
+        activity_lower_bound: Option<OF>,
+        activity_upper_bound: Option<OF>,
+    ) -> Option<ConstraintType> {
+        let lower_redundant = activity_lower_bound.map_or(false, |bound| bound >= self.b.get_value(constraint));
+        let upper_redundant = activity_upper_bound.map_or(false, |bound| bound <= self.b.get_value(constraint));
+
+        match (lower_redundant, upper_redundant) {
+            (false, false) => None,
+            (false, true) => Some(ConstraintType::Less),
+            (true, false) => Some(ConstraintType::Greater),
+            (true, true) => Some(ConstraintType::Equal),
+        }
+    }
+
+    /// TODO: Can this method show infeasibility?
+    /// TODO: When should variables be rechecked?
+    fn tighten_variable_bounds(
+        &mut self,
+        constraint: usize,
+        index: &mut PresolveIndex<OF>,
+    ) {
+        let (activity_lower_bound, activity_upper_bound) = index.activity_bounds[constraint];
+        let mut changes = Vec::new();
+
+        for &(j, coefficient) in self.iter_active_row(constraint, &index.column_counters) {
+            let derived_bound = |activity: Option<OF>| {
+                activity.map(|bound| (self.b.get_value(constraint) - bound) / coefficient)
+            };
+            let first = if self.constraint_types[constraint] != ConstraintType::Less {
+                derived_bound(activity_upper_bound.map(|bound| {
+                        bound - coefficient * match coefficient.cmp(&OF::additive_identity()) {
+                            Ordering::Greater => self.variables[j].upper_bound.unwrap(),
+                            Ordering::Less => self.variables[j].lower_bound.unwrap(),
+                            Ordering::Equal => panic!(),
+                        }
+                }))
+            } else { None };
+            let second = if self.constraint_types[constraint] != ConstraintType::Greater {
+                derived_bound(activity_lower_bound.map(|bound| {
+                    bound - coefficient * match coefficient.cmp(&OF::additive_identity()) {
+                        Ordering::Greater => self.variables[j].lower_bound.unwrap(),
+                        Ordering::Less => self.variables[j].upper_bound.unwrap(),
+                        Ordering::Equal => panic!(),
+                    }
+                }))
+            } else { None };
+
+            // TODO: Rounding to integer bounds for integer problems
+            if coefficient > OF::additive_identity() {
+                if let Some(bound) = first { changes.push((j, BoundDirection::Lower, bound)); }
+                if let Some(bound) = second { changes.push((j, BoundDirection::Upper, bound)); }
+            } else if coefficient < OF::additive_identity() {
+                if let Some(bound) = first { changes.push((j, BoundDirection::Upper, bound)); }
+                if let Some(bound) = second { changes.push((j, BoundDirection::Lower, bound)); }
+            } else {
+                panic!(
+                    "No coefficient should be zero at this point. (row, column, coefficient) = ({}, {}, {})",
+                    constraint, j, coefficient,
+                )
+            }
+        }
+
+        for (variable, direction, bound) in changes {
+            let maybe_change = match direction {
+                BoundDirection::Lower => self.variables[variable].update_lower_bound(bound),
+                BoundDirection::Upper => self.variables[variable].update_upper_bound(bound),
+            };
+
+            if let Some(change) = maybe_change {
+                index.after_bound_change(variable, &self.variables);
+                if let Some(by_how_much) = change {
+                    index.update_activity_bound(variable, direction, by_how_much);
+                }
+            }
+        }
+    }
+
+    fn iter_active_row<'a>(
+        &'a self,
+        row: usize,
+        column_counters: &'a Vec<usize>,
+    ) -> impl Iterator<Item = &'a (usize, OF)> {
+        self.constraints.iter_row(row)
+            .filter(move|&&(j, _)| column_counters[j] != 0)
     }
 
     /// Sets variables that can be optimized independently of all others to their maximum values.
@@ -598,15 +742,15 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// # Arguments
     ///
     /// * `to_optimize` - Collection of variable indices that should be optimized.
-    fn optimize_disjoint_variables(&mut self, to_optimize: Vec<usize>) -> Result<(), LinearProgramType<OF>> {
-        for j in to_optimize {
+    fn optimize_disjoint_variables(
+        &mut self,
+        to_optimize: &Vec<usize>,
+    ) -> Result<(), LinearProgramType<OF>> {
+        for &j in to_optimize {
             let variable = &mut self.variables[j];
 
             let new_value = match (self.objective, variable.cost.cmp(&OF::additive_identity())) {
-                (_, Ordering::Equal) => variable.lower_bound
-                    .or(variable.upper_bound)
-                    // We choose zero if the variable has no bounds
-                    .unwrap_or(OF::additive_identity()),
+                (_, Ordering::Equal) => panic!("Should not be called if there is no cost"),
                 (Objective::Minimize, Ordering::Less) | (Objective::Maximize, Ordering::Greater) => {
                     match variable.upper_bound {
                         Some(v) => v,
@@ -620,107 +764,12 @@ impl<OF: OrderedField> GeneralForm<OF> {
                     }
                 },
             };
-            self.solution_values.insert(
-                variable.name.clone(),
-                new_value,
-            );
+
+            self.original_variables[j].1 = Removed(Solved(new_value));
             self.fixed_cost += variable.cost * new_value;
         }
 
         Ok(())
-    }
-
-    /// Get the known solution value for a variable, if there is one.
-    ///
-    /// This is a helper method.
-    ///
-    /// # Arguments
-    ///
-    /// * `variable` - Variable to get the solution value for.
-    ///
-    /// # Return value
-    ///
-    /// The solution found, it there is one.
-    ///
-    /// # Note
-    ///
-    /// This is only an actual solution for the variable if the problem turns out to be feasible.
-    fn solution_value(&self, variable: usize) -> Option<OF> {
-        debug_assert!(variable < self.variables.len());
-
-        self.solution_values.get(&self.variables[variable].name).map(|&v| v)
-    }
-
-    /// Shift all variables, such that the lower bound is zero.
-    ///
-    /// This allows the removal of those lower bounds afterwards; this lower bound is the only lower
-    /// bound for problems in canonical form. When working with a simplex tableau, this form allows
-    /// us to eliminate all rows which describe a lower bound.
-    ///
-    /// If later on, such as during branch and bound, an extra lower bound needs to be inserted,
-    /// this information can be stored regardless in a separate data structure.
-    fn transform_variables(
-        &mut self,
-        rows_to_be_removed: &HashSet<usize>,
-        columns_to_be_removed: &HashSet<usize>,
-        columns: &SparseMatrix<OF, ColumnMajorOrdering>,
-    ) {
-        let mut columns_to_flip = Vec::new();
-
-        for j in 0..self.variables.len() {
-            if self.solution_value(j).is_some() && columns_to_be_removed.contains(&j) {
-                continue;
-            }
-
-            let variable = &mut self.variables[j];
-
-            // Flip such that there is not just an upper bound
-            if let (None, Some(upper)) = (variable.lower_bound, variable.upper_bound) {
-                variable.flipped = !variable.flipped;
-
-                variable.lower_bound = Some(-upper);
-                variable.upper_bound = None;
-
-                columns_to_flip.push(j);
-            }
-
-            // Shift such that any lower bound is zero
-            match variable.lower_bound {
-                Some(ref mut lower) if *lower != OF::additive_identity() => {
-                    variable.shift = -*lower;
-                    *lower += variable.shift;
-                    if let Some(ref mut upper) = variable.upper_bound {
-                        *upper += variable.shift;
-                    }
-                    for &(i, coefficient) in columns.iter_column(j) {
-                        let old_b = self.b.get_value(i);
-                        self.b.set_value(i, old_b + coefficient * variable.shift);
-                    }
-                    self.fixed_cost += variable.cost * variable.shift;
-                },
-                _ => (),
-            }
-        }
-
-        let mut i = 0;
-        for (row_index, row) in self.constraints.data.iter_mut().enumerate() {
-            if rows_to_be_removed.contains(&row_index) {
-                continue;
-            }
-
-            for (j, ref mut value) in row {
-                while i < columns_to_flip.len() && columns_to_flip[i] < *j {
-                    i += 1;
-                }
-                if i < columns_to_flip.len() && columns_to_flip[i] == *j {
-                    *value *= -OF::multiplicative_identity()
-                }
-                if i == columns_to_flip.len() {
-                    break;
-                }
-            }
-            i = 0;
-        }
     }
 
     /// Remove a set of rows and columns from the constraint data.
@@ -737,11 +786,11 @@ impl<OF: OrderedField> GeneralForm<OF> {
     ///
     /// * `rows` - Collection of rows to delete.
     /// * `columns` - Collection of columns to delete.
-    fn remove_rows_and_columns(&mut self, rows: HashSet<usize>, columns: HashSet<usize>) {
-        let mut rows = rows.into_iter().collect::<Vec<_>>();
+    fn remove_rows_and_columns(&mut self, index: PresolveIndex<OF>) {
+        let mut rows = index.constraints_marked_for_removal.into_iter().collect::<Vec<_>>();
         rows.sort();
 
-        let mut columns = columns.into_iter().collect::<Vec<_>>();
+        let mut columns = index.columns_marked_removed.into_iter().collect::<Vec<_>>();
         columns.sort();
 
         self.constraints.remove_rows(&rows);
@@ -750,6 +799,71 @@ impl<OF: OrderedField> GeneralForm<OF> {
 
         self.constraints.remove_columns_although_this_matrix_is_row_ordered(&columns);
         remove_indices(&mut self.variables, &columns);
+
+        if columns.len() > 0 {
+            let mut skipped = 1;
+            let new_length = self.from_active_to_original.len() - columns.len();
+            for j in columns[0]..new_length {
+                while skipped < columns.len() && columns[skipped] == j + skipped {
+                    skipped += 1;
+                }
+                self.from_active_to_original[j] = self.from_active_to_original[j + skipped];
+            }
+            self.from_active_to_original.drain(new_length..);
+        }
+
+        debug_assert!(is_consistent(&self));
+    }
+
+    /// Shift all variables, such that the lower bound is zero.
+    ///
+    /// This allows the removal of those lower bounds afterwards; this lower bound is the only lower
+    /// bound for problems in canonical form. When working with a simplex tableau, this form allows
+    /// us to eliminate all rows which describe a lower bound.
+    ///
+    /// If later on, such as during branch and bound, an extra lower bound needs to be inserted,
+    /// this information can be stored regardless in a separate data structure.
+    fn transform_variables(&mut self) {
+        debug_assert!(self.variables.iter().all(|v| !v.flipped));
+
+        // Compute all changes that need to happen
+        for j in 0..self.variables.len() {
+            let variable = &mut self.variables[j];
+
+            // Flip such that there is not just an upper bound
+            if let (None, Some(upper)) = (variable.lower_bound, variable.upper_bound) {
+                variable.flipped = !variable.flipped;
+
+                variable.lower_bound = Some(-upper);
+                variable.upper_bound = None;
+            }
+
+            // Shift such that any lower bound is zero
+            match variable.lower_bound {
+                Some(ref mut lower) if *lower != OF::additive_identity() => {
+                    variable.shift = -*lower;
+                    *lower += variable.shift; // *lower = 0
+                    if let Some(ref mut upper) = variable.upper_bound {
+                        *upper += variable.shift;
+                    }
+                    self.fixed_cost += variable.cost * variable.shift;
+                },
+                _ => (),
+            }
+        }
+
+        // Do these changes in the coefficients
+        for (i, tuples) in self.constraints.data.iter_mut().enumerate() {
+            for &mut (j, ref mut coefficient) in tuples {
+                let old_b = self.b.get_value(i);
+                self.b.set_value(i, old_b + *coefficient * self.variables[j].shift);
+                if self.variables[j].flipped {
+                    *coefficient *= -OF::multiplicative_identity();
+                }
+            }
+        }
+
+        debug_assert!(is_consistent(&self));
     }
 
     /// Multiply the constraints by a constant such that the constraint value is >= 0.
@@ -772,6 +886,8 @@ impl<OF: OrderedField> GeneralForm<OF> {
             let old = self.b.get_value(row);
             self.b.set_value(row, -old);
         }
+
+        debug_assert!(is_consistent(&self));
     }
 
     /// Make this a minimization problem by multiplying the cost function by -1.
@@ -820,9 +936,36 @@ impl<OF: OrderedField> GeneralForm<OF> {
         )
     }
 
-    /// Combines the variable names to the values of a basic feasible solution.
+    /// Get the known solution value for a variable, if there is one.
     ///
-    /// * `bfs` - A basic feasible solution.
+    /// # Arguments
+    ///
+    /// * `variable` - Index of the variable to get the solution for _with respect to the
+    ///
+    /// # Return value
+    ///
+    /// `None` if the variable is still in the problem, `Some` if not. In the latter case, if the
+    /// solution is a specific value known at this point in time, it contains another `Some` with
+    /// value and `None` otherwise.
+    ///
+    /// ## Note
+    ///
+    /// This is only an actual solution for the variable if the problem turns out to be feasible.
+    fn is_variable_presolved(&self, variable: usize) -> bool {
+        debug_assert!(variable < self.variables.len());
+
+        match self.original_variables[variable].1 {
+            OriginalVariable::Kept(_) => false,
+            OriginalVariable::Removed(RemovedVariable::Solved(_)) => true,
+            OriginalVariable::Removed(RemovedVariable::FunctionOfOthers { .. }) => true,
+        }
+    }
+
+    /// Output all names of nonzero variables and their values.
+    ///
+    /// # Arguments
+    ///
+    /// * `bfs` - A basic feasible solution (a value for each of the open variables in the problem).
     ///
     /// # Return value
     ///
@@ -833,12 +976,43 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// Would probably only be used for printing the final solution and debugging.
     ///
     /// TODO: Use the `solution_values` parameter while outputting the solution to this LP
-    pub fn human_readable_bfs(&self, bfs: SparseVector<OF>) -> Vec<(String, OF)> {
+    pub fn complete_solution(&self, bfs: SparseVector<OF>) -> Vec<(&str, OF)> {
         debug_assert_eq!(bfs.len(), self.variables.len());
+        // TODO: write assert that checks that this is actually a solution.
 
-        self.variables.iter().zip(bfs.iter_values())
-            .map(|(variable, &(_, value))| (variable.name.clone(), value))
-            .collect()
+        let mut solutions = vec![None; self.original_variables.len()];
+        for j in 0..solutions.len() {
+            solutions[j] = Some(self.compute_solution_value(j, &bfs, &mut solutions));
+        }
+        self.original_variables.iter().zip(solutions.into_iter()).map(|((name, _), value)| {
+            (name.as_str(), value.unwrap())
+        }).collect()
+    }
+
+    fn compute_solution_value(
+        &self,
+        variable: usize,
+        bfs: &SparseVector<OF>,
+        solutions: &mut Vec<Option<OF>>,
+    ) -> OF {
+        if let Some(value) = solutions[variable] {
+            return value;
+        }
+
+        let new_value = match &self.original_variables[variable].1 {
+            OriginalVariable::Kept(index) => bfs.get_value(*index),
+            OriginalVariable::Removed(Solved(value)) => *value,
+            OriginalVariable::Removed(FunctionOfOthers { constant, coefficients }) => {
+                let mut value = *constant;
+                for &(j, coefficient) in coefficients {
+                    value -= coefficient * self.compute_solution_value(j, bfs, solutions);
+                }
+                value
+            }
+        };
+
+        solutions[variable] = Some(new_value);
+        new_value
     }
 
     /// The number of constraints in this linear program.
@@ -860,66 +1034,240 @@ impl<OF: OrderedField> GeneralForm<OF> {
     }
 }
 
-struct PresolveIndex<'a, F: Field> {
-    columns_marked_for_removal: HashSet<usize>,
+struct PresolveIndex<F: Field> {
+    constraints_marked_for_removal: HashSet<usize>,
+    columns_marked_removed: HashSet<usize>,
     /// This is a subset of `columns_marked_for_removal`.
     columns_optimized_independently: Vec<usize>,
-    rows_marked_for_removal: HashSet<usize>,
+
+    /// Constraints to check for empty row (bound should be suitable)
+    empty_row_queue: HashSet<usize>,
+    /// Constraints to check to see whether they are a bound.
+    bound_queue: HashSet<usize>,
+    /// Constraints to check for activity bound tightening.
+    activity_queue: HashSet<usize>,
+    /// Variables that are fixed need substitution.
+    substitution_queue: HashSet<usize>,
+    /// Variables to check for slack variables.
+    slack_queue: HashSet<usize>,
 
     /// Amount of meaningful elements still in the column or row.
     /// The elements should be considered when the counter drops below 2. Variables should also be
     /// considered when a new bound on them is found.
     column_counters: Vec<usize>,
     row_counters: Vec<usize>,
-
+    /// We maintain the computed activity bounds.
+    /// TODO: Include counter for recomputation (numerical errors accumulate)
     activity_bounds: Vec<(Option<F>, Option<F>)>,
+    /// TODO: Add index counting whether an activity bound can be computed
 
-    row_queue: HashSet<usize>,
-    column_queue: HashSet<usize>,
-
-    columns: &'a SparseMatrix<F, ColumnMajorOrdering>,
+    /// Column major representation of the constraint matrix.
+    columns: SparseMatrix<F, ColumnMajorOrdering>,
 }
 
-impl<'a, OF: OrderedField> PresolveIndex<'a, OF> {
-    fn new(
-        general_form: &GeneralForm<OF>,
-        columns: &'a SparseMatrix<OF, ColumnMajorOrdering>,
-    ) -> Self {
-        let column_counters = (0..general_form.constraints.nr_columns()).map(|j| {
-            columns.data[j].len()
-                + if general_form.variables[j].cost != OF::additive_identity() { 1 } else { 0 }
-        }).collect::<Vec<_>>();
-        let row_counters = (0..general_form.constraints.nr_rows()).map(|i| {
-            general_form.constraints.data[i].len()
-        }).collect();
-
-        let column_queue = (0..general_form.constraints.nr_columns())
-            .filter(|&j| {
-                column_counters[j] < 2 || general_form.variables[j].is_fixed().is_some()
-            })
-            .collect();
+impl<OF: OrderedField> PresolveIndex<OF> {
+    fn new(general_form: &GeneralForm<OF>) -> Self {
+        let columns = SparseMatrix::from_row_ordered_tuples_although_this_is_expensive(
+            &general_form.constraints.data, general_form.constraints.nr_columns()
+        );
+        let row_counters = (0..general_form.constraints.nr_rows())
+            .map(|i| general_form.constraints.data[i].len())
+            .collect::<Vec<_>>();
+        let column_counters = (0..general_form.constraints.nr_columns())
+            .map(|j| columns.data[j].len())
+            .collect::<Vec<_>>();
 
         Self {
-            columns_marked_for_removal: Default::default(),
-            columns_optimized_independently: Vec::new(),
-            rows_marked_for_removal: Default::default(),
+            constraints_marked_for_removal: row_counters.iter().enumerate()
+                .filter(|&(_, &count)| count == 0)
+                .map(|(i, _)| i).collect(),
+            columns_marked_removed: column_counters.iter().enumerate()
+                .filter(|&(_, &count)| count == 0)
+                .map(|(j, _)| j).collect(),
+            columns_optimized_independently: column_counters.iter().enumerate()
+                .filter(|&(_, &count)| count == 0)
+                .filter(|&(j, _)| general_form.variables[j].cost != OF::additive_identity())
+                .map(|(j, _)| j).collect(),
+
+            empty_row_queue: row_counters.iter().enumerate()
+                .filter(|&(_, &count)| count == 0)
+                .map(|(i, _)| i).collect(),
+            bound_queue: row_counters.iter().enumerate()
+                .filter(|&(_, &count)| count == 1)
+                .map(|(i, _)| i).collect(),
+            activity_queue: (0..general_form.constraints.nr_rows()).collect(),
+
+            substitution_queue: general_form.variables.iter().enumerate()
+                .filter_map(|(j, variable)| variable.is_fixed().map(|_| j))
+                .collect(),
+            slack_queue: column_counters.iter().enumerate()
+                .filter(|&(_, &count)| count == 1)
+                .filter(|&(j, _)| general_form.variables[j].cost == OF::additive_identity())
+                .map(|(j, _)| j).collect(),
 
             column_counters,
             row_counters,
-
-            activity_bounds: (0..general_form.nr_constraints())
-                .map(|constraint| general_form.activity_bounds(constraint))
-                .collect(),
-
-            column_queue,
-            row_queue: (0..general_form.constraints.nr_rows()).collect(),
+            activity_bounds: vec![(None, None); general_form.nr_constraints()],
 
             columns,
         }
     }
 
-    fn delete_constraint(&mut self, constraint: usize) {
-        self.rows_marked_for_removal.insert(constraint);
+    ///
+    /// # Arguments
+    ///
+    /// * `variable` - Variable who's bound was changed.
+    /// * `direction` - Whether an upper or lower bound was changed.
+    /// * `by_how_much` - Size of the change.
+    fn after_bound_change(
+        &mut self,
+        variable: usize,
+        variables: &Vec<Variable<OF>>,
+    ) {
+        debug_assert_ne!(self.column_counters[variable], 0);
+
+        if variables[variable].is_fixed().is_some() {
+            self.substitution_queue.insert(variable);
+        } else {
+            let rows_to_recheck = self.iter_active_column(variable)
+                .map(|&(i, _)| i)
+                .collect::<Vec<_>>();
+            self.activity_queue.extend(rows_to_recheck.iter());
+        }
+    }
+
+    fn update_activity_bound(&mut self, variable: usize, direction: BoundDirection, by_how_much: OF) {
+        debug_assert!(match direction {
+            BoundDirection::Lower => by_how_much > OF::additive_identity(),
+            BoundDirection::Upper => by_how_much < OF::additive_identity(),
+        });
+
+        for &(row, coefficient) in self.columns.iter_column(variable) {
+            if self.constraints_marked_for_removal.contains(&row) {
+                continue;
+            }
+
+            match (direction, coefficient.cmp(&OF::additive_identity())) {
+                (BoundDirection::Lower, Ordering::Greater)
+                    | (BoundDirection::Upper, Ordering::Less) => {
+                    if let Some(ref mut bound) = self.activity_bounds[row].0 {
+                        // TODO: Numerics
+                        *bound += by_how_much * coefficient;
+                    }
+                },
+                (BoundDirection::Lower, Ordering::Less)
+                    | (BoundDirection::Upper, Ordering::Greater) => {
+                    if let Some(ref mut bound) = self.activity_bounds[row].1 {
+                        // TODO: Numerics
+                        *bound += by_how_much * coefficient;
+                    }
+                },
+                (_, Ordering::Equal) => panic!("Zero element")
+            }
+        }
+    }
+
+    fn queues_are_empty(&self) -> bool {
+        // Note the reverse order w.r.t. the order in which these queues are tested in the main loop
+        self.activity_queue.is_empty()
+            && self.slack_queue.is_empty()
+            && self.bound_queue.is_empty()
+            && self.substitution_queue.is_empty()
+            && self.empty_row_queue.is_empty()
+    }
+
+    fn iter_active_column(&self, column: usize) -> impl Iterator<Item = &(usize, OF)> {
+        self.columns.iter_column(column)
+            .filter(move |&&(i, _)| self.is_constraint_still_active(i))
+    }
+
+    fn iter_active_row<'a>(
+        &'a self,
+        constraint: usize,
+        constraints: &'a SparseMatrix<OF, RowMajorOrdering>,
+    ) -> impl Iterator<Item = &'a (usize, OF)> {
+        constraints.iter_row(constraint)
+            .filter(move |&&(j, _)| self.is_variable_still_active(j))
+    }
+
+    fn is_constraint_still_active(&self, constraint: usize) -> bool {
+        debug_assert_eq!(
+            self.constraints_marked_for_removal.contains(&constraint),
+            self.row_counters[constraint] == 0,
+        );
+
+        self.row_counters[constraint] != 0
+    }
+
+    fn is_variable_still_active(&self, variable: usize) -> bool {
+        debug_assert_eq!(
+            self.columns_marked_removed.contains(&variable),
+            self.column_counters[variable] == 0,
+        );
+
+        self.column_counters[variable] != 0
+    }
+
+    fn remove_constraint_values(
+        &mut self,
+        constraint: usize,
+        constraints: &SparseMatrix<OF, RowMajorOrdering>,
+        variables: &Vec<Variable<OF>>,
+    ) {
+        debug_assert!(self.row_counters[constraint] >= 2);
+
+        let variables_to_scan = self.iter_active_row(constraint, constraints)
+            .map(|&(j, _)| j).collect::<Vec<_>>();
+        self.row_counters[constraint] -= variables.len();
+        for variable in variables_to_scan {
+            self.column_counters[variable] -= 1;
+            self.readd_column_to_queues_based_on_counter(variable, variables);
+        }
+    }
+
+    fn readd_column_to_queues_based_on_counter(&mut self, column: usize, variables: &Vec<Variable<OF>>) {
+        match self.column_counters[column] {
+            0 => {
+                self.remove_variable(column);
+                if variables[column].cost != OF::additive_identity() {
+                    self.columns_optimized_independently.push(column);
+                }
+            },
+            1 => if variables[column].cost == OF::additive_identity() {
+                self.slack_queue.insert(column);
+            },
+            _ => (),
+        }
+    }
+
+    fn readd_row_to_queues(&mut self, row: usize) {
+        match self.row_counters[row] {
+            0 => self.empty_row_queue.insert(row),
+            1 => self.bound_queue.insert(row),
+            _ => self.activity_queue.insert(row),
+        };
+    }
+
+    fn remove_constraint(
+        &mut self,
+        constraint: usize,
+    ) {
+        debug_assert_eq!(self.row_counters[constraint], 0);
+
+        self.constraints_marked_for_removal.insert(constraint);
+
+        self.empty_row_queue.remove(&constraint);
+        self.bound_queue.remove(&constraint);
+        self.activity_queue.remove(&constraint);
+    }
+
+    fn remove_variable(&mut self, variable: usize) {
+        debug_assert_eq!(self.column_counters[variable], 0);
+
+        self.columns_marked_removed.insert(variable);
+
+        self.substitution_queue.remove(&variable);
+        self.slack_queue.remove(&variable);
     }
 }
 
@@ -930,21 +1278,19 @@ impl<'a, OF: OrderedField> PresolveIndex<'a, OF> {
 /// bound is `upper_bound - offset`. For example, the range stays the same, regardless of the shift.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Variable<F: Field> {
-    /// Human semi-readable name from the original problem.
-    pub name: String,
     /// Whether the variable is integer or not.
     pub variable_type: VariableType,
     /// Coefficient in the objective function.
     pub cost: F,
     /// Describing the accepted values for this variable
     ///
-    /// If it is `None`, the variable is considered to be in (lower_bound, oo).
-    pub upper_bound: Option<F>,
-    /// Describing the accepted values for this variable
-    ///
     /// Lower bound should be set to 0 when a variable is nonnegative. If it is `None`, the variable
     /// is considered to be in (-oo, upper_bound).
     pub lower_bound: Option<F>,
+    /// Describing the accepted values for this variable
+    ///
+    /// If it is `None`, the variable is considered to be in (lower_bound, oo).
+    pub upper_bound: Option<F>,
     /// How much this variable is shifted to have a zero lower bound.
     ///
     /// To find the "true" solution value, one needs to subtract this shift from the solution value
@@ -973,39 +1319,71 @@ impl<OF: OrderedField> Variable<OF> {
             _ => true,
         }
     }
-    fn update_upper_bound(&mut self, new_bound: OF) {
-        self.upper_bound = Some(match self.upper_bound {
-            Some(existing_bound) => existing_bound.min(new_bound),
-            None => new_bound,
-        });
+    fn update_lower_bound(&mut self, new_bound: OF) -> Option<Option<OF>> {
+        match self.lower_bound {
+            Some(existing_bound) => {
+                if new_bound > existing_bound {
+                    self.lower_bound = Some(new_bound);
+                    Some(Some(new_bound - existing_bound))
+                } else {
+                    None
+                }
+            },
+            None => {
+                self.lower_bound = Some(new_bound);
+                Some(None)
+            }
+        }
     }
-    fn update_lower_bound(&mut self, new_bound: OF) {
-        self.lower_bound = Some(match self.lower_bound {
-            Some(existing_bound) => existing_bound.max(new_bound),
-            None => new_bound,
-        });
+    fn update_upper_bound(&mut self, new_bound: OF) -> Option<Option<OF>> {
+        match self.upper_bound {
+            Some(existing_bound) => {
+                if new_bound < existing_bound {
+                    self.upper_bound = Some(new_bound);
+                    Some(Some(new_bound - existing_bound))
+                } else {
+                    None
+                }
+            },
+            None => {
+                self.upper_bound = Some(new_bound);
+                Some(None)
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashSet;
-
     use num::rational::Ratio;
     use num::traits::FromPrimitive;
 
-    use crate::data::linear_algebra::matrix::{MatrixOrder, RowMajorOrdering};
+    use crate::data::linear_algebra::matrix::{MatrixOrder, RowMajorOrdering, SparseMatrix};
     use crate::data::linear_algebra::matrix::ColumnMajorOrdering;
     use crate::data::linear_algebra::vector::DenseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::{ConstraintType, Objective, VariableType};
     use crate::data::linear_program::general_form::{GeneralForm, Variable};
+    use crate::data::linear_program::general_form::OriginalVariable::Removed;
+    use crate::data::linear_program::general_form::RemovedVariable::{Solved, FunctionOfOthers};
     use crate::R32;
 
     type T = Ratio<i32>;
 
+    /// MIN Z = 211x1 + 223x2 + 227x3 - 229x4 + 233x5 + 0x6
+    /// subject to
+    /// 2x1 = 101
+    /// 3x1 + 5x2 <= 103
+    /// 7x1 + 11x2 + 13x3 >= 107
+    /// x2 >= -97/10
+    /// 17x1 + 19x2 + 23x3 + 29x5 + 31x6 = 109
+    /// x4 <= 131
+    /// x5 >= -30736/1885
+    /// x5 <= 123
+    /// x6 >= 5
+    /// and x1,x2,x3,x4,x5,x6 unrestricted in sign
     #[test]
-    fn test_eliminate() {
+    fn test_presolve() {
         let data = vec![
             // Column 3 should be removed because empty
             vec![2f64, 0f64, 0f64, 0f64, 0f64, 0f64], // Should be removed because simple bound
@@ -1013,17 +1391,21 @@ mod test {
             vec![7f64, 11f64, 13f64, 0f64, 0f64, 0f64], // Should be removed because of fixed variable after the removal of above two
             vec![17f64, 19f64, 23f64, 0f64, 29f64, 31f64], // Row that should stay
         ];
-        let columns = ColumnMajorOrdering::from_test_data(&data);
-        let rows = RowMajorOrdering::from_test_data(&data);
+        let rows = RowMajorOrdering::from_test_data(&data, 6);
         let b = DenseVector::from_test_data(vec![
             101f64,
             103f64,
             107f64,
             109f64,
         ]);
+        let constraints = vec![
+            ConstraintType::Equal,
+            ConstraintType::Less,
+            ConstraintType::Greater,
+            ConstraintType::Equal,
+        ];
         let column_info = vec![
             Variable {
-                name: "XONE".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(211),
                 lower_bound: None,
@@ -1031,7 +1413,6 @@ mod test {
                 shift: R32!(0),
                 flipped: false
             }, Variable {
-                name: "XTWO".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(223),
                 lower_bound: Some((R32!(103) - R32!(101) / R32!(2) * R32!(3)) / R32!(5)),
@@ -1039,7 +1420,6 @@ mod test {
                 shift: R32!(0),
                 flipped: false
             }, Variable {
-                name: "XTHREE".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(227),
                 lower_bound: None,
@@ -1047,7 +1427,6 @@ mod test {
                 shift: R32!(0),
                 flipped: false
             }, Variable {
-                name: "XFOUR".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(-229),
                 lower_bound: None,
@@ -1055,15 +1434,13 @@ mod test {
                 shift: R32!(0),
                 flipped: false
             }, Variable {
-                name: "XFIVE".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(233),
-                lower_bound: Some(R32!(0)),
+                lower_bound: Some(R32!(-30736, 65 * 29)),
                 upper_bound: Some(R32!(123)),
                 shift: R32!(0),
                 flipped: false
             }, Variable {
-                name: "XSIX".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(0),
                 lower_bound: Some(R32!(5)),
@@ -1072,11 +1449,13 @@ mod test {
                 flipped: false
             },
         ];
-        let constraints = vec![
-            ConstraintType::Equal,
-            ConstraintType::Less,
-            ConstraintType::Greater,
-            ConstraintType::Equal,
+        let variable_names = vec![
+            "XONE".to_string(),
+            "XTWO".to_string(),
+            "XTHREE".to_string(),
+            "XFOUR".to_string(),
+            "XFIVE".to_string(),
+            "XSIX".to_string(),
         ];
         let mut initial = GeneralForm::new(
             Objective::Minimize,
@@ -1084,54 +1463,38 @@ mod test {
             constraints,
             b,
             column_info,
-            R32!(0),
+            variable_names,
+            R32!(1),
         );
-        let (remove_rows, remove_columns, columns_optimized_independently)
-            = initial.substitute_extract_eliminate(&columns).unwrap();
-        assert_eq!(remove_rows, vec![0, 1, 2].into_iter().collect());
-        assert_eq!(remove_columns, vec![0, 1, 3, 5].into_iter().collect());
-        assert_eq!(columns_optimized_independently, vec![3]);
-        initial.remove_rows_and_columns(remove_rows, remove_columns);
+        initial.presolve().unwrap();
+        println!("{:?}", initial.fixed_cost);
 
-        let data = vec![vec![23f64, 29f64]];
-        let rows = RowMajorOrdering::from_test_data(&data);
-        let b = DenseVector::from_test_data(vec![
-            109f64 - 17f64 * 101f64 / 2f64 - 19f64 * (103f64 - 101f64 / 2f64 * 3f64) / 5f64 - 31f64 * 5f64
-        ]);
-        let constraints = vec![ConstraintType::Less];
-        let fixed_cost = R32!(3);
-        let column_info = vec![
-            Variable {
-                name: "XTHREE".to_string(),
-                variable_type: VariableType::Continuous,
-                cost: R32!(227),
-                lower_bound: Some(
-                    (R32!(107)
-                        - R32!(7) * (R32!(101) / R32!(2))
-                        - R32!(11) * ((R32!(103) - R32!(101) / R32!(2) * R32!(3)) / R32!(5))
-                    ) / R32!(13)
-                ),
-                upper_bound: None,
-                shift: R32!(0),
-                flipped: false
-            }, Variable {
-                name: "XFIVE".to_string(),
-                variable_type: VariableType::Continuous,
-                cost: R32!(233),
-                lower_bound: Some(R32!(0)),
-                upper_bound: Some(R32!(123)),
-                shift: R32!(0),
-                flipped: false
-            },
-        ];
-        let expected = GeneralForm::new(
-            Objective::Minimize,
-            rows,
-            constraints,
-            b,
-            column_info,
-            R32!(42462) / R32!(5),
-        );
+        let expected = GeneralForm {
+            objective: Objective::Minimize,
+            constraints: RowMajorOrdering::from_test_data(&vec![], 0),
+            constraint_types: vec![],
+            b: DenseVector::from_test_data(vec![]),
+            variables: vec![],
+            fixed_cost: R32!(1)
+                + R32!(211 * 101, 2)
+                + R32!(223 * -97, 10)
+                + R32!(227 * -699, 65)
+                + R32!(-229 * 131)
+                + R32!(233 * -30736, 1885)
+            ,
+            original_variables: vec![
+                ("XONE".to_string(), Removed(Solved(R32!(101, 2)))),
+                ("XTWO".to_string(), Removed(Solved((R32!(103) - R32!(101) / R32!(2) * R32!(3)) / R32!(5)))),
+                ("XTHREE".to_string(), Removed(Solved((R32!(-3601, 5) + R32!(29 * 30736, 1885)) / 23))),
+                ("XFOUR".to_string(), Removed(Solved(R32!(131)))),
+                ("XFIVE".to_string(), Removed(Solved(R32!(-30736, 65 * 29)))),
+                ("XSIX".to_string(), Removed(FunctionOfOthers {
+                    constant: R32!(-2826, 5 * 31),
+                    coefficients: vec![(2, R32!(23, 31)), (4, R32!(29, 31))],
+                })),
+            ],
+            from_active_to_original: vec![],
+        };
 
         assert_eq!(initial, expected);
     }
@@ -1144,11 +1507,14 @@ mod test {
             vec![1f64, 0f64, 0f64],
             vec![1f64, 2f64, 3f64],
         ];
-        let columns = ColumnMajorOrdering::from_test_data(&data);
-        let rows = RowMajorOrdering::from_test_data(&data);
+        let constraint_types = vec![
+            ConstraintType::Equal,
+            ConstraintType::Less,
+        ];
+        let columns: SparseMatrix<Ratio<i32>, _> = ColumnMajorOrdering::from_test_data(&data, 3);
+        let constraints = RowMajorOrdering::from_test_data(&data, 3);
         let b = DenseVector::from_test_data(vec![3f64, 8f64]);
-        let column_info = vec![Variable {
-            name: "XONE".to_string(),
+        let variables = vec![Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(1),
             lower_bound: None,
@@ -1156,7 +1522,6 @@ mod test {
             shift: R32!(0),
             flipped: false
         }, Variable {
-            name: "XTWO".to_string(),
             variable_type: VariableType::Continuous,
             cost: R32!(2),
             lower_bound: None,
@@ -1164,7 +1529,6 @@ mod test {
             shift: R32!(0),
             flipped: false
         }, Variable {
-            name: "XTHREE".to_string(),
             variable_type: VariableType::Continuous,
             cost: R32!(3),
             lower_bound: None,
@@ -1172,28 +1536,25 @@ mod test {
             shift: R32!(0),
             flipped: false
         }];
-        let constraints = vec![
-            ConstraintType::Equal,
-            ConstraintType::Less,
-        ];
+        let variable_names = vec!["XONE".to_string(), "XTWO".to_string(), "XTHREE".to_string()];
         let mut initial = GeneralForm::new(
             Objective::Minimize,
-            rows,
             constraints,
+            constraint_types,
             b,
-            column_info,
+            variables,
+            variable_names,
             R32!(0),
         );
-        let (remove_rows, remove_columns, _) = initial.substitute_extract_eliminate(&columns).unwrap();
-        initial.remove_rows_and_columns(remove_rows, remove_columns);
+        initial.presolve();
 
         let data = vec![vec![2f64, 3f64]];
-        let rows = RowMajorOrdering::from_test_data(&data);
+        let rows = RowMajorOrdering::from_test_data(&data, 2);
+        let constraints = vec![ConstraintType::Less];
         let b = DenseVector::from_test_data(vec![5f64]);
         let fixed_cost = R32!(3);
-        let column_info = vec![
+        let variables = vec![
             Variable {
-                name: "XTWO".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(2),
                 lower_bound: None,
@@ -1202,7 +1563,6 @@ mod test {
                 flipped: false
             },
             Variable {
-                name: "XTHREE".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(3),
                 lower_bound: None,
@@ -1211,13 +1571,14 @@ mod test {
                 flipped: false
             },
         ];
-        let constraints = vec![ConstraintType::Less];
+        let variable_names = vec!["XONE".to_string(), "XTWO".to_string(), "XTHREE".to_string()];
         let expected = GeneralForm::new(
             Objective::Minimize,
             rows,
             constraints,
             b,
-            column_info,
+            variables,
+            variable_names,
             fixed_cost,
         );
 
@@ -1233,14 +1594,17 @@ mod test {
             vec![1f64, 0f64],
             vec![2f64, 1f64],
         ];
-        let rows = RowMajorOrdering::from_test_data(&data);
-        let columns = ColumnMajorOrdering::from_test_data(&data);
+        let rows = RowMajorOrdering::from_test_data(&data, 2);
+        let columns: SparseMatrix<Ratio<i32>, _> = ColumnMajorOrdering::from_test_data(&data, 2);
         let b = DenseVector::from_test_data(vec![
             2f64,
             8f64,
         ]);
+        let constraints = vec![
+            ConstraintType::Greater,
+            ConstraintType::Less,
+        ];
         let variables = vec![Variable {
-            name: "XONE".to_string(),
             variable_type: VariableType::Continuous,
             cost: R32!(1),
             lower_bound: None,
@@ -1248,7 +1612,6 @@ mod test {
             shift: R32!(0),
             flipped: false
         }, Variable {
-            name: "XTWO".to_string(),
             variable_type: VariableType::Continuous,
             cost: R32!(1),
             lower_bound: Some(T::from_f64(bound_value).unwrap()),
@@ -1256,36 +1619,33 @@ mod test {
             shift: R32!(0),
             flipped: false
         }];
-        let constraints = vec![
-            ConstraintType::Greater,
-            ConstraintType::Less,
-        ];
+        let variable_names = vec!["XONE".to_string(), "XTWO".to_string()];
         let mut general_form = GeneralForm::new(
             Objective::Minimize,
             rows,
             constraints,
             b,
             variables,
+            variable_names,
             R32!(0),
         );
-        general_form.transform_variables(
-            &HashSet::with_capacity(0),
-            &HashSet::with_capacity(0),
-            &columns,
-        );
+        general_form.transform_variables();
 
         let data = vec![
             vec![1f64, 0f64],
             vec![2f64, 1f64],
         ];
-        let rows = RowMajorOrdering::from_test_data(&data);
+        let rows = RowMajorOrdering::from_test_data(&data, 2);
         let b = DenseVector::from_test_data(vec![
             2f64 - bound_value * 0f64,
             8f64 - bound_value * 1f64,
         ]);
+        let constraints = vec![
+            ConstraintType::Greater,
+            ConstraintType::Less,
+        ];
         let variables = vec![
             Variable {
-                name: "XONE".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(1),
                 lower_bound: None,
@@ -1293,7 +1653,6 @@ mod test {
                 shift: R32!(0),
                 flipped: false
             }, Variable {
-                name: "XTWO".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(1),
                 lower_bound: Some(R32!(0)),
@@ -1302,16 +1661,14 @@ mod test {
                 flipped: false
             },
         ];
-        let constraints = vec![
-            ConstraintType::Greater,
-            ConstraintType::Less,
-        ];
+        let variable_names = vec!["XONE".to_string(), "XTWO".to_string(), "XTHREE".to_string()];
         let expected = GeneralForm::new(
             Objective::Minimize,
             rows,
             constraints,
             b,
             variables,
+            variable_names,
             -T::from_f64(bound_value).unwrap(),
         );
 
@@ -1320,11 +1677,10 @@ mod test {
 
     #[test]
     fn test_make_b_non_negative() {
-        let rows = RowMajorOrdering::from_test_data(&vec![vec![2f64]]);
+        let rows = RowMajorOrdering::from_test_data(&vec![vec![2f64]], 1);
         let b = DenseVector::from_test_data(vec![-1f64]);
         let variables = vec![
             Variable {
-                name: "X".to_string(),
                 variable_type: VariableType::Continuous,
                 cost: R32!(1),
                 lower_bound: None,
@@ -1333,6 +1689,7 @@ mod test {
                 flipped: false
             },
         ];
+        let variable_names = vec!["XONE".to_string()];
         let constraints = vec![ConstraintType::Equal];
         let mut result = GeneralForm::new(
             Objective::Minimize,
@@ -1340,14 +1697,15 @@ mod test {
             constraints,
             b,
             variables,
+            variable_names,
             R32!(0),
         );
         result.make_b_non_negative();
 
-        let data = RowMajorOrdering::from_test_data(&vec![vec![-2f64]]);
+        let data = RowMajorOrdering::from_test_data(&vec![vec![-2f64]], 1);
         let b = DenseVector::from_test_data(vec![1f64]);
+        let constraints = vec![ConstraintType::Equal];
         let variables = vec![Variable {
-            name: "X".to_string(),
             variable_type: VariableType::Continuous,
             cost: R32!(1),
             lower_bound: None,
@@ -1355,13 +1713,14 @@ mod test {
             shift: R32!(0),
             flipped: false
         }];
-        let constraints = vec![ConstraintType::Equal];
+        let variable_names = vec!["XONE".to_string()];
         let expected = GeneralForm::new(
             Objective::Minimize,
             data,
             constraints,
             b,
             variables,
+            variable_names,
             R32!(0),
         );
 

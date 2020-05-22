@@ -12,7 +12,7 @@ use std::iter::IntoIterator;
 /// * `vector` - `Vec` to remove indices from.
 /// * `indices` - A set of indices to remove from the vector, assumed sorted.
 pub(crate) fn remove_indices<T>(vector: &mut Vec<T>, indices: &Vec<usize>) {
-    debug_assert!(indices.len() < vector.len());
+    debug_assert!(indices.len() <= vector.len());
     debug_assert!(indices.is_sorted());
     // All values are unique
     debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
@@ -52,5 +52,13 @@ mod test {
         let mut v = vec![0f64, 0f64, 2f64, 3f64, 0f64, 5f64, 0f64, 0f64, 0f64, 9f64];
         remove_indices(&mut v,&vec![3, 4, 6]);
         assert_eq!(v, vec![0f64, 0f64, 2f64, 5f64, 0f64, 0f64, 9f64]);
+
+        let mut v = vec![0f64];
+        remove_indices(&mut v, &vec![0]);
+        assert_eq!(v, vec![]);
+
+        let mut v: Vec<i32> = vec![];
+        remove_indices(&mut v, &vec![]);
+        assert_eq!(v, vec![]);
     }
 }

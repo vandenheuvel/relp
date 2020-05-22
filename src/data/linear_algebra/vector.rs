@@ -105,11 +105,11 @@ impl<F: Field> Vector<F> for DenseVector<F> {
     ///
     /// * `indices` - A set of indices to remove from the vector, assumed sorted.
     fn remove_indices(&mut self, indices: &Vec<usize>) {
+        debug_assert!(indices.len() <= self.len);
         debug_assert!(indices.is_sorted());
         // All values are unique
         debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
         debug_assert!(indices.iter().all(|&i| i < self.len));
-        debug_assert!(indices.len() < self.len);
 
         remove_indices(&mut self.data, indices);
         self.len -= indices.len();
@@ -417,8 +417,6 @@ pub mod test {
     impl<RF: RealField> TestVector<RF> for DenseVector<RF> {
         /// Create a `DenseVector` from the provided data.
         fn from_test_data(data: Vec<f64>) -> Self {
-            debug_assert_ne!(data.len(), 0);
-
             let size = data.len();
             Self { data: data.into_iter().map(|v| RF!(v)).collect(), len: size, }
         }
@@ -714,19 +712,19 @@ pub mod test {
         #[test]
         fn test_multiply() {
             let v = SparseVector::<T>::from_test_data(vec![3f64]);
-            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64]]);
+            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64]], 1);
             assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![0f64]));
 
             let v = SparseVector::<T>::from_test_data(vec![0f64]);
-            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64]]);
+            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64]], 1);
             assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![0f64]));
 
             let v = SparseVector::<T>::from_test_data(vec![0f64, 0f64]);
-            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64, 0f64], vec![0f64, 0f64]]);
+            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64, 0f64], vec![0f64, 0f64]], 2);
             assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![0f64, 0f64]));
 
             let v = SparseVector::<T>::from_test_data(vec![2f64, 3f64]);
-            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![5f64, 7f64], vec![11f64, 13f64]]);
+            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![5f64, 7f64], vec![11f64, 13f64]], 2);
             assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![43f64, 53f64]));
         }
 

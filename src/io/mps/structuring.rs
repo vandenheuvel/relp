@@ -389,7 +389,11 @@ impl<RF: RealField> TryInto<GeneralForm<RF>> for MPS {
             .collect::<Vec<_>>();
         let b = compute_b(&self.rhss, &self.rows, &constraint_types)?;
         let cost_values = compute_cost_values(&self.cost_values)?;
-        let mut variable_info = compute_variable_info(&self.columns, &self.column_names, &cost_values);
+        let (mut variable_info, variable_names) = compute_variable_info(
+            &self.columns,
+            &self.column_names,
+            &cost_values,
+        );
         process_bounds(&mut variable_info, &self.bounds)?;
 
         Ok(GeneralForm::new(
@@ -398,6 +402,7 @@ impl<RF: RealField> TryInto<GeneralForm<RF>> for MPS {
             constraint_types,
             b,
             variable_info,
+            variable_names,
             RF::zero(),
         ))
     }
@@ -476,10 +481,9 @@ fn compute_variable_info<RF: RealField>(
     columns: &Vec<Variable>,
     column_names: &Vec<String>,
     cost_values: &HashMap<usize, RF>,
-) -> Vec<ShiftedVariable<RF>> {
-    columns.iter().enumerate().map(|(j, variable)| {
+) -> (Vec<ShiftedVariable<RF>>, Vec<String>) {
+    let variable_info = columns.iter().enumerate().map(|(j, variable)| {
         ShiftedVariable {
-            name: column_names[variable.name].clone(),
             variable_type: variable.variable_type,
             cost: (&cost_values.get(&j)).map_or(RF::zero(), |&v| v),
             upper_bound: None,
@@ -487,7 +491,12 @@ fn compute_variable_info<RF: RealField>(
             shift: RF::zero(),
             flipped: false
         }
-    }).collect()
+    }).collect();
+    let variable_names = columns.iter().map(|variable| {
+        column_names[variable.name].clone()
+    }).collect();
+
+    (variable_info, variable_names)
 }
 
 fn process_bounds<RF: RealField>(
@@ -496,58 +505,65 @@ fn process_bounds<RF: RealField>(
 ) -> Result<(), InconsistencyError> {
     let mut variable_is_touched = vec![false; variable_info.len()];
     for ref bound in bounds.iter() {
-        for &(bound_type, variable_index, raw_value) in bound.values.iter() {
-            variable_is_touched[variable_index] = true;
-            if let Some(value) = RF::from_f64(raw_value) {
-                let variable = &mut variable_info[variable_index];
-                match bound_type {
-                    BoundType::LowerContinuous    => replace_existing_with(&mut variable.lower_bound, value, RF::max),
-                    BoundType::UpperContinuous    => {
-                        if variable.lower_bound.is_none() {
-                            variable.lower_bound = Some(RF::zero());
-                        }
-                        replace_existing_with(&mut variable.upper_bound, value, RF::min);
-                    },
-                    BoundType::Fixed              => {
-                        // If there already is a known bound value for this variable, there
-                        // won't be any feasible values left after the below two statements.
-                        replace_existing_with(&mut variable.lower_bound, value, RF::max);
-                        replace_existing_with(&mut variable.upper_bound, value, RF::min);
+        process_bound(variable_info, bound, &mut variable_is_touched)?;
+    }
+    fill_in_default_bounds(variable_info, variable_is_touched);
+
+    Ok(())
+}
+
+fn process_bound<RF: RealField>(
+    variable_info: &mut Vec<ShiftedVariable<RF>>,
+    bound: &Bound,
+    variable_is_touched: &mut Vec<bool>,
+) -> Result<(), InconsistencyError> {
+    for &(bound_type, variable_index, raw_value) in bound.values.iter() {
+        variable_is_touched[variable_index] = true;
+        if let Some(value) = RF::from_f64(raw_value) {
+            let variable = &mut variable_info[variable_index];
+            match bound_type {
+                BoundType::LowerContinuous => replace_existing_with(&mut variable.lower_bound, value, RF::max),
+                BoundType::UpperContinuous => {
+                    if variable.lower_bound.is_none() {
+                        variable.lower_bound = Some(RF::zero());
                     }
-                    BoundType::Free               => {
-                        if variable.lower_bound.or(variable.upper_bound.clone()).is_some() {
-                            return Err(InconsistencyError::new(
-                                format!("Variable {} can't be bounded and free", variable.name),
-                            ))
-                        }
-                    },
-                    BoundType::LowerMinusInfinity => replace_existing_with(&mut variable.upper_bound, RF::zero(), RF::min),
-                    BoundType::UpperInfinity      => replace_existing_with(&mut variable.lower_bound, RF::zero(), RF::max),
-                    BoundType::Binary             => {
-                        replace_existing_with(&mut variable.lower_bound, RF::zero(), RF::max);
-                        replace_existing_with(&mut variable.upper_bound, RF::one(), RF::min);
-                        variable.variable_type = VariableType::Integer;
-                    }
-                    BoundType::LowerInteger       => {
-                        replace_existing_with(&mut variable.lower_bound, value, RF::max);
-                        variable.variable_type = VariableType::Integer;
-                    },
-                    BoundType::UpperInteger       => {
-                        if variable.lower_bound.is_none() {
-                            variable.lower_bound = Some(RF::zero());
-                        }
-                        replace_existing_with(&mut variable.upper_bound, value, RF::min);
-                        variable.variable_type = VariableType::Integer;
-                    },
-                    BoundType::SemiContinuous     => unimplemented!(),
+                    replace_existing_with(&mut variable.upper_bound, value, RF::min);
+                },
+                BoundType::Fixed => {
+                    // If there already is a known bound value for this variable, there
+                    // won't be any feasible values left after the below two statements.
+                    replace_existing_with(&mut variable.lower_bound, value, RF::max);
+                    replace_existing_with(&mut variable.upper_bound, value, RF::min);
                 }
-            } else {
-                return Err(InconsistencyError::new(format!("Couldn't convert f64: {}", raw_value)))
+                BoundType::Free => {
+                    if variable.lower_bound.or(variable.upper_bound.clone()).is_some() {
+                        return Err(InconsistencyError::new(format!("Variable can't be bounded and free")))
+                    }
+                },
+                BoundType::LowerMinusInfinity => replace_existing_with(&mut variable.upper_bound, RF::zero(), RF::min),
+                BoundType::UpperInfinity => replace_existing_with(&mut variable.lower_bound, RF::zero(), RF::max),
+                BoundType::Binary => {
+                    replace_existing_with(&mut variable.lower_bound, RF::zero(), RF::max);
+                    replace_existing_with(&mut variable.upper_bound, RF::one(), RF::min);
+                    variable.variable_type = VariableType::Integer;
+                }
+                BoundType::LowerInteger => {
+                    replace_existing_with(&mut variable.lower_bound, value, RF::max);
+                    variable.variable_type = VariableType::Integer;
+                },
+                BoundType::UpperInteger => {
+                    if variable.lower_bound.is_none() {
+                        variable.lower_bound = Some(RF::zero());
+                    }
+                    replace_existing_with(&mut variable.upper_bound, value, RF::min);
+                    variable.variable_type = VariableType::Integer;
+                },
+                BoundType::SemiContinuous => unimplemented!(),
             }
+        } else {
+            return Err(InconsistencyError::new(format!("Couldn't convert f64: {}", raw_value)))
         }
     }
-
-    fill_in_default_bounds(variable_info, variable_is_touched);
 
     Ok(())
 }

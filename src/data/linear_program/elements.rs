@@ -12,6 +12,13 @@ pub enum ConstraintType {
     Less,
 }
 
+/// Direction of a bound.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum BoundDirection {
+    Lower,
+    Upper,
+}
+
 /// A variable is either continuous or integer.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum VariableType {
@@ -43,4 +50,9 @@ pub enum LinearProgramType<OF: OrderedField> {
 pub enum Objective {
     Maximize,
     Minimize,
+}
+impl Default for Objective {
+    fn default() -> Self {
+        Objective::Minimize
+    }
 }
