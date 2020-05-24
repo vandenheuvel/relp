@@ -7,15 +7,15 @@ use crate::algorithm::simplex::data::NonArtificial;
 use crate::algorithm::simplex::data::Tableau;
 use crate::algorithm::simplex::matrix_provider::MatrixProvider;
 use crate::algorithm::simplex::strategy::pivot_rule::PivotRule;
-use crate::data::linear_program::elements::LinearProgramType;
 use crate::data::number_types::traits::{Field, OrderedField};
+use crate::data::linear_algebra::vector::SparseVector;
 
 /// Reduces the artificial cost of the basic feasible solution to zero, if possible. In doing so, a
 /// basic feasible solution to the `CanonicalForm` linear program is found.
 ///
 /// # Arguments
 ///
-/// * `tableau` - Artificial tableau with a valid basis. This basis will typically consist of only
+/// * `tableau`: Artificial tableau with a valid basis. This basis will typically consist of only
 /// artificial variables.
 ///
 /// # Return value
@@ -83,7 +83,7 @@ pub (crate) enum Rank {
 ///
 /// # Arguments
 ///
-/// * `tableau` - Tableau to change the basis for.
+/// * `tableau`: Tableau to change the basis for.
 ///
 /// # Return value
 ///
@@ -150,45 +150,37 @@ pub(crate) fn primal<'a, OF: OrderedField, MP: 'a + MatrixProvider<OF>, PR: Pivo
                     None => break OptimizationResult::Unbounded,
                 }
             },
-            None => break OptimizationResult::FiniteOptimum(tableau.objective_function_value()),
+            None => break OptimizationResult::FiniteOptimum(tableau.current_bfs()),
         }
     }
 }
 
 #[derive(Eq, PartialEq, Debug)]
-pub(crate) enum OptimizationResult<OF: OrderedField> {
-    FiniteOptimum(OF),
+pub enum OptimizationResult<F: Field> {
+    Infeasible,
+    FiniteOptimum(SparseVector<F>),
     Unbounded,
-}
-
-impl<OF: OrderedField> Into<LinearProgramType<OF>> for OptimizationResult<OF> {
-    fn into(self) -> LinearProgramType<OF> {
-        match self {
-            OptimizationResult::FiniteOptimum(obj) => LinearProgramType::FiniteOptimum(obj),
-            OptimizationResult::Unbounded => LinearProgramType::Unbounded,
-        }
-    }
 }
 
 #[cfg(test)]
 mod test {
-    use num::FromPrimitive;
     use num::rational::Ratio;
 
     use crate::algorithm::simplex::data::{Artificial, Tableau};
     use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
     use crate::algorithm::simplex::solve_relaxation;
     use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
-    use crate::data::linear_program::elements::LinearProgramType;
-    use crate::R64;
     use crate::tests::problem_2::{matrix_data_form, tableau_form};
+    use crate::data::linear_algebra::vector::SparseVector;
 
     #[test]
     fn test_simplex() {
         let data = matrix_data_form::<Ratio<i32>>();
         let mut tableau = tableau_form(&data);
         match primal::<_, _, FirstProfitable>(&mut tableau) {
-            OptimizationResult::FiniteOptimum(value) => assert_eq!(value, Ratio::<i32>::new(9, 2)),
+            OptimizationResult::FiniteOptimum(_) => {
+                assert_eq!(tableau.objective_function_value(), Ratio::<i32>::new(9, 2))
+            },
             _ => assert!(false),
         }
     }
@@ -208,7 +200,7 @@ mod test {
    #[test]
    #[ignore]
    fn test_solve_matrix() {
-       let data = matrix_data_form();
+       let data = matrix_data_form::<Ratio<i64>>();
        let result = solve_relaxation::<_, _, FirstProfitable, FirstProfitable>(&data);
        // let expected = vec![
        //     (String::from("X1"), 0f64),
@@ -216,8 +208,13 @@ mod test {
        //     (String::from("X3"), 0f64),
        //     (String::from("X4"), 2.5f64),
        //     (String::from("X5"), 1.5f64),
-       // ];
-        assert_eq!(result, LinearProgramType::FiniteOptimum(R64!(4.5)));
+       // ]; Optimal value: R64!(4.5)
+        assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
+            (0, 0f64),
+            (1, 0.5f64),
+            (3, 2.5f64),
+            (4, 1.5f64),
+        ], 5)));
    }
 
     // TODO

@@ -5,3 +5,4 @@
 //! equality constraints only.
 pub mod elements;
 pub mod general_form;
+pub mod solution;

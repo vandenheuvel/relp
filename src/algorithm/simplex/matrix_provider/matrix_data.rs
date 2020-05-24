@@ -116,10 +116,10 @@ impl<F: Field> MatrixData<F> {
     ///
     /// # Arguments
     ///
-    /// * `data` - Sparse representation of constraints, which excludes simple bounds.
-    /// * `cost` - Sparse representation of the cost function.
-    /// * `b` - Constraint values.
-    /// * `upper_bound` - For each variable,
+    /// * `data`: Sparse representation of constraints, which excludes simple bounds.
+    /// * `cost`: Sparse representation of the cost function.
+    /// * `b`: Constraint values.
+    /// * `upper_bound`: For each variable,
     pub fn new(
         equality_constraints: Vec<SparseTuples<F>>,
         upper_bounded_constraints: Vec<SparseTuples<F>>,

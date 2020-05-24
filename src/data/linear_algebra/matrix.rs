@@ -15,6 +15,8 @@ use crate::data::number_types::traits::{Field, RealField};
 use crate::RF;
 
 /// Indices start at `0`.
+/// TODO(OPTIMIZATION): What data structure is best suited to back this struct? How are allocations
+///  avoided (e.g. flattening) avoided?
 #[derive(Eq, PartialEq, Debug)]
 pub struct SparseMatrix<F: Field, MO: MatrixOrder> {
     pub data: Vec<SparseTuples<F>>,
@@ -149,7 +151,7 @@ impl<F: Field> SparseMatrix<F, RowMajorOrdering> {
     ///
     /// # Arguments
     ///
-    /// * `rows_to_change` - Indices of rows to change the sign of.
+    /// * `rows_to_change`: Indices of rows to change the sign of.
     pub fn change_row_signs(&mut self, rows_to_change: &HashSet<usize>) {
         for &row in rows_to_change {
             for (_, value) in &mut self.data[row] {
@@ -170,9 +172,9 @@ impl<F: Field> SparseMatrix<F, RowMajorOrdering> {
     ///
     /// # Arguments
     ///
-    /// * `i` - Row index
-    /// * `j` - Column index
-    /// * `value` - Float that should not be too close to zero to avoid memory usage and numerical
+    /// * `i`: Row index
+    /// * `j`: Column index
+    /// * `value`: Float that should not be too close to zero to avoid memory usage and numerical
     /// imprecision.
     pub fn set_value(&mut self, row: usize, column: usize, value: F) {
         debug_assert!(row < self.nr_rows());
@@ -196,8 +198,8 @@ impl<F: Field> SparseMatrix<F, ColumnMajorOrdering> {
     ///
     /// # Arguments
     ///
-    /// * `rows` - List of rows.
-    /// * `nr_columns` - Amount of columns in the original matrix. Necessary, because the maximum
+    /// * `rows`: List of rows.
+    /// * `nr_columns`: Amount of columns in the original matrix. Necessary, because the maximum
     /// value in `rows` is not necessarily the last column (could have zero columns at the end).
     ///
     /// # Return value
@@ -214,7 +216,7 @@ impl<F: Field> SparseMatrix<F, ColumnMajorOrdering> {
     ///
     /// # Arguments
     ///
-    /// * `indices` - Columns to be removed, is assumed sorted.
+    /// * `indices`: Columns to be removed, is assumed sorted.
     pub fn remove_columns(&mut self, indices: &Vec<usize>) {
         debug_assert!(indices.len() < self.data.len());
         debug_assert!(indices.is_sorted());
@@ -229,7 +231,7 @@ impl<F: Field> SparseMatrix<F, ColumnMajorOrdering> {
     ///
     /// # Arguments
     ///
-    /// * `other` - A column major ordered sparse matrix with the same number of rows as this
+    /// * `other`: A column major ordered sparse matrix with the same number of rows as this
     /// matrix.
     pub fn concatenate_horizontally(self, other: Self) -> Self {
         debug_assert_eq!(self.nr_rows(), other.nr_rows());
@@ -271,9 +273,9 @@ impl<F: Field> SparseMatrix<F, ColumnMajorOrdering> {
     ///
     /// # Arguments
     ///
-    /// * `i` - Row index
-    /// * `j` - Column index
-    /// * `value` - Float that should not be too close to zero to avoid memory usage and numerical
+    /// * `i`: Row index
+    /// * `j`: Column index
+    /// * `value`: Float that should not be too close to zero to avoid memory usage and numerical
     /// imprecision.
     pub fn set_value(&mut self, row: usize, column: usize, value: F) {
         debug_assert!(column < self.major_dimension_size);
@@ -297,11 +299,11 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
     ///
     /// # Arguments
     ///
-    /// * `columns` - Column-major data of (row_index, value) tuples that should already be filtered
+    /// * `columns`: Column-major data of (row_index, value) tuples that should already be filtered
     /// for non-zero values.
-    /// * `nr_rows` - Number of rows this matrix is large. Couldn't be derived from `columns`,
+    /// * `nr_rows`: Number of rows this matrix is large. Couldn't be derived from `columns`,
     /// because the final row(s) might be zero, so no column would have a value in that row.
-    /// * `nr_columns` - Number of columns this matrix is large. Could be derived from `columns`,
+    /// * `nr_columns`: Number of columns this matrix is large. Could be derived from `columns`,
     /// but not done for consistency. Having to fill in this number often also helps clarify what is
     /// happening in algorithms.
     fn from_major_ordered_tuples(
@@ -349,7 +351,7 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
     ///
     /// # Arguments
     ///
-    /// * `other` - `SparseMatrix` that should have the same number of rows as this matrix.
+    /// * `other`: `SparseMatrix` that should have the same number of rows as this matrix.
     ///
     /// # Return value
     ///
@@ -369,7 +371,7 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
     ///
     /// # Arguments
     ///
-    /// * `indices` - Columns to be removed, is assumed sorted.
+    /// * `indices`: Columns to be removed, is assumed sorted.
     fn remove_major_indices(&mut self, indices: &Vec<usize>) {
         debug_assert!(indices.len() <= self.major_dimension_size);
         debug_assert!(indices.is_sorted());
@@ -385,7 +387,7 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
     ///
     /// # Arguments
     ///
-    /// * `indices` - Rows to be removed, is assumed sorted.
+    /// * `indices`: Rows to be removed, is assumed sorted.
     fn remove_minor_indices(&mut self, indices: &Vec<usize>) {
         debug_assert!(indices.len() <= self.minor_dimension_size);
         debug_assert!(indices.is_sorted());
@@ -433,9 +435,9 @@ impl<F: Field, MO: MatrixOrder> SparseMatrix<F, MO> {
     ///
     /// # Arguments
     ///
-    /// * `i` - Row index
-    /// * `j` - Column index
-    /// * `value` - Float that should not be too close to zero to avoid memory usage and numerical
+    /// * `i`: Row index
+    /// * `j`: Column index
+    /// * `value`: Float that should not be too close to zero to avoid memory usage and numerical
     /// imprecision.
     fn inner_set_value(&mut self, major_index: usize, minor_index: usize, value: F) {
         debug_assert!(major_index < self.major_dimension_size);

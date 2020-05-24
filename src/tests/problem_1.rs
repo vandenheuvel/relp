@@ -4,10 +4,7 @@
 use std::collections::HashSet;
 use std::convert::{TryFrom, TryInto};
 
-use num::FromPrimitive;
-use num::rational::Ratio;
-
-use crate::{R32, RF};
+use crate::RF;
 use crate::algorithm::simplex::data::{Artificial, CarryMatrix, NonArtificial, Tableau};
 use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
@@ -23,6 +20,7 @@ use crate::data::number_types::traits::RealField;
 use crate::io::mps::{Bound, BoundType, Constraint, Rhs, Variable};
 use crate::io::mps::parsing::{into_atom_lines, UnstructuredBound, UnstructuredColumn, UnstructuredMPS, UnstructuredRhs, UnstructuredRow};
 use crate::io::mps::structuring::MPS;
+use num::rational::Ratio;
 
 #[test]
 fn test_conversion_pipeline() {
@@ -69,8 +67,8 @@ fn test_conversion_pipeline() {
     assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form()));
 
     // Get to a basic feasible solution
-    let result = primal::<_, _, FirstProfitable>(&mut tableau_form_computed);
-    assert_eq!(result, OptimizationResult::FiniteOptimum(R32!(58)));
+    let result = primal::<Ratio<i32>, _, FirstProfitable>(&mut tableau_form_computed);
+    assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![], 1)));
 }
 
 const MPS_LITERAL_STRING: &str = "NAME          TESTPROB

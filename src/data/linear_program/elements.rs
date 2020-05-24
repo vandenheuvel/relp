@@ -2,7 +2,7 @@
 #![allow(missing_docs)]
 use std::ops::Not;
 
-use crate::data::number_types::traits::OrderedField;
+use crate::data::linear_program::solution::Solution;
 
 /// A `Constraint` is a type of (in)equality.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -17,6 +17,16 @@ pub enum ConstraintType {
 pub enum BoundDirection {
     Lower,
     Upper,
+}
+impl Not for BoundDirection {
+    type Output = Self;
+
+    fn not(self) -> Self {
+        match self {
+            Self::Lower => Self::Upper,
+            Self::Upper => Self::Lower,
+        }
+    }
 }
 
 /// A variable is either continuous or integer.
@@ -39,8 +49,8 @@ impl Not for VariableType {
 
 /// After the second phase, either an optimum is found or the problem is determined to be unbounded.
 #[derive(Debug, Eq, PartialEq)]
-pub enum LinearProgramType<OF: OrderedField> {
-    FiniteOptimum(OF),
+pub enum LinearProgramType<F> {
+    FiniteOptimum(Solution<F>),
     Infeasible,
     Unbounded,
 }

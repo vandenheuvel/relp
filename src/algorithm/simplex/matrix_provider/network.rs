@@ -138,7 +138,7 @@ mod test {
 
         let expected_cost = DenseVector::from_data(vec![1f64, 2f64, 1f64, 1f64, 1f64, 1f64, 2f64]);
         for i in 0..expected_cost.len() {
-            assert_eq!(graph.cost_value(i), expected_cost.get_value(i));
+            assert_eq!(graph.cost_value(i), expected_cost[i]);
         }
 
         assert_eq!(graph.nr_rows(), 4);

@@ -37,7 +37,7 @@ impl<'a> TryFrom<UnstructuredMPS<'a>> for MPS {
     ///
     /// # Arguments
     ///
-    /// * `unstructured_mps` - A possibly inconsistent MPS instance.
+    /// * `unstructured_mps`: A possibly inconsistent MPS instance.
     ///
     /// # Return value
     ///
@@ -77,7 +77,7 @@ impl<'a> TryFrom<UnstructuredMPS<'a>> for MPS {
 ///
 /// # Arguments
 ///
-/// * `unstructured_rows` - Collection of unstructured rows.
+/// * `unstructured_rows`: Collection of unstructured rows.
 ///
 /// # Return value
 ///
@@ -101,8 +101,8 @@ fn build_row_index<'a>(
 ///
 /// # Arguments
 ///
-/// * `unstructured_rows` - Collection of unstructured rows.
-/// * `index` - Assigns to each row an index
+/// * `unstructured_rows`: Collection of unstructured rows.
+/// * `index`: Assigns to each row an index
 ///
 /// # Return value
 ///
@@ -130,10 +130,10 @@ fn order_rows<'a>(
 ///
 /// # Arguments
 ///
-/// * `unstructured_columns` - Collection of `UnstructuredColumn`s.
-/// * `cost_row_name` - Name of the cost row, used to identify which values belong to the objective
+/// * `unstructured_columns`: Collection of `UnstructuredColumn`s.
+/// * `cost_row_name`: Name of the cost row, used to identify which values belong to the objective
 /// function.
-/// * `row_index` - Index providing an ordering of the row names.
+/// * `row_index`: Index providing an ordering of the row names.
 ///
 /// # Return value
 ///
@@ -193,7 +193,7 @@ fn build_columns<'a>(
 ///
 /// # Arguments
 ///
-/// * `column_names` - Collection of names of the columns
+/// * `column_names`: Collection of names of the columns
 ///
 /// # Return value
 ///
@@ -213,8 +213,8 @@ fn build_column_index(column_names: &Vec<String>) -> HashMap<String, usize> {
 ///
 /// # Arguments
 ///
-/// * `unstructured_rhss` - Collection of unstructured right-hand side data.
-/// * `row_index` - Assignment of rows (by name) to an index.
+/// * `unstructured_rhss`: Collection of unstructured right-hand side data.
+/// * `row_index`: Assignment of rows (by name) to an index.
 ///
 /// # Return value
 ///
@@ -255,8 +255,8 @@ fn build_rhss<'a>(
 ///
 /// # Arguments
 ///
-/// * `unstructured_bounds` - Collection of unstructured bound data.
-/// * `column_index` - Assignment of columns/variables (by name) to an index.
+/// * `unstructured_bounds`: Collection of unstructured bound data.
+/// * `column_index`: Assignment of columns/variables (by name) to an index.
 ///
 /// # Return value
 ///
@@ -328,19 +328,19 @@ impl MPS {
     ///
     /// # Arguments
     ///
-    /// * `name` - Name of the linear program.
-    /// * `cost_row_name` - Name of the cost row / objective function.
-    /// * `cost_values` - Column (by index) and coefficient combinations for the objective function.
-    /// * `row_names` - Names of all rows. The ordering corresponds with the order of the data in
+    /// * `name`: Name of the linear program.
+    /// * `cost_row_name`: Name of the cost row / objective function.
+    /// * `cost_values`: Column (by index) and coefficient combinations for the objective function.
+    /// * `row_names`: Names of all rows. The ordering corresponds with the order of the data in
     /// the `rows` argument.
-    /// * `rows` - Constraint types. Names of the constraints are in the `row_names` argument, with
+    /// * `rows`: Constraint types. Names of the constraints are in the `row_names` argument, with
     /// corresponding order.
-    /// * `column_names` - Names of all columns / variables. The ordering corresponds with the order
+    /// * `column_names`: Names of all columns / variables. The ordering corresponds with the order
     /// of the data in the `columns` argument.
-    /// * `columns` - Constraint data by column. Names of the variables are in `column_names`, with
+    /// * `columns`: Constraint data by column. Names of the variables are in `column_names`, with
     /// corresponding order.
-    /// * `rhss` - Constraint values.
-    /// * `bounds` - Separate set of constraints, applying to the variables.
+    /// * `rhss`: Constraint values.
+    /// * `bounds`: Separate set of constraints, applying to the variables.
     ///
     /// # Return value
     ///
@@ -377,7 +377,7 @@ impl<RF: RealField> TryInto<GeneralForm<RF>> for MPS {
     ///
     /// # Arguments
     ///
-    /// * `self` - `MPS` instance.
+    /// * `self`: `MPS` instance.
     ///
     /// # Return value
     ///
@@ -442,7 +442,7 @@ fn compute_b<RF: RealField>(
     for rhs in rhss.iter() {
         for &(index, value) in &rhs.values {
             if let Some(value) = RF::from_f64(value) {
-                let current = b.get_value(index);
+                let current = b[index];
                 if current == RF::zero() || match constraints[index] {
                     ConstraintType::Equal if value != current => {
                         return Err(
@@ -455,7 +455,7 @@ fn compute_b<RF: RealField>(
                     ConstraintType::Greater if value > current => true,
                     _ => false,
                 } {
-                    b.set_value(index, value);
+                    b[index] = value;
                 }
             } else {
                 return Err(InconsistencyError::new(format!("Couldn't convert f64: {}", value)));

@@ -12,8 +12,8 @@ use std::iter::IntoIterator;
 ///
 /// # Arguments
 ///
-/// * `vector` - `Vec` to remove indices from.
-/// * `indices` - A set of indices to remove from the vector, assumed sorted.
+/// * `vector`: `Vec` to remove indices from.
+/// * `indices`: A set of indices to remove from the vector, assumed sorted.
 pub(super) fn remove_sparse_indices<T: Copy>(vector: &mut Vec<(usize, T)>, indices: &Vec<usize>) {
     debug_assert!(indices.is_sorted());
     // All values are unique

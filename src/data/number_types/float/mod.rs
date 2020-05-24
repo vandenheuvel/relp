@@ -112,7 +112,7 @@ impl<F: InnerF, OPS: InnerOPS> FECF<F, OPS> {
     /// and the `close_heuristic_fraction` function below.
     /// # Arguments
     ///
-    /// * `value` - Float (potentially having rounding errors) that we try to find a candidate for.
+    /// * `value`: Float (potentially having rounding errors) that we try to find a candidate for.
     ///
     /// # Return value
     ///

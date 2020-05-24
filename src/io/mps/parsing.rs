@@ -35,7 +35,7 @@ pub(crate) enum Atom<'a> {
 ///
 /// # Arguments
 ///
-/// * `program` - The input string
+/// * `program`: The input string
 ///
 /// # Return value
 ///
@@ -56,7 +56,7 @@ pub(crate) fn into_atom_lines(program: &impl AsRef<str>) -> Vec<((u64, &str), Ve
 ///
 /// # Arguments
 ///
-/// * `line` - The input string slice
+/// * `line`: The input string slice
 ///
 /// # Return value
 ///
@@ -138,7 +138,7 @@ impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a>
     ///
     /// # Arguments
     ///
-    /// * `program` - The input program parsed as lines of `Atom`s.
+    /// * `program`: The input program parsed as lines of `Atom`s.
     ///
     /// # Return value
     ///
@@ -202,9 +202,9 @@ impl<'a> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a>>)>> for UnstructuredMPS<'a>
 ///
 /// # Arguments
 ///
-/// * `line` - The tokens on the line.
-/// * `cost_row_name` - The previously parsed name of the cost row.
-/// * `row_collector` - Data structure in which to collect the parsed rows.
+/// * `line`: The tokens on the line.
+/// * `cost_row_name`: The previously parsed name of the cost row.
+/// * `row_collector`: Data structure in which to collect the parsed rows.
 ///
 /// # Return value
 ///
@@ -232,9 +232,9 @@ fn parse_row_line<'a>(
 ///
 /// # Arguments
 ///
-/// * `line` - The tokens on the line.
-/// * `marker` - Indicator for the continuous or discrete part of the column section.
-/// * `column_collector` - Data structure in which to collect the parsed values.
+/// * `line`: The tokens on the line.
+/// * `marker`: Indicator for the continuous or discrete part of the column section.
+/// * `column_collector`: Data structure in which to collect the parsed values.
 ///
 /// # Return value
 ///
@@ -276,8 +276,8 @@ fn parse_column_line<'a>(
 ///
 /// # Arguments
 ///
-/// * `line` - The tokens on the line.
-/// * `rhs_collector` - Data structure in which to collect the parsed rhs values.
+/// * `line`: The tokens on the line.
+/// * `rhs_collector`: Data structure in which to collect the parsed rhs values.
 ///
 /// # Return value
 ///
@@ -300,8 +300,8 @@ fn parse_rhs_line<'a>(line: Vec<Atom<'a>>, rhs_collector: &mut Vec<UnstructuredR
 ///
 /// # Arguments
 ///
-/// * `line` - The tokens on the line.
-/// * `bound_collector` - Data structure in which to collect the parsed bounds.
+/// * `line`: The tokens on the line.
+/// * `bound_collector`: Data structure in which to collect the parsed bounds.
 ///
 /// # Return value
 ///
@@ -325,8 +325,8 @@ fn parse_bound_line<'a>(
 ///
 /// # Arguments
 ///
-/// * `line` - The tokens on the line.
-/// * `range_collector` - Data structure in which to collect the parsed ranges.
+/// * `line`: The tokens on the line.
+/// * `range_collector`: Data structure in which to collect the parsed ranges.
 ///
 /// # Return value
 ///
@@ -450,7 +450,7 @@ impl<'a, 'b> TryFrom<&'b Vec<Atom<'a>>> for Section<'a> {
     ///
     /// # Arguments
     ///
-    /// * `line` - The input line consisting of a sequence of `Atom`s.
+    /// * `line`: The input line consisting of a sequence of `Atom`s.
     ///
     /// # Return value
     ///
@@ -487,7 +487,7 @@ impl<'a> TryFrom<&'a str> for RowType {
     ///
     /// # Arguments
     ///
-    /// * `word` - The input `String` slice.
+    /// * `word`: The input `String` slice.
     ///
     /// # Return value
     ///
@@ -514,7 +514,7 @@ impl<'a> TryFrom<&'a str> for BoundType {
     ///
     /// # Arguments
     ///
-    /// * `word` - The input `String` slice.
+    /// * `word`: The input `String` slice.
     ///
     /// # Return value
     ///

@@ -26,7 +26,7 @@ pub trait MatrixProvider<F: Field> {
     ///
     /// # Arguments
     ///
-    /// * `j` - Column index.
+    /// * `j`: Column index.
     ///
     /// # Return value
     ///
@@ -37,7 +37,7 @@ pub trait MatrixProvider<F: Field> {
     ///
     /// # Arguments
     ///
-    /// * `j` - Column index.
+    /// * `j`: Column index.
     ///
     /// # Return value
     ///
@@ -55,8 +55,8 @@ pub trait MatrixProvider<F: Field> {
     ///
     /// # Arguments
     ///
-    /// * `j` - Variable index for the bound, if it exists.
-    /// * `bound_type` - Whether it concerns a lower or upper bound.
+    /// * `j`: Variable index for the bound, if it exists.
+    /// * `bound_type`: Whether it concerns a lower or upper bound.
     ///
     /// # Return value
     ///
@@ -67,7 +67,7 @@ pub trait MatrixProvider<F: Field> {
     ///
     /// # Arguments
     ///
-    /// * `j` - Variable index for the bounds, if any exist.
+    /// * `j`: Variable index for the bounds, if any exist.
     ///
     /// # Return value
     ///
@@ -123,7 +123,7 @@ pub trait VariableFeasibilityLogic<F: Field>: MatrixProvider<F> {
     ///
     /// # Arguments
     ///
-    /// * `j` - Variable index.
+    /// * `j`: Variable index.
     ///
     /// # Return value
     ///
@@ -134,7 +134,7 @@ pub trait VariableFeasibilityLogic<F: Field>: MatrixProvider<F> {
     ///
     /// # Arguments
     ///
-    /// * `j` - Variable index.
+    /// * `j`: Variable index.
     ///
     /// # Return value
     ///

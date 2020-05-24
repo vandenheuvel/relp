@@ -13,9 +13,10 @@ use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, SparseMatrix};
 use crate::data::linear_algebra::SparseTuples;
 use crate::data::linear_algebra::utilities::remove_sparse_indices;
 use crate::data::number_types::traits::Field;
+use std::ops::{Index, IndexMut};
 
 /// Defines basic ways to create or change a vector, regardless of back-end.
-pub trait Vector<F>: Eq + Display + Debug {
+pub trait Vector<F>: Index<usize> + Eq + Display + Debug {
     /// Items stored internally.
     type Inner;
 
@@ -23,8 +24,8 @@ pub trait Vector<F>: Eq + Display + Debug {
     ///
     /// # Arguments
     ///
-    /// * `data` - Internal data values. Will not be changed and directly used for creation.
-    /// * `len` - Length of the vector represented (and not necessarily of the internal data struct
+    /// * `data`: Internal data values. Will not be changed and directly used for creation.
+    /// * `len`: Length of the vector represented (and not necessarily of the internal data struct
     /// ure).
     ///
     /// # Return value
@@ -47,6 +48,8 @@ pub trait Vector<F>: Eq + Display + Debug {
     /// Depending on internal representation, this can be an expensive operation (for `SparseVector`
     /// 's, the cost depends on the (lack of) sparsity.
     fn set_value(&mut self, index: usize, value: F);
+    /// Shift the value at an index.
+    fn shift_value(&mut self, index: usize, value: F);
     /// Number of items represented by the vector.
     fn len(&self) -> usize;
     /// Get the size of the internal data structure (and not of the represented vector).
@@ -65,8 +68,8 @@ impl<F: Field> DenseVector<F> {
     ///
     /// # Arguments
     ///
-    /// * `value` - The value which all elements of this vector are equal to.
-    /// * `len` - Length of the vector, number of elements.
+    /// * `value`: The value which all elements of this vector are equal to.
+    /// * `len`: Length of the vector, number of elements.
     ///
     /// # Return value
     ///
@@ -81,10 +84,28 @@ impl<F: Field> DenseVector<F> {
     ///
     /// # Arguments
     ///
-    /// * `new_values` - An ordered collections of values to append.
+    /// * `new_values`: An ordered collections of values to append.
     pub fn extend_with_values(&mut self, new_values: Vec<F>) {
         self.len += new_values.len();
         self.data.extend(new_values);
+    }
+}
+
+impl<F> Index<usize> for DenseVector<F> {
+    type Output = F;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        debug_assert!(index < self.len);
+
+        &self.data[index]
+    }
+}
+
+impl<F> IndexMut<usize> for DenseVector<F> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        debug_assert!(index < self.len);
+
+        &mut self.data[index]
     }
 }
 
@@ -103,7 +124,7 @@ impl<F: Field> Vector<F> for DenseVector<F> {
     ///
     /// # Arguments
     ///
-    /// * `indices` - A set of indices to remove from the vector, assumed sorted.
+    /// * `indices`: A set of indices to remove from the vector, assumed sorted.
     fn remove_indices(&mut self, indices: &Vec<usize>) {
         debug_assert!(indices.len() <= self.len);
         debug_assert!(indices.is_sorted());
@@ -119,7 +140,7 @@ impl<F: Field> Vector<F> for DenseVector<F> {
     ///
     /// # Arguments
     ///
-    /// * `value` - The value to append.
+    /// * `value`: The value to append.
     fn push_value(&mut self, value: F) {
         self.data.push(value);
         self.len += 1;
@@ -142,6 +163,13 @@ impl<F: Field> Vector<F> for DenseVector<F> {
         debug_assert!(i < self.len);
 
         self.data[i] = value;
+    }
+
+    /// Shift the value at index `i` by `shift`.
+    fn shift_value(&mut self, i: usize, value: F) {
+        debug_assert!(i < self.len);
+
+        self.data[i] += value;
     }
 
     /// The length of this vector.
@@ -172,14 +200,31 @@ impl<F: Display> Display for DenseVector<F> {
 pub struct SparseVector<F> {
     data: SparseTuples<F>,
     len: usize,
+
+    /// Used to implement the `Index` trait. Should never be modified and never be read except from
+    /// that trait impl.
+    ///
+    /// TODO(OPTIMIZATION: Does this get compiled away, or does it cost memory / performance?
+    constant_zero: F,
 }
 
 impl<F: Field> SparseVector<F> {
+    fn set_zero(&mut self, i: usize) {
+        match self.get_data_index(i) {
+            Ok(index) => { self.data.remove(index); },
+            Err(index) => (),
+        }
+    }
+
+    fn get_data_index(&self, i: usize) -> Result<usize, usize> {
+        self.data.binary_search_by_key(&i, |&(index, _)| index)
+    }
+
     /// Calculate the inner product between two vectors.
     ///
     /// # Arguments
     ///
-    /// * `other` - Vector to calculate inner product with.
+    /// * `other`: Vector to calculate inner product with.
     ///
     /// # Return value
     ///
@@ -214,8 +259,8 @@ impl<F: Field> SparseVector<F> {
     ///
     /// # Arguments
     ///
-    /// * `multiple` - Constant that all elements of the `other` vector are multiplied with.
-    /// * `other` - Vector to add a multiple of to this vector.
+    /// * `multiple`: Constant that all elements of the `other` vector are multiplied with.
+    /// * `other`: Vector to add a multiple of to this vector.
     ///
     /// # Return value
     ///
@@ -283,9 +328,9 @@ impl<F: Field> SparseVector<F> {
     ///
     /// # Arguments
     ///
-    /// * `i` - Only index where there should be a 1. Note that indexing starts at zero, and runs
+    /// * `i`: Only index where there should be a 1. Note that indexing starts at zero, and runs
     /// until (not through) `len`.
-    /// * `len` - Size of the `SparseVector`.
+    /// * `len`: Size of the `SparseVector`.
     pub fn standard_basis_vector(i: usize, len: usize) -> Self {
         debug_assert!(i < len);
 
@@ -309,6 +354,19 @@ impl<F: Field> SparseVector<F> {
     }
 }
 
+impl<F: Field> Index<usize> for SparseVector<F> {
+    type Output = F;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        debug_assert!(index < self.len);
+
+        match self.get_data_index(index) {
+            Ok(data_index) => &self.data[data_index].1,
+            Err(_) => &self.constant_zero,
+        }
+    }
+}
+
 impl<F: Field> Vector<F> for SparseVector<F> {
     type Inner = (usize, F);
 
@@ -322,7 +380,7 @@ impl<F: Field> Vector<F> for SparseVector<F> {
         debug_assert!(data.len() <= len);
         debug_assert!(data.iter().all(|&(_, v)| v != F::additive_identity()));
 
-        Self { data, len, }
+        Self { data, len, constant_zero: F::additive_identity(), }
     }
 
     /// Remove elements.
@@ -357,25 +415,52 @@ impl<F: Field> Vector<F> for SparseVector<F> {
     fn get_value(&self, i: usize) -> F {
         debug_assert!(i < self.len);
 
-        self.data
-            .binary_search_by_key(&i, |&(index, _)| index)
-            .map_or(F::additive_identity(), |i| self.data[i].1)
+        match self.get_data_index(i) {
+            Ok(index) => self.data[index].1,
+            Err(_) => F::additive_identity(),
+        }
     }
 
     /// Set the value at index `i` to `value`.
     ///
     /// # Arguments
     ///
-    /// * `i` - Index of the value. New tuple will be inserted, potentially causing many values to
+    /// * `i`: Index of the value. New tuple will be inserted, potentially causing many values to
     /// be shifted.
-    /// * `value` - Value to be taken at index `i`. Should not be very close to zero to avoid
+    /// * `value`: Value to be taken at index `i`. Should not be very close to zero to avoid
     /// memory usage and numerical error build-up.
     fn set_value(&mut self, i: usize, value: F) {
         debug_assert!(i < self.len);
-        debug_assert_ne!(value, F::additive_identity());
 
-        match self.data.binary_search_by_key(&i, |&(index, _)| index) {
-            Ok(index) => self.data[index].1 = value,
+        if value == F::additive_identity() {
+            self.set_zero(i);
+        } else {
+            match self.get_data_index(i) {
+                Ok(index) => self.data[index].1 = value,
+                Err(index) => self.data.insert(index, (i, value)),
+            }
+        }
+    }
+
+    /// Set the value at index `i` to `value`.
+    ///
+    /// # Arguments
+    ///
+    /// * `i`: Index of the value. New tuple will be inserted, potentially causing many values to
+    /// be shifted.
+    /// * `value`: Value to be taken at index `i`. Should not be very close to zero to avoid
+    /// memory usage and numerical error build-up.
+    fn shift_value(&mut self, i: usize, value: F) {
+        debug_assert!(i < self.len);
+
+        match self.get_data_index(i) {
+            Ok(index) => {
+                if self.data[index].1 == -value {
+                    self.set_zero(i);
+                } else {
+                    self.data[index].1 += value;
+                }
+            },
             Err(index) => self.data.insert(index, (i, value)),
         }
     }
@@ -434,6 +519,8 @@ pub mod test {
                     .filter(|&(_, v)| v != RF::additive_identity())
                     .collect(),
                 len: size,
+
+                constant_zero: RF::zero(),
             }
         }
     }
@@ -450,6 +537,8 @@ pub mod test {
             Self {
                 data: data.into_iter().map(|(i, v)| (i, RF!(v))).collect(),
                 len,
+
+                constant_zero: RF::zero(),
             }
         }
     }

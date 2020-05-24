@@ -9,8 +9,8 @@ use std::iter::IntoIterator;
 ///
 /// # Arguments
 ///
-/// * `vector` - `Vec` to remove indices from.
-/// * `indices` - A set of indices to remove from the vector, assumed sorted.
+/// * `vector`: `Vec` to remove indices from.
+/// * `indices`: A set of indices to remove from the vector, assumed sorted.
 pub(crate) fn remove_indices<T>(vector: &mut Vec<T>, indices: &Vec<usize>) {
     debug_assert!(indices.len() <= vector.len());
     debug_assert!(indices.is_sorted());

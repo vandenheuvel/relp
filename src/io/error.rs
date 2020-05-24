@@ -108,7 +108,7 @@ impl ParseError {
     ///
     /// # Arguments
     ///
-    /// * `description` - What's wrong at the moment of creation.
+    /// * `description`: What's wrong at the moment of creation.
     ///
     /// # Return value
     ///
@@ -121,8 +121,8 @@ impl ParseError {
     ///
     /// # Arguments
     ///
-    /// * `description` - What's wrong at the moment of creation.
-    /// * `file_location` - A reference to a line number and line that caused the error.
+    /// * `description`: What's wrong at the moment of creation.
+    /// * `file_location`: A reference to a line number and line that caused the error.
     ///
     /// # Return value
     ///
@@ -142,8 +142,8 @@ impl ParseError {
     ///
     /// # Arguments
     ///
-    /// * `description` - What's wrong at the moment of creation.
-    /// * `parse_error` - What caused this `ParseError`.
+    /// * `description`: What's wrong at the moment of creation.
+    /// * `parse_error`: What caused this `ParseError`.
     ///
     /// # Return value
     ///
@@ -210,7 +210,7 @@ impl InconsistencyError {
     ///
     /// # Arguments
     ///
-    /// * `description` - A human-readable text mean for the end user.
+    /// * `description`: A human-readable text mean for the end user.
     ///
     /// # Returns
     ///

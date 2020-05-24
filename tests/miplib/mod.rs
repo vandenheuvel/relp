@@ -22,7 +22,7 @@ fn problem_file_directory() -> PathBuf {
 ///
 /// # Arguments
 ///
-/// * `name` - Problem name without extension.
+/// * `name`: Problem name without extension.
 ///
 /// # Return value
 ///

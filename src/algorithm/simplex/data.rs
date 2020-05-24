@@ -54,9 +54,9 @@ impl<'a, F: Field, TT: TableauType, MP: MatrixProvider<F>> Tableau<'a, F, TT, MP
     ///
     /// # Arguments
     ///
-    /// * `provider` - Provides the original problem for which the other arguments describe a basis.
-    /// * `carry` - `CarryMatrix` with the basis transformation. Corresponds to `basis_indices`.
-    /// * `basis_indices` - Maps each row to a column, describing a basis. Corresponds to `carry`.
+    /// * `provider`: Provides the original problem for which the other arguments describe a basis.
+    /// * `carry`: `CarryMatrix` with the basis transformation. Corresponds to `basis_indices`.
+    /// * `basis_indices`: Maps each row to a column, describing a basis. Corresponds to `carry`.
     ///
     /// # Return value
     ///
@@ -99,8 +99,8 @@ impl<'a, F: Field, TT: TableauType, MP: MatrixProvider<F>> Tableau<'a, F, TT, MP
     ///
     /// # Arguments
     ///
-    /// * `pivot_row` - Row index of the pivot, in range 0 until self.nr_rows().
-    /// * `pivot_column` - Column index of the pivot, in range 0 until self.nr_columns(). Is not yet
+    /// * `pivot_row`: Row index of the pivot, in range 0 until self.nr_rows().
+    /// * `pivot_column`: Column index of the pivot, in range 0 until self.nr_columns(). Is not yet
     /// in the basis.
     fn update_basis_indices(&mut self, pivot_row: usize, pivot_column: usize) {
         debug_assert!(pivot_row < self.nr_rows());
@@ -116,7 +116,7 @@ impl<'a, F: Field, TT: TableauType, MP: MatrixProvider<F>> Tableau<'a, F, TT, MP
     ///
     /// # Arguments
     ///
-    /// * `j` - Index of column to calculate the relative cost for, in range `0` through
+    /// * `j`: Index of column to calculate the relative cost for, in range `0` through
     /// `self.nr_variables()`.
     ///
     /// # Return value
@@ -138,7 +138,7 @@ impl<'a, F: Field, TT: TableauType, MP: MatrixProvider<F>> Tableau<'a, F, TT, MP
     ///
     /// # Arguments
     ///
-    /// * `j` - Column index of the variable, in range 0 until self.nr_columns().
+    /// * `j`: Column index of the variable, in range 0 until self.nr_columns().
     ///
     /// # Return value
     ///
@@ -154,7 +154,7 @@ impl<'a, F: Field, TT: TableauType, MP: MatrixProvider<F>> Tableau<'a, F, TT, MP
     ///
     /// # Arguments
     ///
-    /// * `j` - Column index of the variable, in range 0 until self.nr_columns().
+    /// * `j`: Column index of the variable, in range 0 until self.nr_columns().
     ///
     /// # Return value
     ///
@@ -265,7 +265,7 @@ impl<'a, OF: OrderedField, TT: TableauType, MP: MatrixProvider<OF>> Tableau<'a, 
     ///
     /// # Arguments
     ///
-    /// * `column` - Problem column with respect to the current basis with length `m`.
+    /// * `column`: Problem column with respect to the current basis with length `m`.
     ///
     /// # Return value
     ///
@@ -305,7 +305,7 @@ impl<'a, OF: OrderedField, TT: TableauType, MP: MatrixProvider<OF>> Tableau<'a, 
     ///
     /// # Arguments
     ///
-    /// * `row` - The chosen pivot row, on which the pivot element is to be selected.
+    /// * `row`: The chosen pivot row, on which the pivot element is to be selected.
     ///
     /// # Return value
     ///
@@ -364,7 +364,7 @@ impl<'a, OF: OrderedField, TT: TableauType, MP: MatrixProvider<OF>> Tableau<'a, 
         // `b` >= 0
         let b = self.constraint_values();
         for row in 0..self.nr_rows() {
-            debug_assert!(b.get_value(row) >= OF::additive_identity());
+            debug_assert!(b[row] >= OF::additive_identity());
         }
 
         true
@@ -387,7 +387,7 @@ pub trait TableauType: Sized + Eq + PartialEq {
     ///
     /// # Arguments
     ///
-    /// * `j` - Column index of the variable, in range 0 until self.nr_columns().
+    /// * `j`: Column index of the variable, in range 0 until self.nr_columns().
     ///
     /// # Return value
     ///
@@ -433,7 +433,7 @@ impl TableauType for Artificial {
     ///
     /// # Arguments
     ///
-    /// * `j` - Column index of the variable, in range 0 until self.nr_columns().
+    /// * `j`: Column index of the variable, in range 0 until self.nr_columns().
     ///
     /// # Return value
     ///
@@ -455,8 +455,8 @@ impl TableauType for Artificial {
     ///
     /// # Arguments
     ///
-    /// * `tableau` - Tableau to retrieve the column from.
-    /// * `j` - Column index.
+    /// * `tableau`: Tableau to retrieve the column from.
+    /// * `j`: Column index.
     ///
     /// # Return value
     ///
@@ -504,7 +504,7 @@ impl<'a, F: Field, MP: MatrixProvider<F>> Tableau<'a, F, Artificial, MP> {
     ///
     /// # Arguments
     ///
-    /// * `provider` - Provides the problem to find a basic feasible solution for.
+    /// * `provider`: Provides the problem to find a basic feasible solution for.
     ///
     /// # Return value
     ///
@@ -552,8 +552,8 @@ impl TableauType for NonArtificial {
     ///
     /// # Arguments
     ///
-    /// * `tableau` - Tableau to retrieve the cost value from.
-    /// * `j` - Column index of the variable, in range 0 until self.nr_columns().
+    /// * `tableau`: Tableau to retrieve the cost value from.
+    /// * `j`: Column index of the variable, in range 0 until self.nr_columns().
     ///
     /// # Return value
     ///
@@ -569,8 +569,8 @@ impl TableauType for NonArtificial {
     ///
     /// # Arguments
     ///
-    /// * `tableau` - Tableau to retrieve the column from.
-    /// * `j` - Column index.
+    /// * `tableau`: Tableau to retrieve the column from.
+    /// * `j`: Column index.
     ///
     /// # Return value
     ///
@@ -611,7 +611,7 @@ impl<'a, F: Field, MP: MatrixProvider<F>> Tableau<'a, F, NonArtificial, MP> {
     ///
     /// # Arguments
     ///
-    /// * `artificial_tableau` - `Tableau` instance created with artificial variables.
+    /// * `artificial_tableau`: `Tableau` instance created with artificial variables.
     ///
     /// # Return value
     ///
@@ -648,8 +648,8 @@ impl<'a, F: Field, MP: MatrixProvider<F>> Tableau<'a, F, NonArtificial, MP> {
     ///
     /// # Arguments
     ///
-    /// * `artificial_tableau` - `Tableau` instance created with artificial variables.
-    /// * `rows_removed` - `RemoveRows` instance containing all the **sorted** rows that should be
+    /// * `artificial_tableau`: `Tableau` instance created with artificial variables.
+    /// * `rows_removed`: `RemoveRows` instance containing all the **sorted** rows that should be
     /// removed from e.g. the basis inverse matrix.
     ///
     /// # Return value
@@ -730,7 +730,7 @@ impl<'a, F, TT, MP> Display for Tableau<'a, F, TT, MP>
         for row_index in 0..self.nr_rows() {
             write!(f, "{0: <width$}", row_index, width = counter_width)?;
             for column_index in 0..self.nr_columns() {
-                let number = format!("{}", self.generate_column(column_index).get_value(row_index));
+                let number = format!("{}", self.generate_column(column_index)[row_index]);
                 write!(f, "{0:>width$.5}", number, width = column_width)?;
             }
             writeln!(f, "")?;
@@ -784,7 +784,7 @@ impl<F: Field> CarryMatrix<F> {
     ///
     /// # Arguments
     ///
-    /// * `b` - Constraint values of the original problem, i.e. the original `b` with respect to the
+    /// * `b`: Constraint values of the original problem, i.e. the original `b` with respect to the
     /// unit basis.
     ///
     /// # Return value
@@ -810,8 +810,8 @@ impl<F: Field> CarryMatrix<F> {
     ///
     /// # Arguments
     ///
-    /// * `b` - Constraint values of the original problem with respect to the provided basis.
-    /// * `basis_inverse_rows` - Rows of the matrix B^-1, where B is the matrix of columns of the
+    /// * `b`: Constraint values of the original problem with respect to the provided basis.
+    /// * `basis_inverse_rows`: Rows of the matrix B^-1, where B is the matrix of columns of the
     /// basis.
     ///
     /// # Return value
@@ -841,9 +841,9 @@ impl<F: Field> CarryMatrix<F> {
     ///
     /// # Arguments
     ///
-    /// * `artificial_carry_matrix` - A `CarryMatrix` which has an artificial cost row.
-    /// * `provider` - Provider of the problem, used for original cost in `minus_pi` restoration.
-    /// * `basis` - Vector with, ordered by pivot row, the basis indices of the new basis.
+    /// * `artificial_carry_matrix`: A `CarryMatrix` which has an artificial cost row.
+    /// * `provider`: Provider of the problem, used for original cost in `minus_pi` restoration.
+    /// * `basis`: Vector with, ordered by pivot row, the basis indices of the new basis.
     ///
     /// # Return value
     ///
@@ -877,10 +877,10 @@ impl<F: Field> CarryMatrix<F> {
     ///
     /// # Arguments
     ///
-    /// * `artificial_carry_matrix` - A `CarryMatrix` which has an artificial cost row.
-    /// * `provider` - Provider of the reduced problem.
-    /// * `basis` - Vector with, ordered by pivot row, the basis indices of the new basis.
-    /// * `to_remove` - All rows and columns to remove from the carry matrix.
+    /// * `artificial_carry_matrix`: A `CarryMatrix` which has an artificial cost row.
+    /// * `provider`: Provider of the reduced problem.
+    /// * `basis`: Vector with, ordered by pivot row, the basis indices of the new basis.
+    /// * `to_remove`: All rows and columns to remove from the carry matrix.
     ///
     /// # Return value
     ///
@@ -951,7 +951,7 @@ impl<F: Field> CarryMatrix<F> {
     ) -> F {
         let mut objective = F::additive_identity();
         for row in 0..provider.nr_rows() {
-            objective += provider.cost_value(basis[row]) * b.get_value(row);
+            objective += provider.cost_value(basis[row]) * b[row];
         }
         -objective
     }
@@ -965,9 +965,9 @@ impl<F: Field> CarryMatrix<F> {
     ///
     /// # Arguments
     ///
-    /// * `pivot_row_index` - Index of the pivot row.
-    /// * `column` - Column relative to the current basis to be entered into that basis.
-    /// * `cost` - Relative cost of that column. The objective function value will change by this
+    /// * `pivot_row_index`: Index of the pivot row.
+    /// * `column`: Column relative to the current basis to be entered into that basis.
+    /// * `cost`: Relative cost of that column. The objective function value will change by this
     /// amount.
     fn row_reduce_for_basis_change(
         &mut self,
@@ -992,23 +992,21 @@ impl<F: Field> CarryMatrix<F> {
     ///
     /// # Arguments
     ///
-    /// * `pivot_row_index` - Index of the pivot row.
-    /// * `column` - Column relative to the current basis to be entered into that basis.
+    /// * `pivot_row_index`: Index of the pivot row.
+    /// * `column`: Column relative to the current basis to be entered into that basis.
     fn normalize_pivot_row(&mut self, pivot_row_index: usize, column: &SparseVector<F>) {
-        let pivot_value = column.get_value(pivot_row_index);
+        let pivot_value = column[pivot_row_index];
         debug_assert_ne!(pivot_value, F::additive_identity());
         self.basis_inverse_rows[pivot_row_index].element_wise_divide(pivot_value);
-        let old_pivot_row_b = self.b.get_value(pivot_row_index);
-        let new_pivot_b = old_pivot_row_b / pivot_value;
-        self.b.set_value(pivot_row_index, new_pivot_b);
+        self.b[pivot_row_index] /= pivot_value;
     }
 
     /// Normalize the pivot row and row reduce the other basis inverse rows.
     ///
     /// # Arguments
     ///
-    /// * `pivot_row_index` - Index of the pivot row.
-    /// * `column` - Column relative to the current basis to be entered into that basis.
+    /// * `pivot_row_index`: Index of the pivot row.
+    /// * `column`: Column relative to the current basis to be entered into that basis.
     ///
     /// # Note
     ///
@@ -1025,9 +1023,8 @@ impl<F: Field> CarryMatrix<F> {
         for &(edit_row_index, column_value) in column.iter_values() {
             if edit_row_index != pivot_row_index {
                 // Update the constraint
-                let old_b = self.b.get_value(edit_row_index);
-                let pivot_row_b = self.b.get_value(pivot_row_index);
-                self.b.set_value(edit_row_index,old_b - column_value * pivot_row_b);
+                let pivot_row_b = self.b[pivot_row_index];
+                self.b.shift_value(edit_row_index,-column_value * pivot_row_b);
 
                 // Update the basis inverse
                 self.basis_inverse_rows[edit_row_index] = self.basis_inverse_rows[edit_row_index]
@@ -1043,7 +1040,7 @@ impl<F: Field> CarryMatrix<F> {
     ///
     /// # Arguments
     ///
-    /// * `original_column` - A `SparseVector<T>` of length `m`.
+    /// * `original_column`: A `SparseVector<T>` of length `m`.
     ///
     /// # Return value
     ///
@@ -1079,18 +1076,17 @@ impl<F: Field> CarryMatrix<F> {
     ///
     /// # Arguments
     ///
-    /// * `pivot_row_index` - Index of the pivot row.
-    /// * `column_value` - Relative cost value for the pivot column.
+    /// * `pivot_row_index`: Index of the pivot row.
+    /// * `column_value`: Relative cost value for the pivot column.
     ///
     /// # Note
     ///
     /// This method requires a normalized pivot element.
     fn row_reduce_update_minus_pi_and_obj(&mut self, pivot_row_index: usize, column_value: F) {
-        self.minus_objective -= column_value * self.b.get_value(pivot_row_index);
+        self.minus_objective -= column_value * self.b[pivot_row_index];
 
         for &(column_index, value) in self.basis_inverse_rows[pivot_row_index].iter_values() {
-            let old = self.minus_pi.get_value(column_index);
-            self.minus_pi.set_value(column_index, old - column_value * value);
+            self.minus_pi.shift_value(column_index, - column_value * value);
         }
     }
 
@@ -1102,7 +1098,7 @@ impl<F: Field> CarryMatrix<F> {
 
         let mut total = F::additive_identity();
         for (j, value) in column.values_into_iter() {
-            total += self.minus_pi.get_value(j) * value;
+            total += self.minus_pi[j] * value;
         }
         total
     }
@@ -1111,13 +1107,13 @@ impl<F: Field> CarryMatrix<F> {
     ///
     /// # Arguments
     ///
-    /// * `i` - Index of the constraint to retrieve value from, in range `0` until `m`.
+    /// * `i`: Index of the constraint to retrieve value from, in range `0` until `m`.
     ///
     /// # Return value
     ///
     /// The constraint value.
     fn get_constraint_value(&self, i: usize) -> F {
-        self.b.get_value(i)
+        self.b[i]
     }
 
     /// Get the objective function value for the current basis.
@@ -1155,7 +1151,7 @@ impl<F: Field> Display for CarryMatrix<F> {
         writeln!(f, "B^-1:")?;
         for row in 0..self.m() {
             for column in 0..self.m() {
-                write!(f, "\t{}", self.basis_inverse_rows[row].get_value(column))?;
+                write!(f, "\t{}", self.basis_inverse_rows[row][column])?;
             }
             writeln!(f, "")?;
         }
@@ -1183,9 +1179,9 @@ impl<'a, F: Field, MP: MatrixProvider<F>> RemoveRows<'a, F, MP> {
     ///
     /// # Arguments
     ///
-    /// * `provider` - Reference to an instance implementing the `MatrixProvider` trait. Rows from
+    /// * `provider`: Reference to an instance implementing the `MatrixProvider` trait. Rows from
     /// this provider will be removed.
-    /// * `rows_to_skip` - A **sorted** list of rows that are skipped.
+    /// * `rows_to_skip`: A **sorted** list of rows that are skipped.
     ///
     /// # Return value
     ///
@@ -1201,7 +1197,7 @@ impl<'a, F: Field, MP: MatrixProvider<F>> RemoveRows<'a, F, MP> {
     ///
     /// # Arguments
     ///
-    /// * `i` - Index of row in the version of the problem from which rows were removed (this
+    /// * `i`: Index of row in the version of the problem from which rows were removed (this
     /// struct).
     ///
     /// # Return value
@@ -1217,7 +1213,7 @@ impl<'a, F: Field, MP: MatrixProvider<F>> RemoveRows<'a, F, MP> {
     ///
     /// # Arguments
     ///
-    /// * `i` - Index of row in the version of the problem from which rows were removed (this
+    /// * `i`: Index of row in the version of the problem from which rows were removed (this
     /// struct)
     pub fn delete_row(&mut self, i: usize) {
         debug_assert!(i < self.provider.nr_rows() - self.rows_to_skip.len());
@@ -1241,7 +1237,7 @@ impl<'a, F: Field, MP: 'a + MatrixProvider<F>> RemoveRows<'a, F, MP> {
     ///
     /// # Arguments
     ///
-    /// * `i` - Index in the reduced version of the problem.
+    /// * `i`: Index in the reduced version of the problem.
     ///
     /// # Return value
     ///
@@ -1283,7 +1279,7 @@ impl<'a, F: Field, MP: 'a + MatrixProvider<F>> RemoveRows<'a, F, MP> {
     ///
     /// # Arguments
     ///
-    /// * `i` - Index in the reduced version of the problem to be deleted from the original problem.
+    /// * `i`: Index in the reduced version of the problem to be deleted from the original problem.
     fn delete_index(skip_indices_array: &mut Vec<usize>, i: usize) {
         let in_original_problem = Self::get_underlying_index(skip_indices_array, i);
         debug_assert!(skip_indices_array.contains(&in_original_problem));

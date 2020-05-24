@@ -26,7 +26,7 @@ mod token;
 ///
 /// # Arguments
 ///
-/// * `program` - The input in [MPS format](https://en.wikipedia.org/wiki/MPS_(format)).
+/// * `program`: The input in [MPS format](https://en.wikipedia.org/wiki/MPS_(format)).
 ///
 /// # Return value
 ///

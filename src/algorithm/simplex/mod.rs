@@ -4,10 +4,9 @@
 //! algorithm is implemented as described in chapters 2 and 4 of Combinatorial Optimization, a book
 //! by Christos H. Papadimitriou and Kenneth Steiglitz.
 use crate::algorithm::simplex::data::{Artificial, NonArtificial, RemoveRows, Tableau};
-use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, primal, Rank};
-use crate::algorithm::simplex::matrix_provider::{MatrixProvider};
+use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
+use crate::algorithm::simplex::matrix_provider::MatrixProvider;
 use crate::algorithm::simplex::strategy::pivot_rule::PivotRule;
-use crate::data::linear_program::elements::LinearProgramType;
 use crate::data::number_types::traits::OrderedField;
 
 pub mod data;
@@ -21,7 +20,7 @@ pub mod strategy;
 /// First finds a basic feasible solution, and then optimizes it.
 pub fn solve_relaxation<OF: OrderedField, MP, ArtificialPR, NonArtificialPR> (
     provider: &MP,
-) -> LinearProgramType<OF>
+) -> OptimizationResult<OF>
     where
         MP: MatrixProvider<OF>,
         ArtificialPR: PivotRule<Artificial>,
@@ -29,7 +28,7 @@ pub fn solve_relaxation<OF: OrderedField, MP, ArtificialPR, NonArtificialPR> (
 {
     let mut artificial_tableau = Tableau::<OF, Artificial, _>::new(provider);
     match artificial_primal::<_, _, ArtificialPR>(&mut artificial_tableau) {
-        FeasibilityResult::Infeasible => return LinearProgramType::Infeasible,
+        FeasibilityResult::Infeasible => return OptimizationResult::Infeasible,
         FeasibilityResult::Feasible(Rank::Deficient(rows_to_remove)) => {
             let rows_removed = RemoveRows::new(provider, rows_to_remove);
             let mut non_artificial_tableau = Tableau::<OF, NonArtificial, MP>::from_artificial_removing_rows(artificial_tableau, &rows_removed);
@@ -39,22 +38,21 @@ pub fn solve_relaxation<OF: OrderedField, MP, ArtificialPR, NonArtificialPR> (
             let mut non_artificial_tableau = Tableau::<OF, NonArtificial, MP>::from_artificial(artificial_tableau);
             primal::<_, _, NonArtificialPR>(&mut non_artificial_tableau)
         },
-    }.into()
+    }
 }
 
 #[cfg(test)]
 mod test {
     use num::rational::Ratio;
-    use num::traits::FromPrimitive;
 
-    use crate::algorithm::simplex::solve_relaxation;
+    use crate::algorithm::simplex::logic::OptimizationResult;
     use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable};
+    use crate::algorithm::simplex::solve_relaxation;
     use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
-    use crate::data::linear_algebra::vector::DenseVector;
+    use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
     use crate::data::linear_algebra::vector::test::TestVector;
-    use crate::data::linear_program::elements::{LinearProgramType, VariableType};
+    use crate::data::linear_program::elements::VariableType;
     use crate::data::number_types::traits::RealField;
-    use crate::R64;
     use crate::RF;
 
     fn matrix_data_1<RF: RealField>() -> MatrixData<RF> {
@@ -87,6 +85,7 @@ mod test {
     #[test]
     fn test_solve_relaxation_1() {
         let result = solve_relaxation::<Ratio<i64>, _, FirstProfitable, FirstProfitable>(&matrix_data_1());
-        assert_eq!(result, LinearProgramType::FiniteOptimum(-R64!(5f64 / 2f64)));
+        // TODO
+        assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![], 1)));
     }
 }
