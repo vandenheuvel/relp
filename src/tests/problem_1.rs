@@ -4,8 +4,9 @@
 use std::collections::HashSet;
 use std::convert::{TryFrom, TryInto};
 
-use crate::{RF, R32};
-use num::FromPrimitive;
+use num::rational::Ratio;
+
+use crate::RF;
 use crate::algorithm::simplex::data::{Artificial, CarryMatrix, NonArtificial, Tableau};
 use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
@@ -21,7 +22,6 @@ use crate::data::number_types::traits::RealField;
 use crate::io::mps::{Bound, BoundType, Constraint, Rhs, Variable};
 use crate::io::mps::parsing::{into_atom_lines, UnstructuredBound, UnstructuredColumn, UnstructuredMPS, UnstructuredRhs, UnstructuredRow};
 use crate::io::mps::structuring::MPS;
-use num::rational::Ratio;
 
 #[test]
 fn test_conversion_pipeline() {

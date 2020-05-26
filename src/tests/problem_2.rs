@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 
-use num::FromPrimitive;
 use num::rational::Ratio;
 
-use crate::{R32, RF};
+use crate::RF;
 use crate::algorithm::simplex::data::{Artificial, CarryMatrix, NonArtificial, Tableau};
 use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable};

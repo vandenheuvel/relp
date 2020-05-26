@@ -6,6 +6,7 @@
 #![feature(is_sorted)]
 #![feature(cmp_min_max_by)]
 #![feature(exclusive_range_pattern, half_open_range_patterns)]
+#![feature(or_patterns)]
 
 #[macro_use]
 extern crate approx;

@@ -25,8 +25,6 @@ use crate::data::linear_program::general_form::OriginalVariable::Removed;
 use crate::data::linear_program::general_form::RemovedVariable::{FunctionOfOthers, Solved};
 use crate::data::linear_program::solution::Solution;
 use crate::data::number_types::traits::{Field, OrderedField};
-use crate::io::mps::Bound;
-use daggy::petgraph::Direction;
 
 /// A linear program in general form.
 ///
@@ -339,14 +337,13 @@ impl<OF: OrderedField> GeneralForm<OF> {
             return Ok(());
         }
         // Domain propagation
-        if let Some(&constraint) = index.activity_queue.iter().next() {
-            self.presolve_constraint_by_domain_propagation(constraint, index)?;
+        if let Some(&(constraint, direction)) = index.activity_queue.iter().next() {
+            self.presolve_constraint_by_domain_propagation(constraint, direction, index)?;
             return Ok(());
         }
 
         Ok(())
     }
-
 
     /// Whether an empty constraint indicates infeasibility.
     ///
@@ -396,7 +393,11 @@ impl<OF: OrderedField> GeneralForm<OF> {
         for (row, coefficient_value) in column_to_scan {
             self.b.shift_value(row, - coefficient_value * value);
             index.constraint_counters[row] -= 1;
-            index.readd_row_to_queues(row);
+            match index.constraint_counters[row] {
+                0 => { index.empty_row_queue.insert(row); },
+                1 => { index.bound_queue.insert(row); },
+                _ => {},
+            };
         }
         self.fixed_cost += self.variables[variable].cost * value;
 
@@ -437,24 +438,17 @@ impl<OF: OrderedField> GeneralForm<OF> {
         }
 
         let bound_value = self.b[constraint] / value;
-        let mut bound_changed = false;
         for direction in changes {
             let change = match direction {
                 BoundDirection::Lower => self.variables[column].update_lower_bound(bound_value),
                 BoundDirection::Upper => self.variables[column].update_upper_bound(bound_value),
             };
-            if change.is_some() {
-                bound_changed = true;
-            }
-            if let Some(Some(amount)) = change {
-                index.update_activity_bound(column, direction, amount);
+            if let Some(change) = change {
+                index.after_bound_change(column, value, direction, change, &self.variables);
             }
         }
 
         if self.variables[column].has_feasible_value() {
-            if bound_changed {
-                index.after_bound_change(column, &self.variables);
-            }
             index.constraint_counters[constraint] -= 1;
             index.variable_counters[column] -= 1;
             index.remove_constraint(constraint);
@@ -502,6 +496,18 @@ impl<OF: OrderedField> GeneralForm<OF> {
             self.save_slack_value(constraint, variable_index, coefficient, index);
             index.constraint_counters[constraint] -= 1;
             index.variable_counters[variable_index] -= 1;
+            if effective_bounds.0.is_none() {
+                index.activity_counters[constraint].0 -= 1;
+                if index.activity_counters[constraint].0 <= 1 {
+                    index.activity_queue.insert((constraint, BoundDirection::Lower));
+                }
+            }
+            if effective_bounds.1.is_none() {
+                index.activity_counters[constraint].1 -= 1;
+                if index.activity_counters[constraint].0 <= 1 {
+                    index.activity_queue.insert((constraint, BoundDirection::Upper));
+                }
+            }
             index.remove_variable(variable_index);
             self.update_or_remove_bound(constraint, coefficient, new_situation, index);
         } else {
@@ -620,6 +626,7 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// # Arguments
     ///
     /// * `constraint`: Index of the constraint under consideration.
+    /// * `direction`: Whether the activity lower- or upperbound should be used.
     ///
     /// # Return value
     ///
@@ -627,41 +634,215 @@ impl<OF: OrderedField> GeneralForm<OF> {
     fn presolve_constraint_by_domain_propagation(
         &mut self,
         constraint: usize,
+        direction: BoundDirection,
         index: &mut PresolveIndex<OF>,
     ) -> Result<(), LinearProgramType<OF>> {
-        let (lower, upper) = self.compute_activity_bounds_if_necessary(constraint, index);
+        // We remove from the activity queue here, but the below calls might readd this constraint
+        // to the `index.activity_queue` again.
+        index.activity_queue.remove(&(constraint, direction));
+        let counter = match direction {
+            BoundDirection::Lower => index.activity_counters[constraint].0,
+            BoundDirection::Upper => index.activity_counters[constraint].1,
+        };
+        match counter {
+            0 => self.for_entire_constraint(constraint, direction, index),
+            1 => {
+                self.create_variable_bound(constraint, direction, index);
+                Ok(())
+            },
+            _ => panic!(),
+        }
+    }
 
-        if self.is_infeasible_due_to_activity_bounds(constraint, lower, upper) {
+    /// Apply domain propagation through activation bounds for a constraint where all relevant
+    /// variable bounds are known.
+    ///
+    /// Attempts to both prove infeasibility and removal of the entire constraint. Afterwards, it
+    /// attempts to add any missing "opposite" bounds.
+    ///
+    /// # Arguments
+    ///
+    /// * `constraint`: Index of the constraint under consideration.
+    /// * `direction`: Whether the activity lower- or upperbound should be used.
+    fn for_entire_constraint(
+        &mut self,
+        constraint: usize,
+        direction: BoundDirection, // Activity bound that can be calculated
+        index: &mut PresolveIndex<OF>,
+    ) -> Result<(), LinearProgramType<OF>> {
+        debug_assert_eq!(
+            match direction {
+                BoundDirection::Lower => index.activity_counters[constraint].0,
+                BoundDirection::Upper => index.activity_counters[constraint].1,
+            },
+            0,
+        );
+
+        let bound = self.compute_activity_bound_if_needed(
+            constraint,
+            direction,
+            index,
+        );
+
+        if self.is_infeasible_due_to_activity_bounds(constraint, bound, direction) {
             return Err(LinearProgramType::Infeasible);
         }
 
-        match (self.constraint_types[constraint], self.activity_implied_constraint(constraint, lower, upper)) {
-            (_, None) => (),
-            (_, Some(ConstraintType::Equal))
-                | (ConstraintType::Greater, Some(ConstraintType::Greater))
-                | (ConstraintType::Less, Some(ConstraintType::Less)) => {
-                index.remove_constraint_values(constraint, &self.constraints, &self.variables);
-                index.remove_constraint(constraint);
-                return Ok(());
-            },
-            (ConstraintType::Equal, Some(ConstraintType::Greater)) => {
-                // TODO(OPTIMIZATION): This removing half of this bound actually improve
-                //  performance? It might cause a slack.
-                self.constraint_types[constraint] = ConstraintType::Less;
-            },
-            (ConstraintType::Equal, Some(ConstraintType::Less)) => {
-                // TODO(OPTIMIZATION): This removing half of this bound actually improve
-                //  performance? It might cause a slack.
-                self.constraint_types[constraint] = ConstraintType::Greater;
-            },
-            (ConstraintType::Less, Some(ConstraintType::Greater)) | (ConstraintType::Greater, Some(ConstraintType::Less)) => {},
+        if self.is_constraint_removable(constraint, bound, direction) {
+            index.remove_constraint_values(constraint, &self.constraints, &self.variables);
+            index.remove_constraint(constraint);
+            return Ok(());
         }
 
-        // We remove from the activity queue here, but the below call to `tighten_variable_bounds`
-        // might readd this constraint to the `index.activity_queue` again.
-        index.activity_queue.remove(&constraint);
-        self.tighten_variable_bounds(constraint, index);
+        match (direction, self.constraint_types[constraint]) {
+            (BoundDirection::Lower, ConstraintType::Less | ConstraintType::Equal)
+            | (BoundDirection::Upper, ConstraintType::Greater | ConstraintType::Equal) => {
+                let targets = self.iter_active_row(constraint, &index.variable_counters)
+                    .copied().collect::<Vec<_>>();
+                for (variable, coefficient) in targets {
+                    self.tighten_variable_bound(constraint, variable, coefficient, direction, bound, index);
+                }
+            },
+            _ => (),
+        }
+
         Ok(())
+    }
+
+    /// Apply domain propagation through activation bounds for a constraint where all of the
+    /// relevant variable bounds are known.
+    ///
+    /// # Arguments
+    ///
+    /// * `constraint`: Index of the constraint under consideration.
+    /// * `variable`: Index of variable who's relevant variable bound is not known, with all other
+    /// variable bounds in this constraint being known.
+    /// * `coefficient`: Nonzero coefficient of the variable in the constraint.
+    /// * `direction`: Whether the activity lower- or upperbound should be used.
+    /// * `activity_bound`: Value of the activity lower- or upperbound.
+    fn tighten_variable_bound(
+        &mut self,
+        constraint: usize,
+        variable: usize,
+        coefficient: OF,
+        direction: BoundDirection,
+        activity_bound: OF,
+        index: &mut PresolveIndex<OF>,
+    ) {
+        debug_assert_eq!(
+            match direction {
+                BoundDirection::Lower => index.activity_counters[constraint].0,
+                BoundDirection::Upper => index.activity_counters[constraint].1,
+            },
+            0,
+        );
+
+        let coefficient_sign = match coefficient.cmp(&OF::additive_identity()) {
+            Ordering::Greater => BoundDirection::Upper,
+            Ordering::Less => BoundDirection::Lower,
+            Ordering::Equal => panic!("Coefficients can't be zero"),
+        };
+
+        let bound = activity_bound - coefficient * match (direction, coefficient_sign) {
+            (BoundDirection::Lower, BoundDirection::Upper)
+            | (BoundDirection::Upper, BoundDirection::Lower) => self.variables[variable].lower_bound,
+            (BoundDirection::Upper, BoundDirection::Upper)
+            | (BoundDirection::Lower, BoundDirection::Lower) => self.variables[variable].upper_bound,
+        }.unwrap();
+
+        let variable_bound = (self.b[constraint] - bound) / coefficient;
+        let variable_bound_direction = match coefficient_sign {
+            BoundDirection::Lower => direction,
+            BoundDirection::Upper => !direction,
+        };
+        self.execute_tightening_change(constraint, variable, coefficient, variable_bound_direction, variable_bound, index);
+    }
+
+    /// Apply domain propagation through activation bounds for a constraint where all but one of the
+    /// relevant variable bounds are known.
+    ///
+    /// # Arguments
+    ///
+    /// * `constraint`: Index of the constraint under consideration.
+    /// * `direction`: Whether the activity lower- or upperbound should be used.
+    fn create_variable_bound(
+        &mut self,
+        constraint: usize,
+        direction: BoundDirection,
+        index: &mut PresolveIndex<OF>,
+    ) {
+        debug_assert_eq!(
+            match direction {
+                BoundDirection::Lower => index.activity_counters[constraint].0,
+                BoundDirection::Upper => index.activity_counters[constraint].1,
+            },
+            1,
+        );
+
+        if matches!(
+            (direction, self.constraint_types[constraint]),
+            (BoundDirection::Lower, ConstraintType::Greater) | (BoundDirection::Upper, ConstraintType::Less)
+        ) { return; }
+
+        let mut total_activity = OF::additive_identity();
+        let mut target = None;
+        for &(column, coefficient) in self.iter_active_row(constraint, &index.variable_counters) {
+            let relevant_bound = match (coefficient.cmp(&OF::additive_identity()), direction) {
+                (Ordering::Greater, BoundDirection::Lower)
+                | (Ordering::Less, BoundDirection::Upper) => self.variables[column].lower_bound,
+                (Ordering::Greater, BoundDirection::Upper)
+                | (Ordering::Less, BoundDirection::Lower) => self.variables[column].upper_bound,
+                (Ordering::Equal, _) => panic!(
+                    "No coefficient should be zero at this point. (row, column, coefficient) = ({}, {}, {})",
+                    constraint, column, coefficient,
+                ),
+            };
+
+            match relevant_bound {
+                Some(bound) => total_activity += coefficient * bound,
+                None => target = Some((column, coefficient)),
+            }
+        }
+        let (target_column, coefficient) = target.unwrap();
+
+        let variable_bound = (self.b[constraint] - total_activity) / coefficient;
+        self.execute_tightening_change(constraint, target_column, coefficient, direction, variable_bound, index);
+    }
+
+    /// Attempt to tighten variable bounds using newly found bounds.
+    ///
+    /// This is a helper method for `presolve_constraint_by_domain_propagation`.
+    ///
+    /// # Arguments
+    ///
+    /// * `constraint`: Index of the constraint under consideration.
+    /// * `variable`: Index of variable who's relevant variable bound is not known, with all other
+    /// variable bounds in this constraint being known.
+    /// * `coefficient`: Nonzero coefficient of the variable in the constraint.
+    /// * `direction`: Whether the variable lower- or upperbound should be updated.
+    /// * `value`: Value of the lower- or upperbound.
+    fn execute_tightening_change(
+        &mut self,
+        constraint: usize,
+        variable: usize,
+        coefficient: OF,
+        direction: BoundDirection,
+        value: OF,
+        index: &mut PresolveIndex<OF>,
+    ) {
+        let maybe_change = match direction {
+            BoundDirection::Lower => self.variables[variable].update_lower_bound(value),
+            BoundDirection::Upper => self.variables[variable].update_upper_bound(value),
+        };
+
+        // TODO: Rounding to integer bounds for integer problems
+        if let Some(change) = maybe_change {
+            index.after_bound_change(variable, coefficient, direction, change, &self.variables);
+
+            if let Some(by_how_much) = change {
+                index.update_activity_bounds(variable, direction, by_how_much);
+            }
+        }
     }
 
     /// If no value is known for one of the activity bounds, compute them.
@@ -676,35 +857,29 @@ impl<OF: OrderedField> GeneralForm<OF> {
     ///
     /// A tuple with a (lower, upper) activity bound. Can be `None` if not all of the relevant
     /// lower or upper bounds are known.
-    fn compute_activity_bounds_if_necessary(
+    fn compute_activity_bound_if_needed(
         &self,
         constraint: usize,
-        presolve_index: &mut PresolveIndex<OF>,
-    ) -> (Option<OF>, Option<OF>) {
-        if presolve_index.activity_bounds[constraint].0.is_none() {
-            presolve_index.activity_bounds[constraint].0 = self.sum_products(
-                constraint,
-                self.choose_relevant_bounds_to_compute_activity_bounds(
-                    constraint,
-                    BoundDirection::Lower,
-                    presolve_index,
-                ),
-                presolve_index,
-            );
-        }
-        if presolve_index.activity_bounds[constraint].1.is_none() {
-            presolve_index.activity_bounds[constraint].1 = self.sum_products(
-                constraint,
-                self.choose_relevant_bounds_to_compute_activity_bounds(
-                    constraint,
-                    BoundDirection::Upper,
-                    presolve_index,
-                ),
-                presolve_index,
-            );
-        }
+        direction: BoundDirection,
+        index: &mut PresolveIndex<OF>,
+    ) -> OF {
+        let bound = &mut match direction {
+            BoundDirection::Lower => index.activity_bounds[constraint].0,
+            BoundDirection::Upper => index.activity_bounds[constraint].1,
+        };
 
-        presolve_index.activity_bounds[constraint]
+        match bound {
+            Some(value) => *value,
+            None => {
+                let new_bound = self.iter_active_row(constraint, &index.variable_counters)
+                    .map(|&(variable, coefficient)| {
+                        coefficient * self.choose_relevant_bounds(variable, coefficient, direction).unwrap()
+                    })
+                    .sum();
+                *bound = Some(new_bound);
+                new_bound
+            }
+        }
     }
 
     /// Choose the relevant bound needed to compute the activity bound for each variable.
@@ -722,46 +897,22 @@ impl<OF: OrderedField> GeneralForm<OF> {
     /// # Return value
     ///
     /// The relevant bounds (either upper or lower) needed to compute the activity bound.
-    fn choose_relevant_bounds_to_compute_activity_bounds<'a>(
-        &'a self,
-        constraint: usize,
-        activity_bound_direction: BoundDirection,
-        index: &'a PresolveIndex<OF>,
-    ) -> impl Iterator<Item = Option<OF>> + 'a {
-        self.iter_active_row(constraint, &index.variable_counters)
-            .map(move |&(column, coefficient)| {
-                match (coefficient.cmp(&OF::additive_identity()), activity_bound_direction) {
-                    (Ordering::Greater, BoundDirection::Lower) | (Ordering::Less, BoundDirection::Upper) =>
-                        self.variables[column].lower_bound,
-                    (Ordering::Greater, BoundDirection::Upper) | (Ordering::Less, BoundDirection::Lower) =>
-                        self.variables[column].upper_bound,
-                    (Ordering::Equal, _) => panic!(
-                        "No coefficient should be zero at this point. (row, column, coefficient) = ({}, {}, {})",
-                        constraint, column, coefficient,
-                    ),
-                }
-            })
-    }
-
-    /// Compute the activity lower/upper bound using the relevant upper / lower bounds.
-    ///
-    /// This is essentially an inner product.
-    ///
-    /// This is a helper method for `presolve_constraint_by_domain_propagation`.
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint`: Index of the constrain being checked.
-    /// * `relevant_bounds`: The relevant bounds
-    fn sum_products(
+    fn choose_relevant_bounds(
         &self,
-        constraint: usize,
-        relevant_bounds: impl Iterator<Item = Option<OF>>,
-        index: &PresolveIndex<OF>,
+        variable: usize,
+        coefficient: OF,
+        activity_bound_direction: BoundDirection,
     ) -> Option<OF> {
-        self.iter_active_row(constraint, &index.variable_counters).zip(relevant_bounds)
-            .map(|(&(_, coefficient), bound): (_, Option<OF>)| bound.map(|b| b * coefficient))
-            .sum()
+        match (coefficient.cmp(&OF::additive_identity()), activity_bound_direction) {
+            (Ordering::Greater, BoundDirection::Lower) | (Ordering::Less, BoundDirection::Upper) =>
+                self.variables[variable].lower_bound,
+            (Ordering::Greater, BoundDirection::Upper) | (Ordering::Less, BoundDirection::Lower) =>
+                self.variables[variable].upper_bound,
+            (Ordering::Equal, _) => panic!(
+                "No coefficient should be zero at this point. (variable, coefficient) = ({}, {})",
+                variable, coefficient,
+            ),
+        }
     }
 
     /// Whether the problem is infeasible because a constraint exceeds the activity the equation can
@@ -771,151 +922,33 @@ impl<OF: OrderedField> GeneralForm<OF> {
     fn is_infeasible_due_to_activity_bounds(
         &self,
         constraint: usize,
-        activity_lower_bound: Option<OF>,
-        activity_upper_bound: Option<OF>,
+        bound_value: OF,
+        direction: BoundDirection
     ) -> bool {
-        let lower_violated = activity_upper_bound.map_or(false, |bound| bound < self.b[constraint]);
-        let upper_violated = activity_lower_bound.map_or(false, |bound| bound > self.b[constraint]);
-
-        match self.constraint_types[constraint] {
-            ConstraintType::Greater => lower_violated,
-            ConstraintType::Less => upper_violated,
-            ConstraintType::Equal => lower_violated || upper_violated,
+        match (direction, self.constraint_types[constraint]) {
+            (BoundDirection::Lower, ConstraintType::Less | ConstraintType::Equal) => bound_value > self.b[constraint],
+            (BoundDirection::Upper, ConstraintType::Greater | ConstraintType::Equal) => bound_value < self.b[constraint],
+            _ => false,
         }
     }
 
-    /// What part of the existing constraint the activity bounds imply.
-    ///
-    /// This is a helper method for `presolve_constraint_by_domain_propagation`.
-    fn activity_implied_constraint(
-        &self,
-        constraint: usize,
-        activity_lower_bound: Option<OF>,
-        activity_upper_bound: Option<OF>,
-    ) -> Option<ConstraintType> {
-        let lower_redundant = activity_lower_bound.map_or(false, |bound| bound >= self.b[constraint]);
-        let upper_redundant = activity_upper_bound.map_or(false, |bound| bound <= self.b[constraint]);
-
-        match (lower_redundant, upper_redundant) {
-            (false, false) => None,
-            (false, true) => Some(ConstraintType::Less),
-            (true, false) => Some(ConstraintType::Greater),
-            (true, true) => Some(ConstraintType::Equal),
-        }
-    }
-
-    /// Activity bounds imply variable bounds that are processed by this method.
-    ///
-    /// This is a helper method for `presolve_constraint_by_domain_propagation`. It should be called
-    /// after the variable bounds have been updated, and a check for the redundancy of the entire
-    /// constraint has been done by `presolve_constraint_by_domain_propagation`.
-    fn tighten_variable_bounds(
-        &mut self,
-        constraint: usize,
-        index: &mut PresolveIndex<OF>,
-    ) {
-        let potential_changes = self.iter_active_row(constraint, &index.variable_counters)
-            .map(|&(variable, coefficient)| {
-                (variable, self.determine_whether_bound_can_be_tightened(
-                    constraint, &self.variables[variable], coefficient, &index.activity_bounds[constraint],
-                ))
-            })
-            .flat_map(|(variable, new_bounds)| {
-                new_bounds.into_iter().map(move |(direction, value)| (variable, direction, value))
-            })
-            .collect::<Vec<_>>();
-
-        for (variable, direction, value) in potential_changes {
-            self.execute_tightening_change(variable, direction, value, index)
-        }
-    }
-
-    /// Determine which variable bounds are implied by the activity bound.
-    ///
-    /// TODO: Compute the activity bounds also when one value is missing.
-    ///
-    /// This is a helper method for `presolve_constraint_by_domain_propagation`.
+    /// Whether a constraint can be removed.
     ///
     /// # Arguments
     ///
-    /// * `constraint`: Index of the constraint from which the variable bounds are derived.
-    /// * `variable`: Index of the variable who's bound we attempt to tighten.
-    /// * `coefficient`: Coefficient of the variable in the constraint.
-    /// * `activity_bounds`: Activity bounds for this constraint.
-    /// * `changes`: A `Vec` of (variable index, bound direction, bound value) tuples in which
-    /// derived bounds are collected by the calling method.
-    fn determine_whether_bound_can_be_tightened(
+    /// * `constraint`: Index of the constraint under consideration.
+    /// * `value`: Value of the lower- or upperbound.
+    /// * `direction`: Whether the activity lower- or upperbound is known.
+    fn is_constraint_removable(
         &self,
         constraint: usize,
-        variable: &Variable<OF>,
-        coefficient: OF,
-        activity_bounds: &(Option<OF>, Option<OF>),
-    ) -> impl IntoIterator<Item = (BoundDirection, OF)> {
-        debug_assert!(constraint < self.nr_constraints());
-
-        let coefficient_sign = match coefficient.cmp(&OF::additive_identity()) {
-            Ordering::Greater => BoundDirection::Upper,
-            Ordering::Less => BoundDirection::Lower,
-            Ordering::Equal => panic!("Coefficients can't be zero"),
-        };
-
-        // Switching variable bounds for a negative sign
-        let (variable_lower, variable_upper) = match coefficient_sign {
-            BoundDirection::Upper => (variable.lower_bound, variable.upper_bound),
-            BoundDirection::Lower => (variable.upper_bound, variable.lower_bound),
-        };
-
-        // Bound to subtract from total activity bound
-        let (left, right) = match self.constraint_types[constraint] {
-            ConstraintType::Greater => (Some(variable_upper), None),
-            ConstraintType::Equal => (Some(variable_upper), Some(variable_lower)),
-            ConstraintType::Less => (None, Some(variable_lower)),
-        };
-
-        let variable_bound = |total: Option<OF>, side: Option<Option<OF>>| {
-            total
-                .map(|activity| {
-                    side.flatten().map(|side| activity - coefficient * side)
-                })
-                .flatten()
-                .map(|bound| (self.b[constraint] - bound) / coefficient)
-        };
-        let left = variable_bound(activity_bounds.1, left);
-        let right = variable_bound(activity_bounds.0, right);
-
-        let mut derived_bounds = Vec::with_capacity(2);
-        if let Some(bound) = left { derived_bounds.push((!coefficient_sign, bound)); }
-        if let Some(bound) = right { derived_bounds.push((coefficient_sign, bound)); }
-        derived_bounds
-    }
-
-    /// Attempt to tighten variable bounds using newfound bounds.
-    ///
-    /// This is a helper method for `presolve_constraint_by_domain_propagation`.
-    ///
-    /// # Arguments
-    ///
-    /// * `variable`: Variable who's bound might be tightened
-    /// * `direction`: Which one of the two bounds to attempt to tighten
-    /// * `value`: Might be the new bound value
-    fn execute_tightening_change(
-        &mut self,
-        variable: usize,
+        bound_value: OF,
         direction: BoundDirection,
-        value: OF,
-        index: &mut PresolveIndex<OF>,
-    ) {
-        let maybe_change = match direction {
-            BoundDirection::Lower => self.variables[variable].update_lower_bound(value),
-            BoundDirection::Upper => self.variables[variable].update_upper_bound(value),
-        };
-
-        // TODO: Rounding to integer bounds for integer problems
-        if let Some(change) = maybe_change {
-            index.after_bound_change(variable, &self.variables);
-            if let Some(by_how_much) = change {
-                index.update_activity_bound(variable, direction, by_how_much);
-            }
+    ) -> bool {
+        match (direction, self.constraint_types[constraint]) {
+            (BoundDirection::Lower, ConstraintType::Greater) => bound_value >= self.b[constraint],
+            (BoundDirection::Upper, ConstraintType::Less) => bound_value <= self.b[constraint],
+            _ => false,
         }
     }
 
@@ -936,10 +969,10 @@ impl<OF: OrderedField> GeneralForm<OF> {
     fn iter_active_row<'a>(
         &'a self,
         row: usize,
-        column_counters: &'a Vec<usize>,
+        variable_counters: &'a Vec<usize>,
     ) -> impl Iterator<Item = &'a (usize, OF)> {
         self.constraints.iter_row(row)
-            .filter(move|&&(j, _)| column_counters[j] != 0)
+            .filter(move|&&(j, _)| variable_counters[j] != 0)
     }
 
     /// Sets variables that can be optimized independently of all others to their optimal values.
@@ -1290,8 +1323,9 @@ struct PresolveIndex<F: Field> {
     /// All elements should have row count 1.
     bound_queue: HashSet<usize>,
     /// Constraints to check for activity bound tightening.
-    /// All elements need to be checked at least once.
-    activity_queue: HashSet<usize>,
+    ///
+    /// The relevant activity counter (`.0` for `Lower`, `.1` for `Upper`) should be either 0 or 1.
+    activity_queue: HashSet<(usize, BoundDirection)>,
     /// Variables that are fixed need substitution.
     /// All elements have a single feasible value.
     substitution_queue: HashSet<usize>,
@@ -1327,8 +1361,12 @@ struct PresolveIndex<F: Field> {
     /// We maintain the computed activity bounds.
     /// TODO(PRECISION): Include counter for recomputation (numerical errors accumulate)
     activity_bounds: Vec<(Option<F>, Option<F>)>,
-    /// TODO(OPTIMIZATION): Add index counting whether an activity bound can be computed (all active
-    ///  elements are iterated to determine whether the bound can be computed, can be avoided).
+    /// The number of bounds relevant to the computation of the lower (respectively upper) activity
+    /// bound that are missing before the activity bound can be computed.
+    ///
+    /// If only one bound is missing, a variable bound can be computed. If none are missing, the
+    /// entire variable bound can be computed.
+    activity_counters: Vec<(usize, usize)>,
 
     // Elements from the general form
     /// Column major representation of the constraint matrix (a copy).
@@ -1362,6 +1400,24 @@ impl<OF: OrderedField> PresolveIndex<OF> {
             .map(|j| columns.data[j].len())
             .collect::<Vec<_>>();
 
+        let activity_counters = general_form.constraints.iter_rows().map(|row| {
+            row.iter().map(|&(j, coefficient)| {
+                let (lower, upper) =  (general_form.variables[j].lower_bound, general_form.variables[j].upper_bound);
+                match coefficient.cmp(&OF::additive_identity()) {
+                    Ordering::Greater => (lower, upper),
+                    Ordering::Less => (upper, lower),
+                    Ordering::Equal => panic!(),
+                }
+            })
+                .fold((0, 0), |(lower_total, upper_total), (lower, upper)| {
+                    let is_missing = |option| match option {
+                        Some(_) => 0,
+                        None => 1,
+                    };
+                    (lower_total + is_missing(lower), upper_total + is_missing(upper))
+                })
+        }).collect::<Vec<_>>();
+
         Self {
             // Queues
             empty_row_queue: row_counters.iter().enumerate()
@@ -1370,7 +1426,19 @@ impl<OF: OrderedField> PresolveIndex<OF> {
             bound_queue: row_counters.iter().enumerate()
                 .filter(|&(_, &count)| count == 1)
                 .map(|(i, _)| i).collect(),
-            activity_queue: (0..general_form.nr_active_constraints()).collect(),
+            activity_queue: activity_counters.iter().enumerate()
+                .flat_map(|(i, &(lower_count, upper_count))| {
+                    let mut sides = Vec::with_capacity(2);
+                    if row_counters[i] > 1 {
+                        if lower_count == 0 {
+                            sides.push((i, BoundDirection::Lower));
+                        }
+                        if upper_count == 0 {
+                            sides.push((i, BoundDirection::Upper));
+                        }
+                    }
+                    sides
+                }).collect(),
 
             substitution_queue: general_form.variables.iter().enumerate()
                 .filter_map(|(j, variable)| variable.is_fixed().map(|_| j))
@@ -1394,6 +1462,7 @@ impl<OF: OrderedField> PresolveIndex<OF> {
             variable_counters: column_counters,
             constraint_counters: row_counters,
             activity_bounds: vec![(None, None); general_form.nr_constraints()],
+            activity_counters,
 
             columns,
         }
@@ -1408,23 +1477,51 @@ impl<OF: OrderedField> PresolveIndex<OF> {
     ///
     /// # Arguments
     ///
+    /// * `constraint`: Constraint under consideration
     /// * `variable`: Variable who's bound was changed.
+    /// * `coefficient`: Coefficient of `variable` in `constraint`. Only the sign matters.
+    /// * `direction`: Whether the lower- or upper variable bound was updated.
+    /// * `change`: Whether another bound was previously known, and the difference between the
+    /// former and current bound.
+    /// * `change`: Change with respect to the previous bound value.
     /// * `variables`: View into the general form's problem's variables that were active before the
     /// presolving started.
     fn after_bound_change(
         &mut self,
         variable: usize,
+        coefficient: OF,
+        direction: BoundDirection,
+        change: Option<OF>,
         variables: &Vec<Variable<OF>>,
     ) {
         debug_assert_ne!(self.variable_counters[variable], 0);
+        debug_assert!(match direction {
+            BoundDirection::Lower => change.map_or(true, |v| v > OF::additive_identity()),
+            BoundDirection::Upper => change.map_or(true, |v| v < OF::additive_identity()),
+        });
 
         if variables[variable].is_fixed().is_some() {
             self.substitution_queue.insert(variable);
+        }
+
+        if let Some(difference) = change {
+            self.update_activity_bounds(variable, direction, difference);
         } else {
-            let rows_to_recheck = self.iter_active_column(variable)
-                .map(|&(i, _)| i)
-                .collect::<Vec<_>>();
-            self.activity_queue.extend(rows_to_recheck.iter());
+            let constraints_to_check = self.iter_active_column(variable)
+                .copied().collect::<Vec<_>>();
+            for (constraint, coefficient) in constraints_to_check {
+                let (counter, activity_direction) = match (direction, coefficient.cmp(&OF::additive_identity())) {
+                    (BoundDirection::Lower, Ordering::Greater)
+                    | (BoundDirection::Upper, Ordering::Less) => (&mut self.activity_counters[constraint].0, BoundDirection::Lower),
+                    (BoundDirection::Lower, Ordering::Less)
+                    | (BoundDirection::Upper, Ordering::Greater) => (&mut self.activity_counters[constraint].1, BoundDirection::Upper),
+                    (_, Ordering::Equal) => panic!("Zero coefficient"),
+                };
+                *counter -= 1;
+                if *counter <= 1 {
+                    self.activity_queue.insert((constraint, activity_direction));
+                }
+            }
         }
     }
 
@@ -1439,9 +1536,9 @@ impl<OF: OrderedField> PresolveIndex<OF> {
     /// # Arguments
     ///
     /// * `variable`: Variable who's bound was changed.
-    /// * `direction`: Whether an upper or lower bound was changed.
+    /// * `direction`: Whether a variable upper or lower bound was changed.
     /// * `by_how_much`: Size of the change.
-    fn update_activity_bound(&mut self, variable: usize, direction: BoundDirection, by_how_much: OF) {
+    fn update_activity_bounds(&mut self, variable: usize, direction: BoundDirection, by_how_much: OF) {
         debug_assert!(match direction {
             BoundDirection::Lower => by_how_much > OF::additive_identity(),
             BoundDirection::Upper => by_how_much < OF::additive_identity(),
@@ -1452,16 +1549,19 @@ impl<OF: OrderedField> PresolveIndex<OF> {
                 continue;
             }
 
-            if let Some(ref mut bound) = match (direction, coefficient.cmp(&OF::additive_identity())) {
-                // Update the lower bound
-                (BoundDirection::Lower, Ordering::Greater) | (BoundDirection::Upper, Ordering::Less) => self.activity_bounds[row].0,
-                // Update the lower bound
-                (BoundDirection::Lower, Ordering::Less) | (BoundDirection::Upper, Ordering::Greater) => self.activity_bounds[row].1,
+            let (bound_to_edit, bound) = match (direction, coefficient.cmp(&OF::additive_identity())) {
+                (BoundDirection::Lower, Ordering::Greater)
+                | (BoundDirection::Upper, Ordering::Less) => (BoundDirection::Lower, &mut self.activity_bounds[row].0),
+                (BoundDirection::Lower, Ordering::Less)
+                | (BoundDirection::Upper, Ordering::Greater) => (BoundDirection::Upper, &mut self.activity_bounds[row].1),
                 (_, Ordering::Equal) => panic!("Zero coefficient"),
-            } {
+            };
+            if let Some(ref mut bound) = bound {
                 // TODO(NUMERICS): See Achterberg (2007), Algorithm 7.1
                 *bound += by_how_much * coefficient;
             }
+
+            self.activity_queue.insert((row, bound_to_edit));
         }
     }
 
@@ -1573,15 +1673,6 @@ impl<OF: OrderedField> PresolveIndex<OF> {
         }
     }
 
-    /// When a constraint counter drops low, this has implications for rules that should be tested.
-    fn readd_row_to_queues(&mut self, row: usize) {
-        match self.constraint_counters[row] {
-            0 => self.empty_row_queue.insert(row),
-            1 => self.bound_queue.insert(row),
-            _ => self.activity_queue.insert(row),
-        };
-    }
-
     /// Mark a constraint as removed.
     fn remove_constraint(&mut self, constraint: usize) {
         debug_assert_eq!(self.constraint_counters[constraint], 0);
@@ -1590,7 +1681,8 @@ impl<OF: OrderedField> PresolveIndex<OF> {
 
         self.empty_row_queue.remove(&constraint);
         self.bound_queue.remove(&constraint);
-        self.activity_queue.remove(&constraint);
+        self.activity_queue.remove(&(constraint, BoundDirection::Lower));
+        self.activity_queue.remove(&(constraint, BoundDirection::Upper));
     }
 
     /// Mark a variable as removed.
@@ -1745,7 +1837,7 @@ mod test {
     use crate::data::linear_algebra::vector::{DenseVector, Vector};
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::{ConstraintType, LinearProgramType, Objective, VariableType};
-    use crate::data::linear_program::general_form::{GeneralForm, Variable, PresolveIndex, OriginalVariable, RemovedVariable};
+    use crate::data::linear_program::general_form::{GeneralForm, OriginalVariable, PresolveIndex, RemovedVariable, Variable};
     use crate::data::linear_program::solution::Solution;
     use crate::R32;
 

@@ -13,7 +13,7 @@ pub enum ConstraintType {
 }
 
 /// Direction of a bound.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BoundDirection {
     Lower,
     Upper,
