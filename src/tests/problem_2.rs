@@ -31,7 +31,11 @@ fn test_conversion_pipeline() {
 
     // Get to a basic feasible solution
     let result = primal::<Ratio<i32>, _, FirstProfitable>(&mut tableau_form_computed);
-    assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![], 1)));
+    assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
+        (1, 0.5f64),
+        (3, 2.5f64),
+        (4, 1.5f64),
+    ], 5)));
 }
 
 pub fn matrix_data_form<RF: RealField>() -> MatrixData<RF> {

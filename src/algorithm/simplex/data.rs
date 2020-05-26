@@ -209,6 +209,7 @@ impl<'a, F: Field, TT: TableauType, MP: MatrixProvider<F>> Tableau<'a, F, TT, MP
         let mut tuples = self.carry.b.iter_values()
             .enumerate()
             .map(|(i, &v)| (self.basis_indices[i], v))
+            .filter(|&(_, v)| v != F::additive_identity())
             .collect::<Vec<_>>();
         tuples.sort_by_key(|&(i, _)| i);
         SparseVector::new(tuples, self.nr_columns())

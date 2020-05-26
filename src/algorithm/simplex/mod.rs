@@ -28,7 +28,7 @@ pub fn solve_relaxation<OF: OrderedField, MP, ArtificialPR, NonArtificialPR> (
 {
     let mut artificial_tableau = Tableau::<OF, Artificial, _>::new(provider);
     match artificial_primal::<_, _, ArtificialPR>(&mut artificial_tableau) {
-        FeasibilityResult::Infeasible => return OptimizationResult::Infeasible,
+        FeasibilityResult::Infeasible => OptimizationResult::Infeasible,
         FeasibilityResult::Feasible(Rank::Deficient(rows_to_remove)) => {
             let rows_removed = RemoveRows::new(provider, rows_to_remove);
             let mut non_artificial_tableau = Tableau::<OF, NonArtificial, MP>::from_artificial_removing_rows(artificial_tableau, &rows_removed);
@@ -62,11 +62,18 @@ mod test {
             vec![(0, RF!(1)), (1, RF!(1))],
         ];
         let lower_bounded = vec![];
-        let variables = vec![Variable {
-            cost: RF!(-1),
-            upper_bound: None,
-            variable_type: VariableType::Integer,
-        }; 2 ];
+        let variables = vec![
+            Variable {
+                cost: RF!(-2),
+                upper_bound: None,
+                variable_type: VariableType::Integer,
+            },
+            Variable {
+                cost: RF!(-1),
+                upper_bound: None,
+                variable_type: VariableType::Integer,
+            },
+        ];
         let b = DenseVector::from_test_data(vec![
             3f64 / 2f64,
             5f64 / 2f64,
@@ -85,7 +92,9 @@ mod test {
     #[test]
     fn test_solve_relaxation_1() {
         let result = solve_relaxation::<Ratio<i64>, _, FirstProfitable, FirstProfitable>(&matrix_data_1());
-        // TODO
-        assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![], 1)));
+        assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
+            (0, 3f64 / 2f64),
+            (1, 1f64),
+        ], 4)));
     }
 }

@@ -8,7 +8,7 @@ use approx::AbsDiffEq;
 
 use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, MatrixOrder, RowMajorOrdering, SparseMatrix};
 use crate::data::linear_algebra::SparseTuples;
-use crate::data::linear_algebra::vector::{DenseVector, Vector};
+use crate::data::linear_algebra::vector::DenseVector;
 use crate::data::linear_program::elements::{ConstraintType, VariableType};
 use crate::data::linear_program::elements::Objective;
 use crate::data::linear_program::general_form::GeneralForm;

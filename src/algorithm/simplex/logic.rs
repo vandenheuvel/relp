@@ -198,7 +198,6 @@ mod test {
     //    }
 
    #[test]
-   #[ignore]
    fn test_solve_matrix() {
        let data = matrix_data_form::<Ratio<i64>>();
        let result = solve_relaxation::<_, _, FirstProfitable, FirstProfitable>(&data);
@@ -210,7 +209,6 @@ mod test {
        //     (String::from("X5"), 1.5f64),
        // ]; Optimal value: R64!(4.5)
         assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
-            (0, 0f64),
             (1, 0.5f64),
             (3, 2.5f64),
             (4, 1.5f64),

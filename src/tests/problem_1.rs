@@ -4,7 +4,8 @@
 use std::collections::HashSet;
 use std::convert::{TryFrom, TryInto};
 
-use crate::RF;
+use crate::{RF, R32};
+use num::FromPrimitive;
 use crate::algorithm::simplex::data::{Artificial, CarryMatrix, NonArtificial, Tableau};
 use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
@@ -68,7 +69,11 @@ fn test_conversion_pipeline() {
 
     // Get to a basic feasible solution
     let result = primal::<Ratio<i32>, _, FirstProfitable>(&mut tableau_form_computed);
-    assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![], 1)));
+    assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
+        (0, 2f64),
+        (5, 2f64),
+        (6, 2f64),
+    ], 7)));
 }
 
 const MPS_LITERAL_STRING: &str = "NAME          TESTPROB
@@ -341,22 +346,19 @@ pub fn general_form<RF: RealField>() -> GeneralForm<RF> {
 
 pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
     let data = vec![
-        vec![1f64, 1f64, 0f64],
         vec![1f64, 0f64, 1f64],
         vec![0f64, -1f64, 1f64],
     ];
     let constraints = RowMajorOrdering::from_test_data(&data, 3);
 
     let constraint_types = vec![
-        ConstraintType::Less,
         ConstraintType::Greater,
         ConstraintType::Equal,
     ];
 
     let b = DenseVector::from_test_data(vec![
-        6f64,
-        10f64,
-        6f64,
+        2f64,
+        0f64,
     ]);
 
     let variables = vec![
@@ -364,8 +366,8 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
             variable_type: VariableType::Continuous,
             cost: RF!(1),
             lower_bound: Some(RF!(0)),
-            upper_bound: Some(RF!(4)),
-            shift: RF!(0),
+            upper_bound: Some(RF!(2)),
+            shift: RF!(-2),
             flipped: false
         },
         GeneralFormVariable {
@@ -380,12 +382,12 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
             variable_type: VariableType::Continuous,
             cost: RF!(9),
             lower_bound: Some(RF!(0)),
-            upper_bound: None,
-            shift: RF!(0),
+            upper_bound: Some(RF!(2)),
+            shift: RF!(-6),
             flipped: false
         },
     ];
-    let variable_names = vec!["XONE".to_string(), "XTWO".to_string(), "XTHREE".to_string()];
+    let variable_names = vec!["XONE".to_string(), "YTWO".to_string(), "ZTHREE".to_string()];
 
     GeneralForm::new(
         Objective::Minimize,
@@ -394,23 +396,22 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
         b,
         variables,
         variable_names,
-        RF!(4),
+        -RF!(-2 * 1) - RF!(1 * 4) - RF!(-6 * 9),
     )
 }
 
 pub fn matrix_data_form<RF: RealField>() -> MatrixData<RF> {
     let equal = vec![vec![(1, RF!(-1)), (2, RF!(1))]];
-    let upper_bounded = vec![vec![(0, RF!(1)), (1, RF!(1))]];
+    let upper_bounded = vec![];
     let lower_bounded = vec![vec![(0, RF!(1)), (2, RF!(1))]];
     let b = DenseVector::from_test_data(vec![
-        6f64,
-        6f64,
-        10f64,
+        0f64,
+        2f64,
     ]);
     let variables = vec![
         MatrixDataVariable {
             cost: RF!(1),
-            upper_bound: Some(RF!(4)),
+            upper_bound: Some(RF!(2)),
             variable_type: VariableType::Continuous,
         },
         MatrixDataVariable {
@@ -420,7 +421,7 @@ pub fn matrix_data_form<RF: RealField>() -> MatrixData<RF> {
         },
         MatrixDataVariable {
             cost: RF!(9),
-            upper_bound: None,
+            upper_bound: Some(RF!(2)),
             variable_type: VariableType::Continuous,
         },
     ];
@@ -437,9 +438,9 @@ pub fn matrix_data_form<RF: RealField>() -> MatrixData<RF> {
 pub fn artificial_tableau_form<RF: RealField, MP: MatrixProvider<RF>>(provider: &MP) -> Tableau<RF, Artificial, MP> {
     let m = 5;
     let carry = {
-        let minus_objective = RF!(-28);
+        let minus_objective = RF!(-8);
         let minus_pi = DenseVector::from_test_data(vec![-1f64; m]);
-        let b = DenseVector::from_test_data(vec![6f64, 6f64, 10f64, 4f64, 2f64]);
+        let b = DenseVector::from_test_data(vec![0f64, 2f64, 2f64, 2f64, 2f64]);
         let basis_inverse_rows = (0..m)
             .map(|i| SparseVector::standard_basis_vector(i, m))
             .collect();
@@ -458,25 +459,25 @@ pub fn artificial_tableau_form<RF: RealField, MP: MatrixProvider<RF>>(provider: 
 
 pub fn tableau_form<RF: RealField, MP: MatrixProvider<RF>>(provider: &MP) -> Tableau<RF, NonArtificial, MP> {
     let carry = {
-        let minus_objective = RF!(-84);
-        let minus_pi = DenseVector::from_test_data(vec![-9f64, -1f64, 0f64, 0f64, -12f64]);
-        let b = DenseVector::from_test_data(vec![2f64, 2f64, 8f64, 4f64, 0f64]);
+        let minus_objective = RF!(-28);
+        let minus_pi = DenseVector::from_test_data(vec![-9f64, 0f64, -1f64, -13f64, 0f64]);
+        let b = DenseVector::from_test_data(vec![2f64, 2f64, 2f64, 2f64, 0f64]);
         let basis_inverse_rows = vec![
-            SparseVector::from_test_data(vec![1f64, 1f64, -1f64, 0f64, 0f64]),
-            SparseVector::from_test_data(vec![0f64, 0f64, 0f64, 0f64, 1f64]),
-            SparseVector::from_test_data(vec![1f64, 0f64, 0f64, 0f64, 1f64]),
-            SparseVector::from_test_data(vec![0f64, 1f64, 0f64, 0f64, -1f64]),
-            SparseVector::from_test_data(vec![0f64, -1f64, 0f64, 1f64, 1f64]),
+            SparseVector::from_test_data(vec![1f64, 0f64, 0f64, 1f64, 0f64]),
+            SparseVector::from_test_data(vec![0f64, 0f64, 1f64, 0f64, 0f64]),
+            SparseVector::from_test_data(vec![1f64, -1f64, 1f64, 1f64, 0f64]),
+            SparseVector::from_test_data(vec![0f64, 0f64, 0f64, 1f64, 0f64]),
+            SparseVector::from_test_data(vec![-1f64, 0f64, 0f64, -1f64, 1f64]),
         ];
         CarryMatrix::<RF>::create(minus_objective, minus_pi, b, basis_inverse_rows)
     };
-    let basis_indices = vec![4, 1, 2, 0, 5];
+    let basis_indices = vec![2, 0, 3, 1, 6];
     let mut basis_columns = HashSet::new();
-    basis_columns.insert(4);
-    basis_columns.insert(1);
     basis_columns.insert(2);
     basis_columns.insert(0);
-    basis_columns.insert(5);
+    basis_columns.insert(3);
+    basis_columns.insert(1);
+    basis_columns.insert(6);
 
     Tableau::new_with_basis(
         provider,

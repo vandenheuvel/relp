@@ -21,7 +21,7 @@ use crate::data::number_types::traits::{Field, OrderedField, RealField};
 /// /                           || Vars of which we want a solution | Free variable dummies | Inequality slack vars |   Bound slack vars   |
 /// ----------------------------||----------------------------------|-----------------------|-----------------------|----------------------|
 /// ----------------------------||----------------------------------|-----------------------|-----------------------|----------------------| -----
-/// Eqquality constraints       ||            constants             |       constants       |           0           |           0          | |   |
+/// Equality constraints        ||            constants             |       constants       |           0           |           0          | |   |
 /// ----------------------------||----------------------------------|-----------------------|-----------------------|----------------------| |   |
 /// Inequality (<=) constraints ||            constants             |       constants       |     I     |     0     |           0          | | b |
 /// ----------------------------||----------------------------------|-----------------------|-----------------------|----------------------| |   |
@@ -259,6 +259,7 @@ impl<F: Field> MatrixProvider<F> for MatrixData<F> {
         constraint_coefficients
     }
 
+    /// Index of row that represents a bound.
     fn bound_row_index(
         &self,
         j: usize,
@@ -377,32 +378,32 @@ mod test {
         assert_eq!(matrix_data.nr_normal_variables(), 3);
 
         // // Variables with bound
-        assert_eq!(matrix_data.bounds(0), (R32!(0), Some(R32!(4))));
+        assert_eq!(matrix_data.bounds(0), (R32!(0), Some(R32!(2))));
         assert_eq!(matrix_data.bounds(1), (R32!(0), Some(R32!(2))));
         // Variable without bound
-        assert_eq!(matrix_data.bounds(2), (R32!(0), None));
+        assert_eq!(matrix_data.bounds(2), (R32!(0), Some(R32!(2))));
         // Slack variable, as such without bound
         assert_eq!(matrix_data.bounds(3), (R32!(0), None));
 
         // Variable column with bound constant
         assert_eq!(
             matrix_data.column(0),
-            SparseVector::new(vec![(1, R32!(1)), (2,  R32!(1)), (3,  R32!(1))], 5),
+            SparseVector::new(vec![(1, R32!(1)), (2,  R32!(1))], 5),
         );
         // Variable column without bound constant
         assert_eq!(
             matrix_data.column(2),
-            SparseVector::new(vec![(0,  R32!(1)), (2,  R32!(1))], 5),
+            SparseVector::new(vec![(0,  R32!(1)), (1, R32!(1)), (4, R32!(1))], 5),
         );
         // Upper bounded inequality slack
         assert_eq!(
             matrix_data.column(3),
-            SparseVector::new(vec![(1,  R32!(1))], 5),
+            SparseVector::new(vec![(1,  R32!(-1))], 5),
         );
         // Lower bounded inequality slack
         assert_eq!(
             matrix_data.column(4),
-            SparseVector::new(vec![(2, - R32!(1))], 5),
+            SparseVector::new(vec![(2, R32!(1))], 5),
         );
         // Variable upper bound slack
         assert_eq!(
@@ -425,11 +426,11 @@ mod test {
 
         assert_eq!(
             matrix_data.constraint_values(),
-            DenseVector::from_test_data(vec![6f64, 6f64, 10f64, 4f64, 2f64]),
+            DenseVector::from_test_data(vec![0f64, 2f64, 2f64, 2f64, 2f64]),
         );
 
-        assert_eq!(matrix_data.bound_row_index(0, BoundType::Upper), Some(3));
-        assert_eq!(matrix_data.bound_row_index(2, BoundType::Upper), None);
+        assert_eq!(matrix_data.bound_row_index(0, BoundType::Upper), Some(2));
+        assert_eq!(matrix_data.bound_row_index(2, BoundType::Upper), Some(4));
         assert_eq!(matrix_data.bound_row_index(3, BoundType::Upper), None);
         assert_eq!(matrix_data.bound_row_index(4, BoundType::Upper), None);
         assert_eq!(matrix_data.bound_row_index(5, BoundType::Upper), None);
@@ -445,15 +446,14 @@ mod test {
         assert_eq!(matrix_data.is_feasible(4, R32!(-1)), false);
         assert_eq!(matrix_data.is_feasible(5, R32!(2)), true);
 
-        assert_eq!(matrix_data.bounds(0).0, R32!(0));
-        assert_eq!(matrix_data.bounds(0).1.unwrap(), R32!(4));
-        assert_eq!(matrix_data.bounds(2), (R32!(0), None));
+        assert_eq!(matrix_data.bounds(0), (R32!(0), Some(R32!(2))));
+        assert_eq!(matrix_data.bounds(2), (R32!(0), Some(R32!(2))));
         assert_eq!(matrix_data.bounds(3), (R32!(0), None));
         assert_eq!(matrix_data.bounds(4), (R32!(0), None));
         assert_eq!(matrix_data.bounds(5), (R32!(0), None));
 
-        assert_eq!(matrix_data.nr_constraints(), 3);
-        assert_eq!(matrix_data.nr_bounds(), 2);
+        assert_eq!(matrix_data.nr_constraints(), 2);
+        assert_eq!(matrix_data.nr_bounds(), 3);
         assert_eq!(matrix_data.nr_rows(), 5);
         assert_eq!(matrix_data.nr_columns(), 7);
     }

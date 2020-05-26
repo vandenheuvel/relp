@@ -47,9 +47,8 @@ impl MatrixOrder for RowMajorOrdering {
     }
 
     fn from_test_data<RF: RealField>(rows: &Vec<Vec<f64>>, nr_columns: usize) -> SparseMatrix<RF, Self> {
-        if rows.len() > 0 {
-            debug_assert!(rows.iter().all(|v| v.len() == rows[0].len()));
-        }
+        debug_assert!(rows.iter().all(|v| v.len() == nr_columns));
+
         let nr_rows = rows.len();
 
         let mut data = vec![vec![]; nr_rows];

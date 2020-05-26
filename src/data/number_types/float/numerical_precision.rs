@@ -53,15 +53,15 @@ mod test {
 
     #[test]
     fn test_close_heuristic_fraction() {
-        let epsilon = 1e-15f64;
+        let epsilon = 1e-10f64;
         for x in vec![0.6584f64, 0.684684f64, 0.121484948f64] {
-            assert_relative_eq!(x, close_heuristic_fraction::<_, i64, u64>(x, 50, epsilon));
+            assert_relative_eq!(close_heuristic_fraction::<_, i128, u128>(x, 150, epsilon), x, epsilon=epsilon);
         }
         for x in vec![984654.65484f64, 4984.6484684f64, -4681984.8484948f64] {
-            assert_abs_diff_eq!(x, close_heuristic_fraction::<_, i64, u64>(x, 50, epsilon));
+            assert_abs_diff_eq!(close_heuristic_fraction::<_, i64, u64>(x, 150, epsilon), x, epsilon=epsilon);
         }
         for x in vec![0f64, 1e-16f64, 654654f64 - 1e-16f64] {
-            assert_abs_diff_eq!(x, close_heuristic_fraction::<_, i64, u64>(x, 50, epsilon));
+            assert_abs_diff_eq!(close_heuristic_fraction::<_, i32, u32>(x, 50, epsilon), x, epsilon=epsilon);
         }
     }
 }

@@ -305,7 +305,7 @@ mod test {
     use crate::num::FromPrimitive;
 
     /// TODO: Below is a well-known problematic float example. Is it even important (or feasible)
-            /// that this can be dealth with?
+    ///  that this can be dealth with?
     #[test]
     #[ignore]
     fn relative_error() {

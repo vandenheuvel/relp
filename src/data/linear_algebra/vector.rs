@@ -212,7 +212,7 @@ impl<F: Field> SparseVector<F> {
     fn set_zero(&mut self, i: usize) {
         match self.get_data_index(i) {
             Ok(index) => { self.data.remove(index); },
-            Err(index) => (),
+            Err(_) => (),
         }
     }
 
@@ -378,6 +378,9 @@ impl<F: Field> Vector<F> for SparseVector<F> {
         debug_assert!(data.is_sorted_by_key(|&(i, _)| i));
         debug_assert_ne!(len, 0);
         debug_assert!(data.len() <= len);
+        if !data.iter().all(|&(_, v)| v != F::additive_identity()) {
+            print!("x");
+        }
         debug_assert!(data.iter().all(|&(_, v)| v != F::additive_identity()));
 
         Self { data, len, constant_zero: F::additive_identity(), }
