@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::fmt::Error;
 use std::fmt::Formatter;
+use std::ops::{Index, IndexMut};
 use std::slice::Iter;
 
 use crate::algorithm::utilities::remove_indices;
@@ -13,10 +14,9 @@ use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, SparseMatrix};
 use crate::data::linear_algebra::SparseTuples;
 use crate::data::linear_algebra::utilities::remove_sparse_indices;
 use crate::data::number_types::traits::Field;
-use std::ops::{Index, IndexMut};
 
 /// Defines basic ways to create or change a vector, regardless of back-end.
-pub trait Vector<F>: Index<usize> + Eq + Display + Debug {
+pub trait Vector<F>: Index<usize> + PartialEq + Display + Debug {
     /// Items stored internally.
     type Inner;
 
@@ -320,8 +320,8 @@ impl<F: Field> SparseVector<F> {
     }
 
     /// Consume this `SparseVector` by iterating over it's inner `SparseTuple`'s.
-    pub fn values_into_iter(self) -> impl IntoIterator<Item = (usize, F)> {
-        self.data.into_iter()
+    pub fn values(self) -> impl IntoIterator<Item = (usize, F)> {
+        self.data
     }
 
     /// Create a `SparseVector` representation of standard basis unit vector e_i.
@@ -495,30 +495,32 @@ pub mod test {
 
     use std::f64::EPSILON;
 
+    use num::NumCast;
+
     use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
-    use crate::data::number_types::traits::RealField;
+    use crate::data::number_types::traits::{OrderedField, RealField};
     use crate::RF;
 
     pub trait TestVector<F>: Vector<F> {
-        fn from_test_data(data: Vec<f64>) -> Self;
+        fn from_test_data<T: NumCast>(data: Vec<T>) -> Self;
     }
     impl<RF: RealField> TestVector<RF> for DenseVector<RF> {
         /// Create a `DenseVector` from the provided data.
-        fn from_test_data(data: Vec<f64>) -> Self {
+        fn from_test_data<T: NumCast>(data: Vec<T>) -> Self {
             let size = data.len();
-            Self { data: data.into_iter().map(|v| RF!(v)).collect(), len: size, }
+            Self { data: data.into_iter().map(|v| RF!(v.to_f64().unwrap())).collect(), len: size, }
         }
     }
     impl<RF: RealField> TestVector<RF> for SparseVector<RF> {
         /// Create a `SparseVector` from the provided data.
-        fn from_test_data(data: Vec<f64>) -> Self {
+        fn from_test_data<T: NumCast>(data: Vec<T>) -> Self {
             debug_assert_ne!(data.len(), 0);
 
             let size = data.len();
             Self {
                 data: data.into_iter()
                     .enumerate()
-                    .map(|(i, v)| (i, RF!(v)))
+                    .map(|(i, v)| (i, RF!(v.to_f64().unwrap())))
                     .filter(|&(_, v)| v != RF::additive_identity())
                     .collect(),
                 len: size,
@@ -530,15 +532,15 @@ pub mod test {
 
     impl<RF: RealField> SparseVector<RF> {
         /// Create a `SparseVector` from the provided data.
-        pub fn from_test_tuples(data: Vec<(usize, f64)>, len: usize) -> Self {
+        pub fn from_test_tuples<T: NumCast + Copy>(data: Vec<(usize, T)>, len: usize) -> Self {
             debug_assert!(data.iter().all(|&(i, _)| i < len));
             debug_assert!(data.is_sorted_by_key(|&(i, _)| i));
             debug_assert_ne!(len, 0);
             debug_assert!(data.len() <= len);
-            debug_assert!(data.iter().all(|&(_, v)| v.abs() > EPSILON));
+            debug_assert!(data.iter().all(|&(_, v)| v.to_f64().unwrap().abs() > EPSILON));
 
             Self {
-                data: data.into_iter().map(|(i, v)| (i, RF!(v))).collect(),
+                data: data.into_iter().map(|(i, v)| (i, RF!(v.to_f64().unwrap()))).collect(),
                 len,
 
                 constant_zero: RF::zero(),
@@ -553,7 +555,7 @@ pub mod test {
 
     /// A test vector used in tests.
     fn test_vector<RF: RealField, V: TestVector<RF>>() -> V {
-        return V::from_test_data(test_data())
+        V::from_test_data(test_data())
     }
 
     /// Test
@@ -828,7 +830,7 @@ pub mod test {
 
             let mut v = SparseVector::<T>::from_test_tuples(vec![(0, 3f64)], 3);
             v.remove_indices(&vec![0]);
-            assert_eq!(v, SparseVector::from_test_tuples(vec![], 2));
+            assert_eq!(v, SparseVector::from_test_tuples::<f64>(vec![], 2));
 
             let vs = vec![(2, 2f64), (3, 3f64), (5, 5f64), (10, 10f64)];
             let mut v = SparseVector::<T>::from_test_tuples(vs, 11);

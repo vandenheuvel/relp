@@ -8,8 +8,9 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::data::linear_program::general_form::GeneralForm;
-use crate::data::number_types::traits::RealField;
-use crate::io::error::ImportError;
+use crate::data::number_types::traits::{OrderedField, RealField};
+use crate::io::error::Import;
+use num::FromPrimitive;
 
 pub mod error;
 pub mod mps;
@@ -22,28 +23,30 @@ const EPSILON: f64 = f64::EPSILON;
 
 /// The `import` function takes a file path and returns, if successful, a struct which can be
 /// converted to a linear program in general form.
-pub fn import<F: RealField>(file_path: &Path) -> Result<impl TryInto<GeneralForm<F>>, ImportError> {
+pub fn import<F: OrderedField + FromPrimitive>(
+    file_path: &Path
+) -> Result<impl TryInto<GeneralForm<F>>, Import> {
     // Open and read the file
     let mut program = String::new();
     File::open(&file_path)
-        .map_err(ImportError::IO)?
+        .map_err(Import::IO)?
         .read_to_string(&mut program)
-        .map_err(ImportError::IO)?;
+        .map_err(Import::IO)?;
 
     // Choose the right parser
     match file_path.extension() {
         Some(extension) => match extension.to_str() {
             Some("mps") => mps::import(&program),
-            Some(extension_string) => Err(ImportError::FileExtension(format!(
+            Some(extension_string) => Err(Import::FileExtension(format!(
                 "Could not recognise file extension \"{}\" of file: {:?}",
                 extension_string, file_path
             ))),
-            None => Err(ImportError::FileExtension(format!(
+            None => Err(Import::FileExtension(format!(
                 "Could not convert OsStr to &str, probably invalid unicode: {:?}",
                 extension
             ))),
         },
-        None => Err(ImportError::FileExtension(format!(
+        None => Err(Import::FileExtension(format!(
             "Could not read extension from file path: {:?}",
             file_path
         ))),

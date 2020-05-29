@@ -7,6 +7,9 @@
 #![feature(cmp_min_max_by)]
 #![feature(exclusive_range_pattern, half_open_range_patterns)]
 #![feature(or_patterns)]
+#![feature(vec_drain_as_slice)]
+#![feature(fixed_size_array)]
+#![feature(box_patterns)]
 
 #[macro_use]
 extern crate approx;

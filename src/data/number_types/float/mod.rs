@@ -6,15 +6,16 @@ use core::fmt;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::{Product, Sum};
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign, Rem};
 
 use noisy_float::checkers::FiniteChecker;
 use noisy_float::FloatChecker;
-use num::{Float, FromPrimitive, ToPrimitive, Unsigned};
+use num::{Float, FromPrimitive, ToPrimitive, Unsigned, Num};
 use num::traits::{One, Zero};
 
 use crate::data::number_types::float::numerical_precision::close_heuristic_fraction;
 use crate::data::number_types::traits::{DedekindComplete, Field, OrderedField, RealField};
+use crate::io::error::Parse;
 
 pub mod numerical_precision;
 
@@ -72,6 +73,17 @@ impl<F: InnerF, OPS: InnerOPS> RealField for FECF<F, OPS> {
 impl<F: InnerF, OPS: InnerOPS> DedekindComplete for FECF<F, OPS> {}
 impl<F: InnerF, OPS: InnerOPS> OrderedField for FECF<F, OPS> {}
 
+impl<F: InnerF, OPS: InnerOPS> Num for FECF<F, OPS> {
+    type FromStrRadixErr = Parse;
+
+    fn from_str_radix(str: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
+        match F::from_str_radix(str, radix) {
+            Ok(value) => Ok(Self { value, operations: OPS::one() }),
+            Err(_) => Err(Parse::new(format!("Couldn't parse \"{}\" as FECF", str))),
+        }
+    }
+}
+
 /// Basic computational operations.
 impl<F: InnerF, OPS: InnerOPS> Field for FECF<F, OPS> {
     /// Create a zero valued `FECF`.
@@ -89,10 +101,21 @@ impl<F: InnerF, OPS: InnerOPS> Field for FECF<F, OPS> {
     }
 }
 
+impl<F: InnerF, OPS: InnerOPS> Rem for FECF<F, OPS> {
+    type Output = Self;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        Self {
+            value: self.value.rem(rhs.value),
+            operations: unimplemented!(),
+        }
+    }
+}
+
 impl<F: InnerF, OPS: InnerOPS> FECF<F, OPS> {
     /// If sufficiently close to a number which is likely to be closer to the true result of a
-    /// computation rather than a computation result with (accumulated) rounding errors, round and reset
-    /// the operations counter.
+    /// computation rather than a computation result with (accumulated) rounding errors, round and
+    /// reset the operations counter.
     fn trim_iid_rounding_errors(&mut self) {
         // if self.operations < OPS::from_u64(1e6 as u64).unwrap() {
         //     return

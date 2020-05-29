@@ -4,3 +4,5 @@
 
 #[cfg(all(test, feature = "miplib"))]
 mod miplib;
+#[cfg(all(test, feature = "burkardt"))]
+mod burkardt;

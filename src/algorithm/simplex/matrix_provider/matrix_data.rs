@@ -19,8 +19,7 @@ use crate::data::number_types::traits::{Field, OrderedField, RealField};
 /// The indexing for the variables and constraints is as follows:
 ///
 /// /                           || Vars of which we want a solution | Free variable dummies | Inequality slack vars |   Bound slack vars   |
-/// ----------------------------||----------------------------------|-----------------------|-----------------------|----------------------|
-/// ----------------------------||----------------------------------|-----------------------|-----------------------|----------------------| -----
+/// ============================||==================================|=======================|=======================|======================| -----
 /// Equality constraints        ||            constants             |       constants       |           0           |           0          | |   |
 /// ----------------------------||----------------------------------|-----------------------|-----------------------|----------------------| |   |
 /// Inequality (<=) constraints ||            constants             |       constants       |     I     |     0     |           0          | | b |
@@ -116,10 +115,10 @@ impl<F: Field> MatrixData<F> {
     ///
     /// # Arguments
     ///
-    /// * `data`: Sparse representation of constraints, which excludes simple bounds.
-    /// * `cost`: Sparse representation of the cost function.
+    /// TODO
     /// * `b`: Constraint values.
-    /// * `upper_bound`: For each variable,
+    /// * `negative_free_variable_dummy_index`: Index i contains the index of the i'th free
+    /// variable.
     pub fn new(
         equality_constraints: Vec<SparseTuples<F>>,
         upper_bounded_constraints: Vec<SparseTuples<F>>,
@@ -304,6 +303,26 @@ impl<F: Field> MatrixProvider<F> for MatrixData<F> {
             + self.nr_upper_bounded_constraints
             + self.nr_lower_bounded_constraints
             + self.nr_bounds()
+    }
+
+    fn reconstruct_solution(&self, column_values: SparseVector<F>) -> SparseVector<F> {
+        debug_assert_eq!(column_values.len(), self.nr_columns());
+
+        let mut out = SparseVector::new(
+            Vec::with_capacity(self.nr_normal_variables()),
+            self.nr_normal_variables(),
+        );
+        for (i, v) in column_values.values() {
+            if i < self.nr_normal_variables() {
+                out.set_value(i, v);
+            } else if i < self.nr_normal_variables() + self.nr_free_variable_dummies() {
+                out.shift_value(i, -v);
+            } else {
+                break
+            }
+        }
+
+        out
     }
 }
 

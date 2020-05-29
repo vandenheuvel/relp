@@ -338,6 +338,7 @@ impl<'a, OF: OrderedField, TT: TableauType, MP: MatrixProvider<OF>> Tableau<'a, 
     /// Check whether the tableau currently has a valid basic feasible solution.
     ///
     /// Only used for debug_purposes.
+    /// TODO: Move this method out of the impl.
     pub fn debug_assert_is_in_basic_feasible_solution_state(&self) -> bool {
         // Checking basis_columns
         // Correct number of basis columns (uniqueness is implied because it's a set)
@@ -1098,7 +1099,7 @@ impl<F: Field> CarryMatrix<F> {
         debug_assert_eq!(column.len(), self.m());
 
         let mut total = F::additive_identity();
-        for (j, value) in column.values_into_iter() {
+        for (j, value) in column.values() {
             total += self.minus_pi[j] * value;
         }
         total
@@ -1336,6 +1337,10 @@ where F: Field, MP: MatrixProvider<F> {
 
     fn nr_columns(&self) -> usize {
         self.provider.nr_columns()
+    }
+
+    fn reconstruct_solution(&self, column_values: SparseVector<F>) -> SparseVector<F> {
+        self.provider.reconstruct_solution(column_values)
     }
 }
 

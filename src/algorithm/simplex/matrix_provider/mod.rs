@@ -21,6 +21,16 @@ pub mod matrix_data;
 /// Note that a this trait doesn't have to be implemented by a (sparse) matrix data structure per
 /// se; it could also be implemented by a graph, which lets itself be represented by data in a
 /// matrix.
+/// The indexing for the variables and constraints is as follows:
+///
+/// /                 || Vars of which we want a solution | Constraint slack vars | Bound slack vars |
+/// ==================||==================================|=======================|==================|-----
+/// Constraints       ||            constants             |       constants       |         0        || b |
+/// ------------------||----------------------------------|-----------------------|------------------||---|
+///                   ||                                  |                       | +/- 1            |
+/// Bound constraints ||    constants (one 1 per row)     |           0           |       +/- 1      |
+///                   ||                                  |                       |            +/- 1 |
+/// --------------------------------------------------------------------------------------------------
 pub trait MatrixProvider<F: Field> {
     /// Column of the problem.
     ///
@@ -92,15 +102,16 @@ pub trait MatrixProvider<F: Field> {
 
     ///
     fn as_sparse_matrix(&self) -> SparseMatrix<F, ColumnMajorOrdering> {
-        ColumnMajorOrdering::new((0..self.nr_columns())
-                              .map(|j| self.column(j)
-                                  .iter_values()
-                                  .map(|&v| v)
-                                  .collect())
-                              .collect(),
-                                                self.nr_rows(),
-                                                self.nr_columns())
+        ColumnMajorOrdering::new(
+            (0..self.nr_columns())
+                .map(|j| self.column(j).iter_values().copied().collect())
+                .collect(),
+            self.nr_rows(),
+            self.nr_columns(),
+        )
     }
+
+    fn reconstruct_solution(&self, column_values: SparseVector<F>) -> SparseVector<F>;
 }
 
 /// A bound introduced in branch and bound is of type '<=' or '>='.

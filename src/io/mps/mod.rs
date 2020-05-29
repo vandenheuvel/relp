@@ -2,18 +2,17 @@
 //!
 //! Reading of `.mps` files, or files of the Mathematical Programming System format.
 //!
+//! See http://lpsolve.sourceforge.net/5.5/mps-format.htm for a specification.
+//!
 //! TODO:
 //!     * Support all `BoundType` variants
-use std::convert::identity;
-use std::convert::TryFrom;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
-use approx::AbsDiffEq;
+use num::FromPrimitive;
 
 use crate::data::linear_program::elements::ConstraintType;
 use crate::data::linear_program::elements::VariableType;
-use crate::io::EPSILON;
-use crate::io::error::ImportError;
+use crate::io::error::Import;
 use crate::io::mps::parsing::into_atom_lines;
 use crate::io::mps::parsing::UnstructuredMPS;
 use crate::io::mps::structuring::MPS;
@@ -31,10 +30,12 @@ mod token;
 /// # Return value
 ///
 /// A `Result<MPS, ImportError>` instance.
-pub fn import(program: &impl AsRef<str>) -> Result<MPS, ImportError> {
+pub fn import<F: FromPrimitive + Clone>(program: &impl AsRef<str>) -> Result<MPS<F>, Import> {
     let atom_lines = into_atom_lines(program);
-    let unstructured_mps = UnstructuredMPS::try_from(atom_lines).map_err(|e| ImportError::Parse(e))?;
-    unstructured_mps.try_into().map_err(|e| ImportError::LinearProgram(e))
+    let unstructured_mps = UnstructuredMPS::try_from(atom_lines)
+        .map_err(|e| Import::Parse(e))?;
+    unstructured_mps.try_into()
+        .map_err(|e| Import::LinearProgram(e))
 }
 
 /// MPS files are divided into sections.
@@ -64,13 +65,13 @@ enum RowType {
 ///
 /// Not all `BoundType` variants are currently supported.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum BoundType {
+pub(crate) enum BoundType<F> {
     /// b <- x (< +inf)
-    LowerContinuous,
+    LowerContinuous(F),
     /// (0 <=) x <= b
-    UpperContinuous,
+    UpperContinuous(F),
     /// x = b
-    Fixed,
+    Fixed(F),
     /// -inf < x < +inf
     Free,
     /// -inf < x (<= 0)
@@ -80,13 +81,13 @@ pub(crate) enum BoundType {
     /// x = 0 or 1
     Binary,
     /// b <= x (< +inf)
-    LowerInteger,
+    LowerInteger(F),
     /// (0 <=) x <= b
-    UpperInteger,
+    UpperInteger(F),
     /// x = 0 or l =< x =< b
     ///
     /// Note: appears only very rarely in the MIPLIB benchmark set.
-    SemiContinuous,
+    SemiContinuous(F, F),
 }
 
 /// Every `Row` has a name and a `RowType`.
@@ -98,27 +99,10 @@ pub(crate) struct Constraint {
 
 /// Is either continuous or integer, and has for some rows a coefficient.
 #[derive(Debug, PartialEq)]
-pub(crate) struct Variable {
+pub(crate) struct Variable<F> {
     pub name: usize,
     pub variable_type: VariableType,
-    pub values: Vec<(usize, f64)>,
-}
-
-impl AbsDiffEq for Variable {
-    type Epsilon = f64;
-
-    fn default_epsilon() -> <Self as AbsDiffEq>::Epsilon {
-        EPSILON
-    }
-
-    fn abs_diff_eq(&self, other: &Self, _epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
-        self.name == other.name &&
-            self.variable_type == other.variable_type &&
-            self.values.iter().zip(other.values.iter())
-                .map(|((index1, value1), (index2, value2))|
-                    index1 == index2 && abs_diff_eq!(value1, value2))
-                .all(identity)
-    }
+    pub values: Vec<(usize, F)>,
 }
 
 /// The right-hand side of Ax = b.
@@ -126,49 +110,32 @@ impl AbsDiffEq for Variable {
 /// A single linear program defined in MPS can have multiple right-hand sides. It relates a row name
 /// to a real constant.
 #[derive(Debug, PartialEq)]
-pub(crate) struct Rhs {
+pub(crate) struct Rhs<F> {
     pub name: String,
-    pub values: Vec<(usize, f64)>,
+    pub values: Vec<(usize, F)>,
 }
 
-impl AbsDiffEq for Rhs {
-    type Epsilon = f64;
-
-    fn default_epsilon() -> <Self as AbsDiffEq>::Epsilon {
-        EPSILON
-    }
-
-    fn abs_diff_eq(&self, other: &Self, _epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
-        self.name == other.name &&
-            self.values.iter().zip(other.values.iter())
-                .map(|((index1, value1), (index2, value2))|
-                    index1 == index2 && abs_diff_eq!(value1, value2))
-                .all(identity)
-    }
+/// Specifies a bound on constraint activation.
+///
+/// Overview of how the range of a constraint is defined, depending on the constraint type:
+///
+/// row type | sign of r |    h    |    u
+/// ---------|-----------|---------|---------
+/// G        |  + or -   |    b    | b + |r|
+/// L        |  + or -   | b - |r| |   b
+/// E        |     +     |    b    | b + |r|
+/// E        |     -     | b - |r| |   b
+#[derive(Debug, PartialEq)]
+pub(crate) struct Range<F> {
+    pub name: String,
+    /// Constraint indices and their 'r' value
+    pub values: Vec<(usize, F)>,
 }
 
 /// Specifies a bound on a variable. The variable can either be continuous or integer, while the
 /// bound can have any direction.
 #[derive(Debug, PartialEq)]
-pub(crate) struct Bound {
+pub(crate) struct Bound<F> {
     pub name: String,
-    pub values: Vec<(BoundType, usize, f64)>,
-}
-
-impl AbsDiffEq for Bound {
-    type Epsilon = f64;
-
-    fn default_epsilon() -> <Self as AbsDiffEq>::Epsilon {
-        EPSILON
-    }
-
-    fn abs_diff_eq(&self, other: &Self, _epsilon: <Self as AbsDiffEq>::Epsilon) -> bool {
-        self.name == other.name &&
-            self.values.iter().zip(other.values.iter())
-                .map(|((bound_type1, index1, value1), (bound_type2, index2, value2))|
-                    bound_type1 == bound_type2 &&
-                        index1 == index2 &&
-                        abs_diff_eq!(value1, value2))
-                .all(identity)
-    }
+    pub values: Vec<(BoundType<F>, usize)>,
 }

@@ -8,7 +8,7 @@ use std::fmt::{Debug, Display};
 use std::iter::{Product, Sum};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use num::{FromPrimitive, One, Zero};
+use num::{FromPrimitive, One, Zero, Num};
 use std::cmp::Ordering;
 
 /// Trait representing the unique field of real numbers.
@@ -62,10 +62,10 @@ pub trait OrderedField: Ord + Field {
 /// explicit where we "cheat" the trait hierarchy.
 pub trait DedekindComplete {}
 
-///
 pub trait Field:
 // The core properties
-    Eq
+    Num
+// TODO: Remove redundant trait requirements
         + Add<Output = Self> + AddAssign + Sum
         + Sub<Output = Self> + SubAssign
         + Neg<Output = Self>
@@ -75,7 +75,7 @@ pub trait Field:
 // TODO: Can code be rewritten such that Div is not needed?
         + Div<Output = Self> + DivAssign
 // The data properties
-// TODO: Would passing by reference be faster?
+// TODO: Would passing by reference be faster? How about unsized big decimals?
         + Copy
         + Sized
 // Convenience

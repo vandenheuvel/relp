@@ -5,8 +5,9 @@ use std::collections::HashSet;
 use std::convert::{TryFrom, TryInto};
 
 use num::rational::Ratio;
+use num::FromPrimitive;
 
-use crate::RF;
+use crate::R32;
 use crate::algorithm::simplex::data::{Artificial, CarryMatrix, NonArtificial, Tableau};
 use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
@@ -18,10 +19,11 @@ use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{ConstraintType, Objective, VariableType};
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::Variable as GeneralFormVariable;
-use crate::data::number_types::traits::RealField;
 use crate::io::mps::{Bound, BoundType, Constraint, Rhs, Variable};
 use crate::io::mps::parsing::{into_atom_lines, UnstructuredBound, UnstructuredColumn, UnstructuredMPS, UnstructuredRhs, UnstructuredRow};
 use crate::io::mps::structuring::MPS;
+
+type T = Ratio<i32>;
 
 #[test]
 fn test_conversion_pipeline() {
@@ -31,14 +33,14 @@ fn test_conversion_pipeline() {
     let lines = into_atom_lines(input);
     let result = UnstructuredMPS::try_from(lines);
     assert!(result.is_ok());
-    let unstructured_mps_computed: UnstructuredMPS = result.unwrap();
-    assert_abs_diff_eq!(unstructured_mps_computed, unstructured_mps_form());
+    let unstructured_mps_computed: UnstructuredMPS<T> = result.unwrap();
+    assert_eq!(unstructured_mps_computed, unstructured_mps_form());
 
     // MPS
     let result = unstructured_mps_computed.try_into();
     assert!(result.is_ok());
-    let structured_mps_computed: MPS = result.unwrap();
-    assert_abs_diff_eq!(structured_mps_computed, mps_form());
+    let structured_mps_computed: MPS<T> = result.unwrap();
+    assert_eq!(structured_mps_computed, mps_form());
 
     // General form
     let result = structured_mps_computed.try_into();
@@ -70,9 +72,9 @@ fn test_conversion_pipeline() {
     // Get to a basic feasible solution
     let result = primal::<Ratio<i32>, _, FirstProfitable>(&mut tableau_form_computed);
     assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
-        (0, 2f64),
-        (5, 2f64),
-        (6, 2f64),
+        (0, 2_f64),
+        (5, 2_f64),
+        (6, 2_f64),
     ], 7)));
 }
 
@@ -102,7 +104,7 @@ ENDATA";
 
 
 /// Build the expected `MPS` instance, corresponding to the MPS file string.
-pub(super) fn unstructured_mps_form() -> UnstructuredMPS<'static> {
+pub(super) fn unstructured_mps_form() -> UnstructuredMPS<'static, T> {
     UnstructuredMPS {
         name: "TESTPROB",
         cost_row_name: "COST",
@@ -125,102 +127,100 @@ pub(super) fn unstructured_mps_form() -> UnstructuredMPS<'static> {
                 name: "XONE",
                 variable_type: VariableType::Continuous,
                 row_name: "COST",
-                value: 1f64,
+                value: R32!(1),
             },
             UnstructuredColumn {
                 name: "XONE",
                 variable_type: VariableType::Continuous,
                 row_name: "LIM1",
-                value: 1f64,
+                value: R32!(1),
             },
             UnstructuredColumn {
                 name: "XONE",
                 variable_type: VariableType::Continuous,
                 row_name: "LIM2",
-                value: 1f64,
+                value: R32!(1),
             },
             UnstructuredColumn {
                 name: "YTWO",
                 variable_type: VariableType::Integer,
                 row_name: "COST",
-                value: 4f64,
+                value: R32!(4),
             },
             UnstructuredColumn {
                 name: "YTWO",
                 variable_type: VariableType::Integer,
                 row_name: "LIM1",
-                value: 1f64,
+                value: R32!(1),
             },
             UnstructuredColumn {
                 name: "YTWO",
                 variable_type: VariableType::Integer,
                 row_name: "MYEQN",
-                value: -1f64,
+                value: -R32!(1),
             },
             UnstructuredColumn {
                 name: "ZTHREE",
                 variable_type: VariableType::Continuous,
                 row_name: "COST",
-                value: 9f64,
+                value: R32!(9),
             },
             UnstructuredColumn {
                 name: "ZTHREE",
                 variable_type: VariableType::Continuous,
                 row_name: "LIM2",
-                value: 1f64,
+                value: R32!(1),
             },
             UnstructuredColumn {
                 name: "ZTHREE",
                 variable_type: VariableType::Continuous,
                 row_name: "MYEQN",
-                value: 1f64,
+                value: R32!(1),
             },
         ],
         rhss: vec![
             UnstructuredRhs {
                 name: "RHS1",
                 row_name: "LIM1",
-                value: 5f64,
+                value: R32!(5),
             },
             UnstructuredRhs {
                 name: "RHS1",
                 row_name: "LIM2",
-                value: 10f64,
+                value: R32!(10),
             },
             UnstructuredRhs {
                 name: "RHS1",
                 row_name: "MYEQN",
-                value: 7f64,
+                value: R32!(7),
             },
         ],
+        ranges: vec![],
         bounds: vec![
             UnstructuredBound {
                 name: "BND1",
-                bound_type: BoundType::UpperContinuous,
+                bound_type: BoundType::UpperContinuous(R32!(4)),
                 column_name: "XONE",
-                value: 4f64,
             },
             UnstructuredBound {
                 name: "BND1",
-                bound_type: BoundType::LowerContinuous,
+                bound_type: BoundType::LowerContinuous(-R32!(1)),
                 column_name: "YTWO",
-                value: -1f64,
             },
             UnstructuredBound {
                 name: "BND1",
-                bound_type: BoundType::UpperContinuous,
+                bound_type: BoundType::UpperContinuous(R32!(1)),
                 column_name: "YTWO",
-                value: 1f64,
             },
         ],
     }
 }
 
 /// Build the expected `MPS` instance, corresponding to the MPS file string.
-pub fn mps_form() -> MPS {
+pub fn mps_form() -> MPS<T> {
     let name = "TESTPROB".to_string();
     let cost_row_name = "COST".to_string();
-    let cost_values = vec![(0, 1f64), (1, 4f64), (2, 9f64)];
+    let cost_values = vec![(0, R32!(1)), (1, R32!(4)), (2, R32!(9))];
     let row_names = vec!["LIM1", "LIM2", "MYEQN"].into_iter().map(String::from).collect();
     let rows = vec![
         Constraint { name: 0, constraint_type: ConstraintType::Less },
@@ -233,40 +233,41 @@ pub fn mps_form() -> MPS {
             name: 0,
             variable_type: VariableType::Continuous,
             values: vec![
-                (0, 1f64),
-                (1, 1f64),
+                (0, R32!(1)),
+                (1, R32!(1)),
             ],
         },
         Variable {
             name: 1,
             variable_type: VariableType::Integer,
             values: vec![
-                (0, 1f64),
-                (2, -1f64),
+                (0, R32!(1)),
+                (2, -R32!(1)),
             ],
         },
         Variable {
             name: 2,
             variable_type: VariableType::Continuous,
             values: vec![
-                (1, 1f64),
-                (2, 1f64),
+                (1, R32!(1)),
+                (2, R32!(1)),
             ],
         },
     ];
+    let ranges = vec![];
     let rhss = vec![
         Rhs {
             name: "RHS1".to_string(),
-            values: vec![(0, 5f64), (1, 10f64), (2, 7f64)],
+            values: vec![(0, R32!(5)), (1, R32!(10)), (2, R32!(7))],
         }
     ];
     let bounds = vec![
         Bound {
             name: "BND1".to_string(),
             values: vec![
-                (BoundType::UpperContinuous, 0, 4f64),
-                (BoundType::LowerContinuous, 1, -1f64),
-                (BoundType::UpperContinuous, 1, 1f64),
+                (BoundType::UpperContinuous(R32!(4)), 0),
+                (BoundType::LowerContinuous(-R32!(1)), 1),
+                (BoundType::UpperContinuous(R32!(1)), 1),
             ],
         }
     ];
@@ -280,16 +281,17 @@ pub fn mps_form() -> MPS {
         column_names,
         columns,
         rhss,
+        ranges,
         bounds,
     )
 }
 
 /// The linear program in expected `GeneralForm`.
-pub fn general_form<RF: RealField>() -> GeneralForm<RF> {
+pub fn general_form() -> GeneralForm<T> {
     let data = vec![
-        vec![1f64, 1f64, 0f64],
-        vec![1f64, 0f64, 1f64],
-        vec![0f64, -1f64, 1f64],
+        vec![1_f64, 1_f64, 0_f64],
+        vec![1_f64, 0_f64, 1_f64],
+        vec![0_f64, -1_f64, 1_f64],
     ];
     let rows = RowMajorOrdering::from_test_data(&data, 3);
 
@@ -300,34 +302,34 @@ pub fn general_form<RF: RealField>() -> GeneralForm<RF> {
     ];
 
     let b = DenseVector::from_test_data(vec![
-        5f64,
-        10f64,
-        7f64,
+        5_f64,
+        10_f64,
+        7_f64,
     ]);
 
     let variables = vec![
         GeneralFormVariable {
             variable_type: VariableType::Continuous,
-            cost: RF!(1),
-            lower_bound: Some(RF!(0)),
-            upper_bound: Some(RF!(4)),
-            shift: RF!(0),
+            cost: R32!(1),
+            lower_bound: Some(R32!(0)),
+            upper_bound: Some(R32!(4)),
+            shift: R32!(0),
             flipped: false
         },
         GeneralFormVariable {
             variable_type: VariableType::Integer,
-            cost: RF!(4),
-            lower_bound: Some(RF!(-1)),
-            upper_bound: Some(RF!(1)),
-            shift: RF!(0),
+            cost: R32!(4),
+            lower_bound: Some(R32!(-1)),
+            upper_bound: Some(R32!(1)),
+            shift: R32!(0),
             flipped: false
         },
         GeneralFormVariable {
             variable_type: VariableType::Continuous,
-            cost: RF!(9),
-            lower_bound: Some(RF!(0)),
+            cost: R32!(9),
+            lower_bound: Some(R32!(0)),
             upper_bound: None,
-            shift: RF!(0),
+            shift: R32!(0),
             flipped: false
         },
     ];
@@ -340,14 +342,14 @@ pub fn general_form<RF: RealField>() -> GeneralForm<RF> {
         b,
         variables,
         variable_names,
-        RF!(0),
+        R32!(0),
     )
 }
 
-pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
+pub fn general_form_canonicalized() -> GeneralForm<T> {
     let data = vec![
-        vec![1f64, 0f64, 1f64],
-        vec![0f64, -1f64, 1f64],
+        vec![1_f64, 0_f64, 1_f64],
+        vec![0_f64, -1_f64, 1_f64],
     ];
     let constraints = RowMajorOrdering::from_test_data(&data, 3);
 
@@ -357,33 +359,33 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
     ];
 
     let b = DenseVector::from_test_data(vec![
-        2f64,
-        0f64,
+        2_f64,
+        0_f64,
     ]);
 
     let variables = vec![
         GeneralFormVariable {
             variable_type: VariableType::Continuous,
-            cost: RF!(1),
-            lower_bound: Some(RF!(0)),
-            upper_bound: Some(RF!(2)),
-            shift: RF!(-2),
+            cost: R32!(1),
+            lower_bound: Some(R32!(0)),
+            upper_bound: Some(R32!(2)),
+            shift: R32!(-2),
             flipped: false
         },
         GeneralFormVariable {
             variable_type: VariableType::Integer,
-            cost: RF!(4),
-            lower_bound: Some(RF!(0)),
-            upper_bound: Some(RF!(2)),
-            shift: RF!(1),
+            cost: R32!(4),
+            lower_bound: Some(R32!(0)),
+            upper_bound: Some(R32!(2)),
+            shift: R32!(1),
             flipped: false
         },
         GeneralFormVariable {
             variable_type: VariableType::Continuous,
-            cost: RF!(9),
-            lower_bound: Some(RF!(0)),
-            upper_bound: Some(RF!(2)),
-            shift: RF!(-6),
+            cost: R32!(9),
+            lower_bound: Some(R32!(0)),
+            upper_bound: Some(R32!(2)),
+            shift: R32!(-6),
             flipped: false
         },
     ];
@@ -396,32 +398,32 @@ pub fn general_form_canonicalized<RF: RealField>() -> GeneralForm<RF> {
         b,
         variables,
         variable_names,
-        -RF!(-2 * 1) - RF!(1 * 4) - RF!(-6 * 9),
+        -R32!(-2 * 1) - R32!(1 * 4) - R32!(-6 * 9),
     )
 }
 
-pub fn matrix_data_form<RF: RealField>() -> MatrixData<RF> {
-    let equal = vec![vec![(1, RF!(-1)), (2, RF!(1))]];
+pub fn matrix_data_form() -> MatrixData<T> {
+    let equal = vec![vec![(1, R32!(-1)), (2, R32!(1))]];
     let upper_bounded = vec![];
-    let lower_bounded = vec![vec![(0, RF!(1)), (2, RF!(1))]];
+    let lower_bounded = vec![vec![(0, R32!(1)), (2, R32!(1))]];
     let b = DenseVector::from_test_data(vec![
-        0f64,
-        2f64,
+        0_f64,
+        2_f64,
     ]);
     let variables = vec![
         MatrixDataVariable {
-            cost: RF!(1),
-            upper_bound: Some(RF!(2)),
+            cost: R32!(1),
+            upper_bound: Some(R32!(2)),
             variable_type: VariableType::Continuous,
         },
         MatrixDataVariable {
-            cost: RF!(4),
-            upper_bound: Some(RF!(2)),
+            cost: R32!(4),
+            upper_bound: Some(R32!(2)),
             variable_type: VariableType::Integer,
         },
         MatrixDataVariable {
-            cost: RF!(9),
-            upper_bound: Some(RF!(2)),
+            cost: R32!(9),
+            upper_bound: Some(R32!(2)),
             variable_type: VariableType::Continuous,
         },
     ];
@@ -435,12 +437,12 @@ pub fn matrix_data_form<RF: RealField>() -> MatrixData<RF> {
     )
 }
 
-pub fn artificial_tableau_form<RF: RealField, MP: MatrixProvider<RF>>(provider: &MP) -> Tableau<RF, Artificial, MP> {
+pub fn artificial_tableau_form<MP: MatrixProvider<T>>(provider: &MP) -> Tableau<T, Artificial, MP> {
     let m = 5;
     let carry = {
-        let minus_objective = RF!(-8);
-        let minus_pi = DenseVector::from_test_data(vec![-1f64; m]);
-        let b = DenseVector::from_test_data(vec![0f64, 2f64, 2f64, 2f64, 2f64]);
+        let minus_objective = R32!(-8);
+        let minus_pi = DenseVector::from_test_data(vec![-1_f64; m]);
+        let b = DenseVector::from_test_data(vec![0_f64, 2_f64, 2_f64, 2_f64, 2_f64]);
         let basis_inverse_rows = (0..m)
             .map(|i| SparseVector::standard_basis_vector(i, m))
             .collect();
@@ -457,19 +459,19 @@ pub fn artificial_tableau_form<RF: RealField, MP: MatrixProvider<RF>>(provider: 
     )
 }
 
-pub fn tableau_form<RF: RealField, MP: MatrixProvider<RF>>(provider: &MP) -> Tableau<RF, NonArtificial, MP> {
+pub fn tableau_form<MP: MatrixProvider<T>>(provider: &MP) -> Tableau<T, NonArtificial, MP> {
     let carry = {
-        let minus_objective = RF!(-28);
-        let minus_pi = DenseVector::from_test_data(vec![-9f64, 0f64, -1f64, -13f64, 0f64]);
-        let b = DenseVector::from_test_data(vec![2f64, 2f64, 2f64, 2f64, 0f64]);
+        let minus_objective = R32!(-28);
+        let minus_pi = DenseVector::from_test_data(vec![-9_f64, 0_f64, -1_f64, -13_f64, 0_f64]);
+        let b = DenseVector::from_test_data(vec![2_f64, 2_f64, 2_f64, 2_f64, 0_f64]);
         let basis_inverse_rows = vec![
-            SparseVector::from_test_data(vec![1f64, 0f64, 0f64, 1f64, 0f64]),
-            SparseVector::from_test_data(vec![0f64, 0f64, 1f64, 0f64, 0f64]),
-            SparseVector::from_test_data(vec![1f64, -1f64, 1f64, 1f64, 0f64]),
-            SparseVector::from_test_data(vec![0f64, 0f64, 0f64, 1f64, 0f64]),
-            SparseVector::from_test_data(vec![-1f64, 0f64, 0f64, -1f64, 1f64]),
+            SparseVector::from_test_data(vec![1_f64, 0_f64, 0_f64, 1_f64, 0_f64]),
+            SparseVector::from_test_data(vec![0_f64, 0_f64, 1_f64, 0_f64, 0_f64]),
+            SparseVector::from_test_data(vec![1_f64, -1_f64, 1_f64, 1_f64, 0_f64]),
+            SparseVector::from_test_data(vec![0_f64, 0_f64, 0_f64, 1_f64, 0_f64]),
+            SparseVector::from_test_data(vec![-1_f64, 0_f64, 0_f64, -1_f64, 1_f64]),
         ];
-        CarryMatrix::<RF>::create(minus_objective, minus_pi, b, basis_inverse_rows)
+        CarryMatrix::<T>::create(minus_objective, minus_pi, b, basis_inverse_rows)
     };
     let basis_indices = vec![2, 0, 3, 1, 6];
     let mut basis_columns = HashSet::new();
