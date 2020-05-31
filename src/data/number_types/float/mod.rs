@@ -6,11 +6,11 @@ use core::fmt;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
 use std::iter::{Product, Sum};
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign, Rem};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, Sub, SubAssign};
 
 use noisy_float::checkers::FiniteChecker;
 use noisy_float::FloatChecker;
-use num::{Float, FromPrimitive, ToPrimitive, Unsigned, Num};
+use num::{Float, FromPrimitive, Num, ToPrimitive, Unsigned};
 use num::traits::{One, Zero};
 
 use crate::data::number_types::float::numerical_precision::close_heuristic_fraction;
@@ -328,7 +328,7 @@ mod test {
     use crate::num::FromPrimitive;
 
     /// TODO: Below is a well-known problematic float example. Is it even important (or feasible)
-    ///  that this can be dealth with?
+        ///  that this can be dealth with?
     #[test]
     #[ignore]
     fn relative_error() {

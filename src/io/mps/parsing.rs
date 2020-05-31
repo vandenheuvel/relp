@@ -5,6 +5,8 @@
 use std::convert::TryFrom;
 use std::str::FromStr;
 
+use num::{FromPrimitive, Num};
+
 use crate::data::linear_program::elements::{ConstraintType, VariableType};
 use crate::io::error::{FileLocation, Parse};
 use crate::io::mps::BoundType;
@@ -15,7 +17,6 @@ use crate::io::mps::token::{
 };
 
 use self::Atom::{Number, Word};
-use num::{Num, FromPrimitive};
 
 /// Most fundamental element in an MPS text file.
 ///
@@ -333,24 +334,15 @@ fn parse_bound_line<'a, F>(
 ) -> Result<(), Parse> {
     let mut line = line.into_iter();
     let bound = match [line.next(), line.next(), line.next(), line.next(), line.next(), line.next()] {
-        [Some(Word(ty)), Some(Word(name)), Some(Word(column_name)), None, None, None] =>
-            UnstructuredBound {
-                name,
-                bound_type: BoundType::try_from(ty)?,
-                column_name,
-            },
-        [Some(Word(ty)), Some(Word(name)), Some(Word(column_name)), Some(Number(value)), None, None] =>
-            UnstructuredBound {
-                name,
-                bound_type: BoundType::try_from((ty, value))?,
-                column_name,
-            },
-        [Some(Word(ty)), Some(Word(name)), Some(Word(column_name)), Some(Number(value)), Some(Number(value2)), None] =>
-            UnstructuredBound {
-                name,
-                bound_type: BoundType::try_from((ty, value, value2))?,
-                column_name,
-            },
+        [Some(Word(ty)), Some(Word(name)), Some(Word(column_name)), None, None, None] => {
+            UnstructuredBound { name, bound_type: BoundType::try_from(ty)?, column_name }
+        },
+        [Some(Word(ty)), Some(Word(name)), Some(Word(column_name)), Some(Number(value)), None, None] => {
+            UnstructuredBound { name, bound_type: BoundType::try_from((ty, value))?, column_name }
+        },
+        [Some(Word(ty)), Some(Word(name)), Some(Word(column_name)), Some(Number(value)), Some(Number(value2)), None] => {
+            UnstructuredBound { name, bound_type: BoundType::try_from((ty, value, value2))?, column_name }
+        },
         _ => return Err(Parse::new("Can't parse this row as bound.")),
     };
     bound_collector.push(bound);
@@ -373,16 +365,17 @@ fn parse_range_line<'a, F>(
     range_collector: &mut Vec<UnstructuredRange<'a, F>>,
 ) -> Result<(), Parse> {
     let mut line = line.into_iter();
-    let range = match [line.next(), line.next(), line.next(), line.next()] {
-        [Some(Word(name)), Some(Word(column_name)), Some(Number(value)), None] =>
-            UnstructuredRange {
-                name,
-                row_name: column_name,
-                value
-            },
+    let range = match [line.next(), line.next(), line.next(), line.next(), line.next(), line.next()] {
+        [Some(Word(name)), Some(Word(row_name)), Some(Number(value)), None, None, None] => {
+            range_collector.push(UnstructuredRange { name, row_name, value })
+        },
+        [Some(Word(name)), Some(Word(row1)), Some(Number(value1)), Some(Word(row2)), Some(Number(value2)), None] => {
+            range_collector.push(UnstructuredRange { name, row_name: row1, value: value1, });
+            range_collector.push(UnstructuredRange { name, row_name: row2, value: value2, });
+        },
         _ => return Err(Parse::new("Can't parse this row as range.")),
     };
-    range_collector.push(range);
+
 
     Ok(())
 }

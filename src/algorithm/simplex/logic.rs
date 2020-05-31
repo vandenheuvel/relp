@@ -2,13 +2,14 @@
 //!
 //! High level methods implementing the simplex algorithm. The details of this logic are hidden away
 //! mostly in the `Tableau` type.
-use crate::algorithm::simplex::data::Artificial;
+use crate::algorithm::simplex::data::{Artificial, is_in_basic_feasible_solution_state};
 use crate::algorithm::simplex::data::NonArtificial;
 use crate::algorithm::simplex::data::Tableau;
 use crate::algorithm::simplex::matrix_provider::MatrixProvider;
 use crate::algorithm::simplex::strategy::pivot_rule::PivotRule;
-use crate::data::number_types::traits::{Field, OrderedField};
 use crate::data::linear_algebra::vector::SparseVector;
+use crate::data::number_types::traits::{Field, OrderedField};
+use itertools::repeat_n;
 
 /// Reduces the artificial cost of the basic feasible solution to zero, if possible. In doing so, a
 /// basic feasible solution to the `CanonicalForm` linear program is found.
@@ -24,16 +25,19 @@ use crate::data::linear_algebra::vector::SparseVector;
 pub(crate) fn artificial_primal<'a, OF: OrderedField, MP: 'a + MatrixProvider<OF>, PR: PivotRule<Artificial>>(
     tableau: &'a mut Tableau<OF, Artificial, MP>,
 ) -> FeasibilityResult {
+    let mut rule = PR::new();
     let mut i = 0;
     loop {
-        // debug_assert!(tableau.debug_assert_is_in_basic_feasible_solution_state());
+        debug_assert!(is_in_basic_feasible_solution_state(tableau));
 
-        if i % 10 == 0 {
-            println!("{} {:?}", i, tableau.objective_function_value());
+        if i % 1 == 0 {
+            println!("{}\t{}", i, tableau.objective_function_value());
+            // println!(
+            //     "{}\n{}",
+            //     repeat_n("X", 196).collect::<Vec<_>>().concat(), tableau,
+            // );
         }
         i += 1;
-
-        let mut rule = PR::new();
         match rule.select_primal_pivot_column(tableau) {
             Some((column_nr, cost)) => {
                 let column = tableau.generate_column(column_nr);
@@ -132,11 +136,11 @@ fn remove_artificial_basis_variables<'a, F: Field, MP>(
 pub(crate) fn primal<'a, OF: OrderedField, MP: 'a + MatrixProvider<OF>, PR: PivotRule<NonArtificial>>(
     tableau: &mut Tableau<OF, NonArtificial, MP>,
 ) -> OptimizationResult<OF> {
+    let mut rule = PR::new();
     loop {
-        debug_assert!(tableau.debug_assert_is_in_basic_feasible_solution_state());
+        debug_assert!(is_in_basic_feasible_solution_state(&tableau));
 
-        println!("{:?}", tableau.objective_function_value());
-        let mut rule = PR::new();
+        // println!("{}", tableau);
         match rule.select_primal_pivot_column(tableau) {
             Some((column_index, cost)) => {
                 let column = tableau.generate_column(column_index);
@@ -170,13 +174,14 @@ mod test {
     use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
     use crate::algorithm::simplex::solve_relaxation;
     use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
-    use crate::tests::problem_2::{matrix_data_form, tableau_form};
     use crate::data::linear_algebra::vector::SparseVector;
+    use crate::tests::problem_2::{create_matrix_data_data, matrix_data_form, tableau_form};
 
     #[test]
     fn test_simplex() {
-        let data = matrix_data_form::<Ratio<i32>>();
-        let mut tableau = tableau_form(&data);
+        let (constraints, b) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let mut tableau = tableau_form(&matrix_data_form);
         match primal::<_, _, FirstProfitable>(&mut tableau) {
             OptimizationResult::FiniteOptimum(_) => {
                 assert_eq!(tableau.objective_function_value(), Ratio::<i32>::new(9, 2))
@@ -187,8 +192,9 @@ mod test {
 
     #[test]
     fn test_finding_bfs() {
-        let data = matrix_data_form::<Ratio<i64>>();
-        let mut tableau = Tableau::<_, Artificial, _>::new(&data);
+        let (constraints, b) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let mut tableau = Tableau::<_, Artificial, _>::new(&matrix_data_form);
         assert_eq!(artificial_primal::<_, _, FirstProfitable>(&mut tableau), FeasibilityResult::Feasible(Rank::Full));
     }
 
@@ -199,8 +205,9 @@ mod test {
 
    #[test]
    fn test_solve_matrix() {
-       let data = matrix_data_form::<Ratio<i64>>();
-       let result = solve_relaxation::<_, _, FirstProfitable, FirstProfitable>(&data);
+       let (constraints, b) = create_matrix_data_data();
+       let matrix_data_form = matrix_data_form(&constraints, &b);
+       let result = solve_relaxation::<_, _, FirstProfitable, FirstProfitable>(&matrix_data_form);
        // let expected = vec![
        //     (String::from("X1"), 0f64),
        //     (String::from("X2"), 0.5f64),

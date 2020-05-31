@@ -10,7 +10,7 @@ use std::ops::{Index, IndexMut};
 use std::slice::Iter;
 
 use crate::algorithm::utilities::remove_indices;
-use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, SparseMatrix};
+use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse};
 use crate::data::linear_algebra::SparseTuples;
 use crate::data::linear_algebra::utilities::remove_sparse_indices;
 use crate::data::number_types::traits::Field;
@@ -307,7 +307,7 @@ impl<F: Field> SparseVector<F> {
     }
 
     /// TODO: Consider moving this to the matrix module
-    pub fn multiply(&self, matrix: SparseMatrix<F, ColumnMajorOrdering>) -> Self {
+    pub fn multiply(&self, matrix: Sparse<F, ColumnMajor>) -> Self {
         debug_assert_eq!(matrix.nr_rows(), self.len());
 
         Self::new(
@@ -495,25 +495,25 @@ pub mod test {
 
     use std::f64::EPSILON;
 
-    use num::NumCast;
+    use num::{NumCast, ToPrimitive};
 
     use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
     use crate::data::number_types::traits::{OrderedField, RealField};
     use crate::RF;
 
     pub trait TestVector<F>: Vector<F> {
-        fn from_test_data<T: NumCast>(data: Vec<T>) -> Self;
+        fn from_test_data<T: ToPrimitive>(data: Vec<T>) -> Self;
     }
     impl<RF: RealField> TestVector<RF> for DenseVector<RF> {
         /// Create a `DenseVector` from the provided data.
-        fn from_test_data<T: NumCast>(data: Vec<T>) -> Self {
+        fn from_test_data<T: ToPrimitive>(data: Vec<T>) -> Self {
             let size = data.len();
             Self { data: data.into_iter().map(|v| RF!(v.to_f64().unwrap())).collect(), len: size, }
         }
     }
     impl<RF: RealField> TestVector<RF> for SparseVector<RF> {
         /// Create a `SparseVector` from the provided data.
-        fn from_test_data<T: NumCast>(data: Vec<T>) -> Self {
+        fn from_test_data<T: ToPrimitive>(data: Vec<T>) -> Self {
             debug_assert_ne!(data.len(), 0);
 
             let size = data.len();
@@ -706,7 +706,7 @@ pub mod test {
         use num::{FromPrimitive, Zero};
         use num::rational::Ratio;
 
-        use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, MatrixOrder};
+        use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
         use crate::data::linear_algebra::vector::{SparseVector, Vector};
         use crate::data::linear_algebra::vector::test::{get_set, len, out_of_bounds_get, out_of_bounds_set, push_value, test_vector, TestVector};
         use crate::R32;
@@ -806,19 +806,19 @@ pub mod test {
         #[test]
         fn test_multiply() {
             let v = SparseVector::<T>::from_test_data(vec![3f64]);
-            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64]], 1);
+            let m = ColumnMajor::from_test_data::<T, _>(&vec![vec![0f64]], 1);
             assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![0f64]));
 
             let v = SparseVector::<T>::from_test_data(vec![0f64]);
-            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64]], 1);
+            let m = ColumnMajor::from_test_data::<T, _>(&vec![vec![0f64]], 1);
             assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![0f64]));
 
             let v = SparseVector::<T>::from_test_data(vec![0f64, 0f64]);
-            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![0f64, 0f64], vec![0f64, 0f64]], 2);
+            let m = ColumnMajor::from_test_data::<T, _>(&vec![vec![0f64, 0f64], vec![0f64, 0f64]], 2);
             assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![0f64, 0f64]));
 
             let v = SparseVector::<T>::from_test_data(vec![2f64, 3f64]);
-            let m = ColumnMajorOrdering::from_test_data::<T>(&vec![vec![5f64, 7f64], vec![11f64, 13f64]], 2);
+            let m = ColumnMajor::from_test_data::<T, _>(&vec![vec![5f64, 7f64], vec![11f64, 13f64]], 2);
             assert_eq!(v.multiply(m), SparseVector::from_test_data(vec![43f64, 53f64]));
         }
 

@@ -4,16 +4,15 @@
 use std::collections::HashSet;
 use std::convert::{TryFrom, TryInto};
 
-use num::rational::Ratio;
 use num::FromPrimitive;
+use num::rational::Ratio;
 
-use crate::R32;
 use crate::algorithm::simplex::data::{Artificial, CarryMatrix, NonArtificial, Tableau};
 use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
 use crate::algorithm::simplex::matrix_provider::MatrixProvider;
 use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
-use crate::data::linear_algebra::matrix::{MatrixOrder, RowMajorOrdering};
+use crate::data::linear_algebra::matrix::{ColumnMajor, Order, RowMajor, Sparse};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{ConstraintType, Objective, VariableType};
@@ -22,6 +21,7 @@ use crate::data::linear_program::general_form::Variable as GeneralFormVariable;
 use crate::io::mps::{Bound, BoundType, Constraint, Rhs, Variable};
 use crate::io::mps::parsing::{into_atom_lines, UnstructuredBound, UnstructuredColumn, UnstructuredMPS, UnstructuredRhs, UnstructuredRow};
 use crate::io::mps::structuring::MPS;
+use crate::R32;
 
 type T = Ratio<i32>;
 
@@ -48,18 +48,22 @@ fn test_conversion_pipeline() {
     let mut general_form_computed: GeneralForm<_> = result.unwrap();
     assert_eq!(general_form_computed, general_form());
 
-    // Matrix data form
-    let result = general_form_computed.derive_matrix_data();
+    general_form_computed.standardize();
     // General form, canonicalized
     assert_eq!(general_form_computed, general_form_canonicalized());
+
+    // Matrix data form
+    let result = general_form_computed.derive_matrix_data();
     // The resulting matrix data form
     assert!(result.is_ok());
+
+    let (constraints, b) = create_matrix_data_data();
     let matrix_data_form_computed = result.unwrap();
-    assert_eq!(matrix_data_form_computed, matrix_data_form());
+    assert_eq!(matrix_data_form_computed, matrix_data_form(&constraints, &b));
 
     // Artificial tableau form
     let mut artificial_tableau_form_computed = Tableau::<_, Artificial, _>::new(&matrix_data_form_computed);
-    assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form()));
+    assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form(&constraints, &b)));
 
     // Get to a basic feasible solution
     let feasibility_result = artificial_primal::<_, _, FirstProfitable>(&mut artificial_tableau_form_computed);
@@ -67,7 +71,7 @@ fn test_conversion_pipeline() {
 
     // Non-artificial tableau form
     let mut tableau_form_computed = Tableau::<_, NonArtificial, _>::from_artificial(artificial_tableau_form_computed);
-    assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form()));
+    assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form(&constraints, &b)));
 
     // Get to a basic feasible solution
     let result = primal::<Ratio<i32>, _, FirstProfitable>(&mut tableau_form_computed);
@@ -223,14 +227,14 @@ pub fn mps_form() -> MPS<T> {
     let cost_values = vec![(0, R32!(1)), (1, R32!(4)), (2, R32!(9))];
     let row_names = vec!["LIM1", "LIM2", "MYEQN"].into_iter().map(String::from).collect();
     let rows = vec![
-        Constraint { name: 0, constraint_type: ConstraintType::Less },
-        Constraint { name: 1, constraint_type: ConstraintType::Greater },
-        Constraint { name: 2, constraint_type: ConstraintType::Equal },
+        Constraint { name_index: 0, constraint_type: ConstraintType::Less },
+        Constraint { name_index: 1, constraint_type: ConstraintType::Greater },
+        Constraint { name_index: 2, constraint_type: ConstraintType::Equal },
     ];
     let column_names = vec!["XONE", "YTWO", "ZTHREE"].into_iter().map(String::from).collect();
     let columns = vec![
         Variable {
-            name: 0,
+            name_index: 0,
             variable_type: VariableType::Continuous,
             values: vec![
                 (0, R32!(1)),
@@ -238,7 +242,7 @@ pub fn mps_form() -> MPS<T> {
             ],
         },
         Variable {
-            name: 1,
+            name_index: 1,
             variable_type: VariableType::Integer,
             values: vec![
                 (0, R32!(1)),
@@ -246,7 +250,7 @@ pub fn mps_form() -> MPS<T> {
             ],
         },
         Variable {
-            name: 2,
+            name_index: 2,
             variable_type: VariableType::Continuous,
             values: vec![
                 (1, R32!(1)),
@@ -293,7 +297,7 @@ pub fn general_form() -> GeneralForm<T> {
         vec![1_f64, 0_f64, 1_f64],
         vec![0_f64, -1_f64, 1_f64],
     ];
-    let rows = RowMajorOrdering::from_test_data(&data, 3);
+    let rows = ColumnMajor::from_test_data(&data, 3);
 
     let constraints = vec![
         ConstraintType::Less,
@@ -351,7 +355,7 @@ pub fn general_form_canonicalized() -> GeneralForm<T> {
         vec![1_f64, 0_f64, 1_f64],
         vec![0_f64, -1_f64, 1_f64],
     ];
-    let constraints = RowMajorOrdering::from_test_data(&data, 3);
+    let constraints = ColumnMajor::from_test_data(&data, 3);
 
     let constraint_types = vec![
         ConstraintType::Greater,
@@ -402,14 +406,26 @@ pub fn general_form_canonicalized() -> GeneralForm<T> {
     )
 }
 
-pub fn matrix_data_form() -> MatrixData<T> {
-    let equal = vec![vec![(1, R32!(-1)), (2, R32!(1))]];
-    let upper_bounded = vec![];
-    let lower_bounded = vec![vec![(0, R32!(1)), (2, R32!(1))]];
+pub fn create_matrix_data_data() -> (Sparse<T, ColumnMajor>, DenseVector<T>) {
+    let constraints = ColumnMajor::from_test_data(
+        &vec![
+            vec![0, -1, 1],
+            vec![1, 0, 1],
+        ],
+        3,
+    );
     let b = DenseVector::from_test_data(vec![
-        0_f64,
-        2_f64,
+        0,
+        2,
     ]);
+
+    (constraints, b)
+}
+
+pub fn matrix_data_form<'a>(
+    constraints: &'a Sparse<T, ColumnMajor>,
+    b: &'a DenseVector<T>,
+) -> MatrixData<'a, T> {
     let variables = vec![
         MatrixDataVariable {
             cost: R32!(1),
@@ -428,10 +444,11 @@ pub fn matrix_data_form() -> MatrixData<T> {
         },
     ];
     MatrixData::new(
-        equal,
-        upper_bounded,
-        lower_bounded,
+        constraints,
         b,
+        1,
+        0,
+        1,
         variables,
         Vec::with_capacity(0),
     )

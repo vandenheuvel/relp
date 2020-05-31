@@ -159,29 +159,31 @@ mod test {
 
     #[test]
     fn test_find_profitable_column() {
-        let data = problem_2::matrix_data_form::<Ratio<i32>>();
-        let artificial_tableau = problem_2::artificial_tableau_form(&data);
+        let (constraints, b) = problem_2::create_matrix_data_data();
+        let matrix_data = problem_2::matrix_data_form(&constraints, &b);
+        let artificial_tableau = problem_2::artificial_tableau_form(&matrix_data);
         let mut rule = <FirstProfitable as PivotRule<Artificial>>::new();
         if let Some((value, _)) = rule.select_primal_pivot_column(&artificial_tableau) {
             assert_eq!(value, 3);
         } else { assert!(false); }
 
-        let tableau = problem_2::tableau_form(&data);
+        let tableau = problem_2::tableau_form(&matrix_data);
         let mut rule = <FirstProfitable as PivotRule<NonArtificial>>::new();
         assert_eq!(rule.select_primal_pivot_column(&tableau), None);
     }
 
     #[test]
     fn test_find_pivot_row() {
-        let data = problem_2::matrix_data_form::<Ratio<i32>>();
-        let artificial_tableau = problem_2::artificial_tableau_form(&data);
+        let (constraints, b) = problem_2::create_matrix_data_data();
+        let matrix_data = problem_2::matrix_data_form(&constraints, &b);
+        let artificial_tableau = problem_2::artificial_tableau_form(&matrix_data);
         let column = SparseVector::from_test_data(vec![3f64, 5f64, 2f64]);
         assert_eq!(artificial_tableau.select_primal_pivot_row(&column), Some(0));
 
         let column = SparseVector::from_test_data(vec![2f64, 1f64, 5f64]);
         assert_eq!(artificial_tableau.select_primal_pivot_row(&column), Some(0));
 
-        let tableau = problem_2::tableau_form(&data);
+        let tableau = problem_2::tableau_form(&matrix_data);
         let column = SparseVector::from_test_data(vec![3f64, 2f64, -1f64]);
         assert_eq!(tableau.select_primal_pivot_row(&column), Some(0));
 

@@ -91,16 +91,16 @@ pub(crate) enum BoundType<F> {
 }
 
 /// Every `Row` has a name and a `RowType`.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub(crate) struct Constraint {
-    pub name: usize,
+    pub name_index: usize,
     pub constraint_type: ConstraintType,
 }
 
 /// Is either continuous or integer, and has for some rows a coefficient.
 #[derive(Debug, PartialEq)]
 pub(crate) struct Variable<F> {
-    pub name: usize,
+    pub name_index: usize,
     pub variable_type: VariableType,
     pub values: Vec<(usize, F)>,
 }
@@ -128,7 +128,7 @@ pub(crate) struct Rhs<F> {
 #[derive(Debug, PartialEq)]
 pub(crate) struct Range<F> {
     pub name: String,
-    /// Constraint indices and their 'r' value
+    /// Sorted constraint indices and their 'r' value.
     pub values: Vec<(usize, F)>,
 }
 

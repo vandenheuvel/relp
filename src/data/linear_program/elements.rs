@@ -1,5 +1,6 @@
 //! # Building blocks to describe linear programs.
 #![allow(missing_docs)]
+
 use std::ops::Not;
 
 use crate::data::linear_program::solution::Solution;

@@ -3,7 +3,7 @@
 //! Useful for testing of methods and overall correctness of implementations.
 //!
 //! It appears that in practice, no fast solvers use rational numbers.
-use num::{One, Zero};
+use num::{One, BigInt, Zero};
 use num::rational::Ratio;
 
 use crate::data::number_types::traits::{DedekindComplete, Field, OrderedField, RealField};
@@ -47,6 +47,8 @@ macro_rules! impl_rational {
 impl_rational!(i32, R32);
 impl_rational!(i64, R64);
 impl_rational!(i128, R128);
+// TODO
+// impl_rational!(BigInt, BI);
 
 /// Shorthand for creating a rational number in tests.
 #[macro_export]

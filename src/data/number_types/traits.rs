@@ -4,12 +4,12 @@
 //! implementations aren't. That is, the contracts that these traits define, or their names imply,
 //! may not be kept precisely. This is due to finite representation of these numbers and is a
 //! fundamental problem that cannot be avoided, but perhaps be dealt with differently.
+use std::cmp::Ordering;
 use std::fmt::{Debug, Display};
 use std::iter::{Product, Sum};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use num::{FromPrimitive, One, Zero, Num};
-use std::cmp::Ordering;
+use num::{FromPrimitive, Num, One, Zero};
 
 /// Trait representing the unique field of real numbers.
 ///
@@ -92,7 +92,9 @@ pub trait Field:
 #[macro_export]
 macro_rules! RF {
     ($value:expr) => {
-        RF::from_f64($value as f64).unwrap()
+        {
+            RF::from_f64($value as f64).unwrap()
+        }
     };
 }
 

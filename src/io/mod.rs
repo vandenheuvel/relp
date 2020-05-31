@@ -7,10 +7,11 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+use num::FromPrimitive;
+
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::number_types::traits::{OrderedField, RealField};
 use crate::io::error::Import;
-use num::FromPrimitive;
 
 pub mod error;
 pub mod mps;

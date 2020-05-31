@@ -3,9 +3,12 @@
 //! The Simplex method algorithms work on a tableau. Because this tableau is very sparse in
 //! practice, we store in a matrix that describes the current basis together with the original
 //! (also sparse) matrix data. This module contains structures that can provide a matrix.
-use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, MatrixOrder, SparseMatrix};
+use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use crate::data::number_types::traits::Field;
+use std::fmt::{Display, Formatter, Debug};
+use std::fmt;
+use itertools::repeat_n;
 
 pub mod matrix_data;
 // TODO
@@ -31,7 +34,7 @@ pub mod matrix_data;
 /// Bound constraints ||    constants (one 1 per row)     |           0           |       +/- 1      |
 ///                   ||                                  |                       |            +/- 1 |
 /// --------------------------------------------------------------------------------------------------
-pub trait MatrixProvider<F: Field> {
+pub trait MatrixProvider<F: Field>: Display + Debug {
     /// Column of the problem.
     ///
     /// # Arguments
@@ -101,8 +104,8 @@ pub trait MatrixProvider<F: Field> {
     fn nr_columns(&self) -> usize;
 
     ///
-    fn as_sparse_matrix(&self) -> SparseMatrix<F, ColumnMajorOrdering> {
-        ColumnMajorOrdering::new(
+    fn as_sparse_matrix(&self) -> Sparse<F, ColumnMajor> {
+        ColumnMajor::new(
             (0..self.nr_columns())
                 .map(|j| self.column(j).iter_values().copied().collect())
                 .collect(),
@@ -126,7 +129,7 @@ pub enum BoundType {
 /// Logic for testing whether variables are feasible.
 ///
 /// Defined as a separate trait from `MatrixProvider`. Matrices are defined over fields, and so
-/// the `MatrixProvider` be. Some of the logic of variable feasibility is more part of linear
+/// the `MatrixProvider` is. Some of the logic of variable feasibility is more part of linear
 /// programming algorithms specifically, which are only defined over ordered fields. This logic is
 /// thus separated into a different trait, which depends on the other trait.
 pub trait VariableFeasibilityLogic<F: Field>: MatrixProvider<F> {

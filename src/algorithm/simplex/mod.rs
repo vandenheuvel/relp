@@ -43,55 +43,45 @@ pub fn solve_relaxation<OF: OrderedField, MP, ArtificialPR, NonArtificialPR> (
 
 #[cfg(test)]
 mod test {
+    use num::FromPrimitive;
     use num::rational::Ratio;
 
     use crate::algorithm::simplex::logic::OptimizationResult;
     use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable};
     use crate::algorithm::simplex::solve_relaxation;
     use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
+    use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
     use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::VariableType;
-    use crate::data::number_types::traits::RealField;
-    use crate::RF;
+    use crate::R32;
 
-    fn matrix_data_1<RF: RealField>() -> MatrixData<RF> {
-        let equal = vec![];
-        let upper_bounded = vec![
-            vec![(0, RF!(1))],
-            vec![(0, RF!(1)), (1, RF!(1))],
-        ];
-        let lower_bounded = vec![];
-        let variables = vec![
-            Variable {
-                cost: RF!(-2),
-                upper_bound: None,
-                variable_type: VariableType::Integer,
-            },
-            Variable {
-                cost: RF!(-1),
-                upper_bound: None,
-                variable_type: VariableType::Integer,
-            },
-        ];
+    #[test]
+    fn test_solve_relaxation_1() {
+        let constraints = ColumnMajor::from_test_data(&vec![
+            vec![1, 0],
+            vec![1, 1],
+        ], 2);
         let b = DenseVector::from_test_data(vec![
             3f64 / 2f64,
             5f64 / 2f64,
         ]);
+        let variables = vec![
+            Variable {
+                cost: R32!(-2),
+                upper_bound: None,
+                variable_type: VariableType::Integer,
+            },
+            Variable {
+                cost: R32!(-1),
+                upper_bound: None,
+                variable_type: VariableType::Integer,
+            },
+        ];
 
-        MatrixData::new(
-            equal,
-            upper_bounded,
-            lower_bounded,
-            b,
-            variables,
-            Vec::with_capacity(0),
-        )
-    }
+        let data = MatrixData::new(&constraints, &b, 0, 2, 0, variables, Vec::with_capacity(0));
 
-    #[test]
-    fn test_solve_relaxation_1() {
-        let result = solve_relaxation::<Ratio<i64>, _, FirstProfitable, FirstProfitable>(&matrix_data_1());
+        let result = solve_relaxation::<Ratio<i32>, _, FirstProfitable, FirstProfitable>(&data);
         assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
             (0, 3f64 / 2f64),
             (1, 1f64),

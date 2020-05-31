@@ -9,11 +9,12 @@ use std::marker::PhantomData;
 
 use itertools::repeat_n;
 
-use crate::algorithm::simplex::matrix_provider::{MatrixProvider, VariableFeasibilityLogic, BoundType};
+use crate::algorithm::simplex::matrix_provider::{BoundType, MatrixProvider, VariableFeasibilityLogic};
 use crate::algorithm::utilities::remove_indices;
-use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, MatrixOrder, SparseMatrix};
+use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use crate::data::number_types::traits::{Field, OrderedField};
+use std::fmt;
 
 /// The most high-level data structure that is used by the Simplex algorithm: the Simplex tableau.
 ///
@@ -209,7 +210,7 @@ impl<'a, F: Field, TT: TableauType, MP: MatrixProvider<F>> Tableau<'a, F, TT, MP
         let mut tuples = self.carry.b.iter_values()
             .enumerate()
             .map(|(i, &v)| (self.basis_indices[i], v))
-            .filter(|&(_, v)| v != F::additive_identity())
+            .filter(|&(_, v)| v != F::zero())
             .collect::<Vec<_>>();
         tuples.sort_by_key(|&(i, _)| i);
         SparseVector::new(tuples, self.nr_columns())
@@ -277,7 +278,7 @@ impl<'a, OF: OrderedField, TT: TableauType, MP: MatrixProvider<OF>> Tableau<'a, 
         // (chosen index, minimum ratio, corresponding leaving_column (for Bland's algorithm))
         let mut min_values: Option<(usize, OF, usize)> = None;
         for &(row, xij) in column.iter_values() {
-            if xij > OF::additive_identity() {
+            if xij > OF::zero() {
                 let ratio = self.carry.get_constraint_value(row) / xij;
                 // Bland's anti cycling algorithm
                 let leaving_column = self.basis_indices[row];
@@ -316,7 +317,7 @@ impl<'a, OF: OrderedField, TT: TableauType, MP: MatrixProvider<OF>> Tableau<'a, 
         let row_data = self.generate_row(row);
         let row_ratio = row_data
             .iter_values()
-            .filter(|&&(_, xij)| xij < OF::additive_identity())
+            .filter(|&&(_, xij)| xij < OF::zero())
             .map(|&(column, xij)| (column, self.relative_cost(column) / xij));
 
         // (chosen column index, maximum ratio)
@@ -335,43 +336,6 @@ impl<'a, OF: OrderedField, TT: TableauType, MP: MatrixProvider<OF>> Tableau<'a, 
         max_values.map(|(column, _)| column)
     }
 
-    /// Check whether the tableau currently has a valid basic feasible solution.
-    ///
-    /// Only used for debug_purposes.
-    /// TODO: Move this method out of the impl.
-    pub fn debug_assert_is_in_basic_feasible_solution_state(&self) -> bool {
-        // Checking basis_columns
-        // Correct number of basis columns (uniqueness is implied because it's a set)
-        debug_assert_eq!(self.basis_columns.len(), self.provider.nr_rows());
-
-        // Checking basis_indices
-        // Correct number of basis columns
-        debug_assert_eq!(self.basis_indices.len(), self.provider.nr_rows());
-        // Uniqueness of the basis columns
-        debug_assert_eq!(self.basis_indices.iter().collect::<HashSet<_>>().len(), self.provider.nr_rows());
-        // Same columns as in `basis_indices`
-        let as_set = self.basis_indices.iter().map(|&v| v).collect::<HashSet<_>>();
-        debug_assert_eq!(as_set.difference(&self.basis_columns).collect::<Vec<_>>().len(), 0);
-
-        // Checking carry matrix
-        // `basis_inverse_rows` are a proper inverse by regenerating basis columns
-        for (i, &basis_column) in self.basis_indices.iter().enumerate() {
-            let generated = self.generate_column(basis_column);
-            debug_assert_eq!(generated, SparseVector::standard_basis_vector(i, self.provider.nr_rows()));
-        }
-        // `minus_pi` get to relative zero cost for basis columns
-        for &basis_column in self.basis_indices.iter() {
-            debug_assert_eq!(self.relative_cost(basis_column), OF::additive_identity());
-        }
-        // `b` >= 0
-        let b = self.constraint_values();
-        for row in 0..self.nr_rows() {
-            debug_assert!(b[row] >= OF::additive_identity());
-        }
-
-        true
-    }
-
     /// A simple getter for the internal provider.
     ///
     /// # Return value
@@ -380,6 +344,67 @@ impl<'a, OF: OrderedField, TT: TableauType, MP: MatrixProvider<OF>> Tableau<'a, 
     pub fn provider(&self) -> &MP {
         self.provider
     }
+}
+
+
+
+/// Check whether the tableau currently has a valid basic feasible solution.
+///
+/// Only used for debug_purposes.
+/// TODO: Move this method out of the impl.
+pub fn is_in_basic_feasible_solution_state<OF: OrderedField, TT: TableauType, MP: MatrixProvider<OF>>(
+    tableau: &Tableau<OF, TT, MP>,
+) -> bool {
+    // Checking basis_columns
+    // Correct number of basis columns (uniqueness is implied because it's a set)
+    let nr_basis_columns = tableau.basis_columns.len() == tableau.provider.nr_rows();
+
+    // Checking basis_indices
+    // Correct number of basis columns
+    let nr_basis_indices = tableau.basis_indices.len() == tableau.provider.nr_rows();
+    // Uniqueness of the basis columns
+    let uniqueness = tableau.basis_indices.iter().collect::<HashSet<_>>().len() == tableau.provider.nr_rows();
+    // Same columns as in `basis_indices`
+    let as_set = tableau.basis_indices.iter().map(|&v| v).collect::<HashSet<_>>();
+    let same = as_set.difference(&tableau.basis_columns).count() == 0;
+
+    // Checking carry matrix
+    let carry = {
+        // `basis_inverse_rows` are a proper inverse by regenerating basis columns
+        let mut basis = true;
+        for (i, &basis_column) in tableau.basis_indices.iter().enumerate() {
+            if !(
+                    tableau.generate_column(basis_column)
+                        == SparseVector::standard_basis_vector(i, tableau.provider.nr_rows())
+            ) {
+                basis = false;
+            }
+        }
+        // `minus_pi` get to relative zero cost for basis columns
+        let mut minus_pi = true;
+        for &basis_column in tableau.basis_indices.iter() {
+            if !(tableau.relative_cost(basis_column) == OF::zero()) {
+                minus_pi = false;
+            }
+        }
+        // `b` >= 0
+        let mut b_ok = true;
+        let b = tableau.constraint_values();
+        for row in 0..tableau.nr_rows() {
+            if !(b[row] >= OF::zero()) {
+                b_ok = false;
+            }
+        }
+
+        basis && minus_pi && b_ok
+    };
+
+    true
+        && nr_basis_columns
+        && nr_basis_indices
+        && uniqueness
+        && same
+        && carry
 }
 
 /// The tableau type provides two different ways for the `Tableau` to function, depending on whether
@@ -411,7 +436,7 @@ pub trait TableauType: Sized + Eq + PartialEq {
     /// Tableau as a matrix with respect to the original identity basis.
     fn original_matrix<F: Field, MP: MatrixProvider<F>>(
         tableau: &Tableau<F, Self, MP>,
-    ) -> SparseMatrix<F, ColumnMajorOrdering>;
+    ) -> Sparse<F, ColumnMajor>;
 
     /// Number of variables in the problem.
     ///
@@ -447,9 +472,9 @@ impl TableauType for Artificial {
         debug_assert!(j < tableau.nr_columns());
 
         if j < tableau.nr_artificial_variables() {
-            F::multiplicative_identity()
+            F::one()
         } else {
-            F::additive_identity()
+            F::zero()
         }
     }
 
@@ -478,8 +503,8 @@ impl TableauType for Artificial {
 
     fn original_matrix<F: Field, MP: MatrixProvider<F>>(
         tableau: &Tableau<F, Self, MP>,
-    ) -> SparseMatrix<F, ColumnMajorOrdering> {
-        ColumnMajorOrdering::identity(tableau.nr_rows()).concatenate_horizontally(tableau.provider.as_sparse_matrix())
+    ) -> Sparse<F, ColumnMajor> {
+        ColumnMajor::identity(tableau.nr_rows()).concatenate_horizontally(tableau.provider.as_sparse_matrix())
     }
 
     /// Number of variables in the problem.
@@ -588,7 +613,7 @@ impl TableauType for NonArtificial {
 
     fn original_matrix<F: Field, MP: MatrixProvider<F>>(
         tableau: &Tableau<F, Self, MP>,
-    ) -> SparseMatrix<F, ColumnMajorOrdering> {
+    ) -> Sparse<F, ColumnMajor> {
         tableau.provider.as_sparse_matrix()
     }
 
@@ -701,43 +726,52 @@ impl<'a, F, TT, MP> Display for Tableau<'a, F, TT, MP>
     where F: Field, TT: TableauType, MP: MatrixProvider<F> {
     fn fmt(&self, f: &mut Formatter) -> FormatResult {
         writeln!(f, "Tableau:")?;
-        writeln!(f, "=== Current Tableau ===")?;
+        writeln!(f, "=== Matrix Provider ===")?;
+        <MP as Display>::fmt(self.provider, f)?;
+
+        writeln!(f, "=== Current State ===")?;
         let column_width = 10;
-        let counter_width = 5;
+        let counter_width = 8;
         // Column counter
         write!(f, "{0:width$}", "", width = counter_width)?;
+        write!(f, "{0:^width$}", "b", width = column_width)?;
+        write!(f, "|")?;
         for column_index in 0..self.nr_columns() {
-            write!(f, "{0:>width$}", column_index, width = column_width)?;
+            write!(f, "{0:^width$}", column_index, width = column_width)?;
         }
-        writeln!(f, "")?;
+        writeln!(f)?;
 
         // Separator
-        writeln!(f, "{}", repeat_n("-", counter_width + self.nr_columns() * column_width)
+        writeln!(f, "{}", repeat_n("-", counter_width + (1 + self.nr_columns()) * column_width)
             .collect::<String>())?;
 
         // Cost row
-        write!(f, "{0:width$}", "cost", width = counter_width)?;
+        write!(f, "{0:>width$}", format!("{}  |", "cost"), width = counter_width)?;
+        write!(f, "{0:^width$}", format!("{}", self.carry.minus_objective), width = column_width)?;
+        write!(f, "|")?;
         for column_index in 0..self.nr_columns() {
             let number = format!("{}", self.relative_cost(column_index));
-            write!(f, "{0:>width$.5}", number, width = column_width)?;
+            write!(f, "{0:^width$.5}", number, width = column_width)?;
         }
-        writeln!(f, "")?;
+        writeln!(f)?;
 
         // Separator
         writeln!(f, "{}", repeat("-")
-            .take(counter_width + self.nr_columns() * column_width)
+            .take(counter_width + (1 + self.nr_columns()) * column_width)
             .collect::<String>())?;
 
         // Row counter and row data
         for row_index in 0..self.nr_rows() {
-            write!(f, "{0: <width$}", row_index, width = counter_width)?;
+            write!(f, "{:>width$}", format!("{}  |", row_index), width = counter_width)?;
+            write!(f, "{0:^width$}", format!("{}", self.carry.b[row_index]), width = column_width)?;
+            write!(f, "|")?;
             for column_index in 0..self.nr_columns() {
                 let number = format!("{}", self.generate_column(column_index)[row_index]);
-                write!(f, "{0:>width$.5}", number, width = column_width)?;
+                write!(f, "{:^width$}", number, width = column_width)?;
             }
-            writeln!(f, "")?;
+            writeln!(f)?;
         }
-        writeln!(f, "")?;
+        writeln!(f)?;
 
         writeln!(f, "=== Basis Columns ===")?;
         let mut basis = self.basis_indices.iter()
@@ -793,15 +827,15 @@ impl<F: Field> CarryMatrix<F> {
     ///
     /// `CarryMatrix` with a `minus_pi` equal to -1's and the standard basis.
     fn create_for_artificial(b: DenseVector<F>) -> Self {
-        let mut objective = F::additive_identity();
+        let mut objective = F::zero();
         for &value in b.iter_values() {
-            objective += value;
+            objective += F::one() * value; // One because we minimize a simple sum of non-negative artificials
         }
 
         let m = b.len();
         CarryMatrix {
             minus_objective: -objective,
-            minus_pi: DenseVector::constant(-F::multiplicative_identity(), m),
+            minus_pi: DenseVector::constant(-F::one(), m),
             b,
             basis_inverse_rows: (0..m).map(|i| SparseVector::standard_basis_vector(i, m)).collect(),
             number_of_basis_changes: 0,
@@ -934,7 +968,7 @@ impl<F: Field> CarryMatrix<F> {
         debug_assert_eq!(provider.nr_rows(), m);
         debug_assert_eq!(basis.len(), m);
 
-        let mut pi = repeat_n(F::additive_identity(), m).collect::<Vec<_>>();
+        let mut pi = repeat_n(F::zero(), m).collect::<Vec<_>>();
         for row in 0..m {
             for &(column, value) in basis_inverse_rows[row].iter_values() {
                 pi[column] += provider.cost_value(basis[row]) * value;
@@ -951,7 +985,7 @@ impl<F: Field> CarryMatrix<F> {
         basis: &Vec<usize>,
         b: &DenseVector<F>,
     ) -> F {
-        let mut objective = F::additive_identity();
+        let mut objective = F::zero();
         for row in 0..provider.nr_rows() {
             objective += provider.cost_value(basis[row]) * b[row];
         }
@@ -998,7 +1032,7 @@ impl<F: Field> CarryMatrix<F> {
     /// * `column`: Column relative to the current basis to be entered into that basis.
     fn normalize_pivot_row(&mut self, pivot_row_index: usize, column: &SparseVector<F>) {
         let pivot_value = column[pivot_row_index];
-        debug_assert_ne!(pivot_value, F::additive_identity());
+        debug_assert_ne!(pivot_value, F::zero());
         self.basis_inverse_rows[pivot_row_index].element_wise_divide(pivot_value);
         self.b[pivot_row_index] /= pivot_value;
     }
@@ -1053,13 +1087,13 @@ impl<F: Field> CarryMatrix<F> {
         let tuples = (0..self.m())
             .map(|i| self.basis_inverse_rows[i].inner_product(&original_column))
             .enumerate()
-            .filter(|&(_, v)| v != F::additive_identity())
+            .filter(|&(_, v)| v != F::zero())
             .collect();
 
         SparseVector::new(tuples, self.m())
     }
 
-    fn generate_row(&self, i: usize, original_matrix: SparseMatrix<F, ColumnMajorOrdering>) -> SparseVector<F> {
+    fn generate_row(&self, i: usize, original_matrix: Sparse<F, ColumnMajor>) -> SparseVector<F> {
         debug_assert!(i < self.m());
         debug_assert_eq!(original_matrix.nr_rows(), self.m());
 
@@ -1088,7 +1122,7 @@ impl<F: Field> CarryMatrix<F> {
         self.minus_objective -= column_value * self.b[pivot_row_index];
 
         for &(column_index, value) in self.basis_inverse_rows[pivot_row_index].iter_values() {
-            self.minus_pi.shift_value(column_index, - column_value * value);
+            self.minus_pi[column_index] -= column_value * value;
         }
     }
 
@@ -1098,7 +1132,7 @@ impl<F: Field> CarryMatrix<F> {
     fn cost_difference(&self, column: SparseVector<F>) -> F {
         debug_assert_eq!(column.len(), self.m());
 
-        let mut total = F::additive_identity();
+        let mut total = F::zero();
         for (j, value) in column.values() {
             total += self.minus_pi[j] * value;
         }
@@ -1151,13 +1185,23 @@ impl<F: Field> Display for CarryMatrix<F> {
         writeln!(f, "b:")?;
         <DenseVector<F> as Display>::fmt(&self.b, f)?;
         writeln!(f, "B^-1:")?;
-        for row in 0..self.m() {
-            for column in 0..self.m() {
-                write!(f, "\t{}", self.basis_inverse_rows[row][column])?;
-            }
-            writeln!(f, "")?;
+        let width = 8;
+
+        write!(f, "{}", repeat_n(" ", width / 2).collect::<Vec<_>>().concat());
+        for column in 0..self.m() {
+            write!(f, "{:^width$}", column, width = width)?;
         }
-        writeln!(f, "")
+        writeln!(f)?;
+        writeln!(f, "{}", repeat_n("-",(1 + self.m()) * width).collect::<String>())?;
+
+        for row in 0..self.m() {
+            write!(f, "{:>width$}", format!("{} |", row), width = width / 2)?;
+            for column in 0..self.m() {
+                write!(f, "{:^width$}", format!("{}", self.basis_inverse_rows[row][column]), width = width)?;
+            }
+            writeln!(f)?;
+        }
+        writeln!(f)
     }
 }
 
@@ -1165,6 +1209,7 @@ impl<F: Field> Display for CarryMatrix<F> {
 /// deleted.
 ///
 /// Used for deleting duplicate constraints after finding primal feasibility.
+#[derive(Debug)]
 pub struct RemoveRows<'a, F: Field, MP: MatrixProvider<F>> {
     provider: &'a MP,
     /// List of rows that this method removes.
@@ -1355,6 +1400,28 @@ where F: Field, MP: MatrixProvider<F> + VariableFeasibilityLogic<F> {
     }
 }
 
+impl<'a, F: Field, MP: MatrixProvider<F>> Display for RemoveRows<'a, F, MP> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let width = 8;
+
+        write!(f, "{}", repeat_n(" ", width).collect::<Vec<_>>().concat());
+        for column in 0..self.nr_columns() {
+            write!(f, "{:^width$}", column, width = width)?;
+        }
+        writeln!(f)?;
+        writeln!(f, "{}", repeat_n("-",(1 + self.nr_columns()) * width).collect::<String>())?;
+
+        for row in 0..self.nr_rows() {
+            write!(f, "{:>width$}", format!("{} |", row), width = width)?;
+            for column in 0..self.nr_columns() {
+                write!(f, "{:^width$}", format!("{}", self.column(column)[row]), width = width)?;
+            }
+            writeln!(f)?;
+        }
+        writeln!(f)
+    }
+}
+
 
 #[cfg(test)]
 mod test {
@@ -1370,17 +1437,17 @@ mod test {
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::number_types::traits::RealField;
     use crate::RF;
-    use crate::tests::problem_2::{artificial_tableau_form, matrix_data_form};
+    use crate::tests::problem_2::{artificial_tableau_form, create_matrix_data_data, matrix_data_form};
 
-    fn tableau<RF: RealField>(data: &MatrixData<RF>) -> Tableau<RF, NonArtificial, MatrixData<RF>> {
+    fn tableau<'a, RF: RealField>(data: &'a MatrixData<'a, RF>) -> Tableau<'a, RF, NonArtificial, MatrixData<'a, RF>> {
         let carry = {
             let minus_objective = RF!(-6);
-            let minus_pi = DenseVector::from_test_data(vec![1f64, -1f64, -1f64]);
-            let b = DenseVector::from_test_data(vec![1f64, 2f64, 3f64]);
+            let minus_pi = DenseVector::from_test_data(vec![1, -1, -1]);
+            let b = DenseVector::from_test_data(vec![1, 2, 3]);
             let basis_inverse_rows = vec![
-                SparseVector::from_test_data(vec![1f64, 0f64, 0f64]),
-                SparseVector::from_test_data(vec![-1f64, 1f64, 0f64]),
-                SparseVector::from_test_data(vec![-1f64, 0f64, 1f64]),
+                SparseVector::from_test_data(vec![1, 0, 0]),
+                SparseVector::from_test_data(vec![-1, 1, 0]),
+                SparseVector::from_test_data(vec![-1, 0, 1]),
             ];
             CarryMatrix::<RF>::create(minus_objective, minus_pi, b, basis_inverse_rows)
         };
@@ -1400,18 +1467,20 @@ mod test {
 
     #[test]
     fn test_cost() {
-        let data = matrix_data_form::<Ratio<i32>>();
-        let artificial_tableau = artificial_tableau_form(&data);
+        let (constraints, b) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let artificial_tableau = artificial_tableau_form(&matrix_data_form);
         assert_eq!(artificial_tableau.objective_function_value(), Ratio::from_i32(8).unwrap());
 
-        let tableau = tableau(&data);
+        let tableau = tableau(&matrix_data_form);
         assert_eq!(tableau.objective_function_value(), Ratio::from_i32(6).unwrap());
     }
 
     #[test]
     fn test_relative_cost() {
-        let data = matrix_data_form::<Ratio<i32>>();
-        let artificial_tableau = artificial_tableau_form(&data);
+        let (constraints, b) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let artificial_tableau = artificial_tableau_form(&matrix_data_form);
         assert_eq!(artificial_tableau.relative_cost(0), Ratio::from_i32(0).unwrap());
 
         assert_eq!(
@@ -1419,7 +1488,7 @@ mod test {
             Ratio::from_i32(-10).unwrap(),
         );
 
-        let tableau = tableau(&data);
+        let tableau = tableau(&matrix_data_form);
         assert_eq!(tableau.relative_cost(0), Ratio::from_i32(-3).unwrap());
         assert_eq!(tableau.relative_cost(1), Ratio::from_i32(-3).unwrap());
         assert_eq!(tableau.relative_cost(2), Ratio::from_i32(0).unwrap());
@@ -1427,20 +1496,21 @@ mod test {
 
     #[test]
     fn test_generate_column() {
-        let data = matrix_data_form::<Ratio<i32>>();
-        let artificial_tableau = artificial_tableau_form(&data);
+        let (constraints, b) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let artificial_tableau = artificial_tableau_form(&matrix_data_form);
 
         let index_to_test = artificial_tableau.nr_artificial_variables() + 0;
         let column = artificial_tableau.generate_column(index_to_test);
-        let expected = SparseVector::from_test_data(vec![3f64, 5f64, 2f64]);
+        let expected = SparseVector::from_test_data(vec![3, 5, 2]);
         assert_eq!(column, expected);
         let result = artificial_tableau.relative_cost(index_to_test);
         assert_eq!(result, Ratio::<i32>::from_i32(-10).unwrap());
 
-        let tableau = tableau(&data);
+        let tableau = tableau(&matrix_data_form);
         let index_to_test = 0;
         let column = tableau.generate_column(index_to_test);
-        let expected = SparseVector::from_test_data(vec![3f64, 2f64, -1f64]);
+        let expected = SparseVector::from_test_data(vec![3, 2, -1]);
         assert_eq!(column, expected);
         let result = tableau.relative_cost(index_to_test);
         assert_eq!(result, Ratio::<i32>::from_i32(-3).unwrap());
@@ -1448,8 +1518,10 @@ mod test {
 
     #[test]
     fn test_bring_into_basis() {
-        let data = matrix_data_form::<Ratio<i64>>();
-        let mut artificial_tableau = artificial_tableau_form(&data);
+        let (constraints, b) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let artificial_tableau = artificial_tableau_form(&matrix_data_form);
+        let mut artificial_tableau = artificial_tableau_form(&matrix_data_form);
         let column = artificial_tableau.nr_artificial_variables() + 0;
         let column_data = artificial_tableau.generate_column(column);
         let row = artificial_tableau.select_primal_pivot_row(&column_data).unwrap();
@@ -1458,9 +1530,9 @@ mod test {
 
         assert!(artificial_tableau.is_in_basis(&column));
         assert!(!artificial_tableau.is_in_basis(&0));
-        assert_eq!(artificial_tableau.objective_function_value(), Ratio::<i64>::new(14, 3));
+        assert_eq!(artificial_tableau.objective_function_value(), Ratio::<i32>::new(14, 3));
 
-        let mut tableau = tableau(&data);
+        let mut tableau = tableau(&matrix_data_form);
         let column = 1;
         let column_data = tableau.generate_column(column);
         let row = tableau.select_primal_pivot_row(&column_data).unwrap();
@@ -1468,19 +1540,19 @@ mod test {
         tableau.bring_into_basis(column, row, &column_data, cost);
 
         assert!(tableau.is_in_basis(&column));
-        assert_eq!(tableau.objective_function_value(), Ratio::<i64>::new(9, 2));
+        assert_eq!(tableau.objective_function_value(), Ratio::<i32>::new(9, 2));
     }
 
-    fn bfs_tableau<F: RealField>(data: &MatrixData<F>) -> Tableau<F, Artificial, MatrixData<F>> {
+    fn bfs_tableau<'a, F: RealField>(data: &'a MatrixData<'a, F>) -> Tableau<'a, F, Artificial, MatrixData<'a, F>> {
         let m = 3;
         let carry = {
             let minus_objective = F::from_i32(0).unwrap();
-            let minus_pi = DenseVector::from_test_data(vec![1f64, 1f64, 1f64]);
-            let b = DenseVector::from_test_data(vec![1f64, 2f64, 3f64]);
+            let minus_pi = DenseVector::from_test_data(vec![1, 1, 1]);
+            let b = DenseVector::from_test_data(vec![1, 2, 3]);
             let basis_inverse_rows = vec![
-                SparseVector::from_test_data(vec![1f64, 0f64, 0f64]),
-                SparseVector::from_test_data(vec![-1f64, 1f64, 0f64]),
-                SparseVector::from_test_data(vec![-1f64, 0f64, 1f64]),
+                SparseVector::from_test_data(vec![1, 0, 0]),
+                SparseVector::from_test_data(vec![-1, 1, 0]),
+                SparseVector::from_test_data(vec![-1, 0, 1]),
             ];
             CarryMatrix::<F>::create(minus_objective, minus_pi, b, basis_inverse_rows)
         };
@@ -1495,8 +1567,10 @@ mod test {
 
     #[test]
     fn test_create_tableau() {
-        let data = matrix_data_form::<Ratio<i32>>();
-        let bfs_tableau = bfs_tableau(&data);
+        let (constraints, b) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let artificial_tableau = artificial_tableau_form(&matrix_data_form);
+        let bfs_tableau = bfs_tableau(&matrix_data_form);
         let mut rule = <FirstProfitable as PivotRule<Artificial>>::new();
         assert!(rule.select_primal_pivot_column(&bfs_tableau).is_none());
     }

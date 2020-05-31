@@ -4,12 +4,14 @@
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter, Result as FormatResult};
 
-use crate::algorithm::simplex::matrix_provider::{MatrixProvider, VariableFeasibilityLogic, BoundType};
-use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, SparseMatrix};
+use crate::algorithm::simplex::matrix_provider::{BoundType, MatrixProvider, VariableFeasibilityLogic};
+use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse};
 use crate::data::linear_algebra::SparseTuples;
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use crate::data::linear_program::elements::VariableType;
 use crate::data::number_types::traits::{Field, OrderedField, RealField};
+use std::fmt;
+use itertools::repeat_n;
 
 /// Describes a linear program using a combination of a sparse matrix of constraints, and a vector
 /// with simple variable bounds.
@@ -31,13 +33,13 @@ use crate::data::number_types::traits::{Field, OrderedField, RealField};
 ///                             ||                                  |                       |                       |                +/- 1 |
 /// ----------------------------------------------------------------------------------------------------------------------------------------
 #[derive(Debug, PartialEq)]
-pub struct MatrixData<F: Field> {
+pub struct MatrixData<'a, F: Field> {
     /// Coefficient matrix.
     ///
     /// This should not contain variable bounds.
-    constraints: SparseMatrix<F, ColumnMajorOrdering>,
+    constraints: &'a Sparse<F, ColumnMajor>,
     /// Constraint values for the constraints, excludes the simple bounds.
-    b: DenseVector<F>,
+    b: &'a DenseVector<F>,
     /// How many of which constraint do we have?
     nr_equality_constraints: usize,
     nr_upper_bounded_constraints: usize,
@@ -110,7 +112,7 @@ enum ColumnType {
     BoundSlackVariable(usize),
 }
 
-impl<F: Field> MatrixData<F> {
+impl<'a, F: Field> MatrixData<'a, F> {
     /// Create a new `MatrixData` struct.
     ///
     /// # Arguments
@@ -120,30 +122,18 @@ impl<F: Field> MatrixData<F> {
     /// * `negative_free_variable_dummy_index`: Index i contains the index of the i'th free
     /// variable.
     pub fn new(
-        equality_constraints: Vec<SparseTuples<F>>,
-        upper_bounded_constraints: Vec<SparseTuples<F>>,
-        lower_bounded_constraints: Vec<SparseTuples<F>>,
-        b: DenseVector<F>,
+        constraints: &'a Sparse<F, ColumnMajor>,
+        b: &'a DenseVector<F>,
+        nr_equality_constraints: usize,
+        nr_upper_bounded_constraints: usize,
+        nr_lower_bounded_constraints: usize,
         variables: Vec<Variable<F>>,
         negative_free_variable_dummy_index: Vec<usize>,
     ) -> Self {
-        let nr_equality_constraints = equality_constraints.len();
-        let nr_upper_bounded_constraints = upper_bounded_constraints.len();
-        let nr_lower_bounded_constraints = lower_bounded_constraints.len();
-        let nr_constraints = nr_equality_constraints
-            + nr_upper_bounded_constraints
-            + nr_lower_bounded_constraints;
-        let nr_non_slack_variables = variables.len();
-
-        debug_assert_eq!(b.len(), nr_constraints);
-
-        let constraints: SparseMatrix<_, ColumnMajorOrdering> = SparseMatrix::from_row_ordered_tuples_although_this_is_expensive(
-            &[equality_constraints, upper_bounded_constraints, lower_bounded_constraints].concat(),
-            nr_non_slack_variables,
+        debug_assert_eq!(
+            nr_equality_constraints + nr_upper_bounded_constraints + nr_lower_bounded_constraints,
+            constraints.nr_rows(),
         );
-        debug_assert_eq!(constraints.nr_rows(), nr_constraints);
-        debug_assert_eq!(constraints.nr_columns(), nr_non_slack_variables);
-
         debug_assert!(negative_free_variable_dummy_index.iter().max() < Some(&constraints.nr_columns()));
         debug_assert_eq!(
             negative_free_variable_dummy_index.iter().collect::<HashSet<_>>().len(),
@@ -178,25 +168,53 @@ impl<F: Field> MatrixData<F> {
     }
 
     fn column_type(&self, j: usize) -> ColumnType {
+        let separating_indices = self.get_variable_separating_indices();
+
+        if j < separating_indices[0] {
+            ColumnType::NormalVariable(j)
+        } else if j < separating_indices[1] {
+            ColumnType::FreeVariableDummy(j - separating_indices[0])
+        } else if j < separating_indices[2] {
+            ColumnType::UpperInequalitySlackVariable(j - separating_indices[1])
+        } else if j < separating_indices[3] {
+            ColumnType::LowerInequalitySlackVariable(j - separating_indices[2])
+        } else if j < separating_indices[4] {
+            ColumnType::BoundSlackVariable(j - separating_indices[3])
+        } else {
+            panic!()
+        }
+    }
+
+    fn get_variable_separating_indices(&self) -> [usize; 5] {
         let normal = self.nr_normal_variables();
         let normal_free = normal + self.nr_free_variable_dummies();
         let normal_free_upper = normal_free + self.nr_upper_bounded_constraints;
         let normal_free_upper_lower = normal_free_upper + self.nr_lower_bounded_constraints;
         let normal_free_upper_lower_bound = normal_free_upper_lower + self.nr_bounds();
+        debug_assert_eq!(normal_free_upper_lower_bound, self.nr_columns());
 
-        if j < normal {
-            ColumnType::NormalVariable(j)
-        } else if j < normal_free {
-            ColumnType::FreeVariableDummy(j - normal)
-        } else if j < normal_free_upper {
-            ColumnType::UpperInequalitySlackVariable(j - normal_free)
-        } else if j < normal_free_upper_lower {
-            ColumnType::LowerInequalitySlackVariable(j - normal_free_upper)
-        } else if j < normal_free_upper_lower_bound {
-            ColumnType::BoundSlackVariable(j - normal_free_upper_lower)
-        } else {
-            panic!()
-        }
+        [
+            normal,
+            normal_free,
+            normal_free_upper,
+            normal_free_upper_lower,
+            normal_free_upper_lower_bound,
+        ]
+    }
+
+    fn get_constraint_separating_indices(&self) -> [usize; 4] {
+        let eq = self.nr_equality_constraints;
+        let eq_upper = eq + self.nr_upper_bounded_constraints;
+        let eq_upper_lower = eq_upper + self.nr_lower_bounded_constraints;
+        let eq_upper_lower_bound = eq_upper_lower + self.nr_bounds();
+        debug_assert_eq!(eq_upper_lower_bound, self.nr_rows());
+
+        [
+            eq,
+            eq_upper,
+            eq_upper_lower,
+            eq_upper_lower_bound,
+        ]
     }
 
     fn nr_normal_variables(&self) -> usize {
@@ -208,13 +226,13 @@ impl<F: Field> MatrixData<F> {
     }
 }
 
-impl<F: Field> MatrixProvider<F> for MatrixData<F> {
+impl<'a, F: Field> MatrixProvider<F> for MatrixData<'a, F> {
     fn column(&self, j: usize) -> SparseVector<F> {
         debug_assert!(j < self.nr_columns());
 
         match self.column_type(j) {
             ColumnType::NormalVariable(j) => {
-                let mut tuples = self.constraints.iter_column(j).map(|&(i, v)| (i, v)).collect::<Vec<_>>();
+                let mut tuples = self.constraints.iter_column(j).copied().collect::<Vec<_>>();
                 if let Some(bound_row_index) = self.bound_row_index(j, BoundType::Upper) {
                     tuples.push((bound_row_index, F::multiplicative_identity())); // It's always an upper bound, so `1f64`
                 }
@@ -326,7 +344,7 @@ impl<F: Field> MatrixProvider<F> for MatrixData<F> {
     }
 }
 
-impl<RF: RealField> VariableFeasibilityLogic<RF> for MatrixData<RF> {
+impl<'a, RF: RealField> VariableFeasibilityLogic<RF> for MatrixData<'a, RF> {
     fn is_feasible(&self, j: usize, value: RF) -> bool {
         debug_assert!(j < self.nr_columns());
 
@@ -353,29 +371,44 @@ impl<RF: RealField> VariableFeasibilityLogic<RF> for MatrixData<RF> {
     }
 }
 
-impl<F: OrderedField> Display for MatrixData<F> {
-    fn fmt(&self, f: &mut Formatter) -> FormatResult {
-        writeln!(f, "Matrix Data")?;
-        writeln!(f, "Rows: {}\tColumns: {}", self.nr_rows(), self.nr_columns())?;
+impl<'a, F: Field> Display for MatrixData<'a, F> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let width = 8;
+        let separator_width = (1 + self.nr_columns()) * width + self.get_variable_separating_indices().len();
 
-        let column_width = 10;
-        let counter_width = 5;
-        // Column counter
-        write!(f, "{0:width$}", "", width = counter_width)?;
-        for column_index in 0..self.nr_columns() {
-            write!(f, "{0:>width$}", column_index, width = column_width)?;
-        }
-        writeln!(f, "")?;
-
-        // Row counter and row data
-        for row_index in 0..self.nr_rows() {
-            write!(f, "{0: <width$}", row_index, width = counter_width)?;
-            for column_index in 0..self.nr_columns() {
-                write!(f, "{0:>width$.5}", self.constraints.get_value(row_index, column_index), width = column_width)?;
+        write!(f, "{:>width$}", "|", width = width)?;
+        for column in 0..self.nr_columns() {
+            if self.get_variable_separating_indices().contains(&column) {
+                write!(f, "|")?;
             }
-            writeln!(f, "")?;
+            write!(f, "{:^width$}", column, width = width)?;
         }
-        write!(f, "")
+        writeln!(f)?;
+        writeln!(f, "{}", repeat_n("=",separator_width).collect::<String>())?;
+        write!(f, "{:>width$}", "cost |", width = width)?;
+        for column in 0..self.nr_columns() {
+            if self.get_variable_separating_indices().contains(&column) {
+                write!(f, "|")?;
+            }
+            write!(f, "{:^width$}", format!("{}", self.cost_value(column)), width = width)?;
+        }
+        writeln!(f)?;
+        writeln!(f, "{}", repeat_n("=",separator_width).collect::<String>())?;
+
+        for row in 0..self.nr_rows() {
+            if self.get_constraint_separating_indices().contains(&row) {
+                writeln!(f, "{}", repeat_n("-",separator_width).collect::<String>())?;
+            }
+            write!(f, "{:>width$}", format!("{} |", row), width = width)?;
+            for column in 0..self.nr_columns() {
+                if self.get_variable_separating_indices().contains(&column) {
+                    write!(f, "|")?;
+                }
+                write!(f, "{:^width$}", format!("{}", self.column(column)[row]), width = width)?;
+            }
+            writeln!(f)?;
+        }
+        writeln!(f)
     }
 }
 
@@ -384,7 +417,7 @@ mod test {
     use num::rational::Ratio;
     use num::traits::FromPrimitive;
 
-    use crate::algorithm::simplex::matrix_provider::{MatrixProvider, VariableFeasibilityLogic, BoundType};
+    use crate::algorithm::simplex::matrix_provider::{BoundType, MatrixProvider, VariableFeasibilityLogic};
     use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::R32;
@@ -392,7 +425,8 @@ mod test {
 
     #[test]
     fn from_general_form() {
-        let matrix_data = problem_1::matrix_data_form();
+        let (constraints, b) = problem_1::create_matrix_data_data();
+        let matrix_data = problem_1::matrix_data_form(&constraints, &b);
 
         assert_eq!(matrix_data.nr_normal_variables(), 3);
 

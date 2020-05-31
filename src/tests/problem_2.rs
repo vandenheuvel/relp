@@ -1,20 +1,25 @@
 use std::collections::HashSet;
 
+use num::FromPrimitive;
 use num::rational::Ratio;
 
-use crate::RF;
+use crate::{R32, RF};
 use crate::algorithm::simplex::data::{Artificial, CarryMatrix, NonArtificial, Tableau};
 use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable};
 use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
+use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::VariableType;
 use crate::data::number_types::traits::RealField;
 
+type T = Ratio<i32>;
+
 #[test]
 fn test_conversion_pipeline() {
-    let matrix_data_form = matrix_data_form();
+    let (constraints, b) = create_matrix_data_data();
+    let matrix_data_form = matrix_data_form(&constraints, &b);
 
     // Artificial tableau form
     let mut artificial_tableau_form_computed = Tableau::<_, Artificial, _>::new(&matrix_data_form);
@@ -29,7 +34,7 @@ fn test_conversion_pipeline() {
     assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form));
 
     // Get to a basic feasible solution
-    let result = primal::<Ratio<i32>, _, FirstProfitable>(&mut tableau_form_computed);
+    let result = primal::<T, _, FirstProfitable>(&mut tableau_form_computed);
     assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
         (1, 0.5f64),
         (3, 2.5f64),
@@ -37,32 +42,51 @@ fn test_conversion_pipeline() {
     ], 5)));
 }
 
-pub fn matrix_data_form<RF: RealField>() -> MatrixData<RF> {
-    let equal = vec![
-        vec![(0, RF!(3)), (1, RF!(2)), (2, RF!(1))],
-        vec![(0, RF!(5)), (1, RF!(1)), (2, RF!(1)), (3, RF!(1))],
-        vec![(0, RF!(2)), (1, RF!(5)), (2, RF!(1)), (4, RF!(1))],
-    ];
-    let upper_bounded = vec![];
-    let lower_bounded = vec![];
+pub fn create_matrix_data_data() -> (Sparse<T, ColumnMajor>, DenseVector<T>) {
+    let constraints = ColumnMajor::from_test_data(
+        &vec![
+            vec![3, 2, 1, 0, 0],
+            vec![5, 1, 1, 1, 0],
+            vec![2, 5, 1, 0, 1],
+        ],
+        5,
+    );
+    
     let b = DenseVector::from_test_data(vec![
-        1f64,
-        3f64,
-        4f64,
+        1,
+        3,
+        4,
     ]);
-    let variables = vec![Variable { cost: RF!(1), upper_bound: None, variable_type: VariableType::Continuous }; 5];
+
+    (constraints, b)
+}
+
+pub fn matrix_data_form<'a>(
+    constraints: &'a Sparse<T, ColumnMajor>,
+    b: &'a DenseVector<T>,
+) -> MatrixData<'a, T> {
+    let variables = vec![
+        Variable {
+            cost: R32!(1),
+            upper_bound: None,
+            variable_type: VariableType::Continuous
+        }; 5
+    ];
 
     MatrixData::new(
-        equal,
-        upper_bounded,
-        lower_bounded,
-        b,
+        &constraints,
+        &b,
+        3,
+        0,
+        0,
         variables,
         Vec::with_capacity(0),
     )
 }
 
-pub fn artificial_tableau_form<RF: RealField>(data: &MatrixData<RF>) -> Tableau<RF, Artificial, MatrixData<RF>> {
+pub fn artificial_tableau_form<'a, RF: RealField>(
+    data: &'a MatrixData<RF>,
+) -> Tableau<'a, RF, Artificial, MatrixData<'a, RF>> {
     let m = 3;
     let carry = {
         let minus_objective = RF!(-8);
@@ -84,9 +108,11 @@ pub fn artificial_tableau_form<RF: RealField>(data: &MatrixData<RF>) -> Tableau<
     )
 }
 
-pub fn tableau_form<F: RealField>(data: &MatrixData<F>) -> Tableau<F, NonArtificial, MatrixData<F>> {
+pub fn tableau_form<'a, RF: RealField>(
+    data: &'a MatrixData<RF>,
+) -> Tableau<'a, RF, NonArtificial, MatrixData<'a, RF>> {
     let carry = {
-        let minus_objective = F::from_f64(-9f64 / 2f64).unwrap();
+        let minus_objective = RF!(-9f64 / 2f64);
         let minus_pi = DenseVector::from_test_data(vec![2.5f64, -1f64, -1f64]);
         let b = DenseVector::from_test_data(vec![
             0.5f64,
@@ -111,5 +137,5 @@ pub fn tableau_form<F: RealField>(data: &MatrixData<F>) -> Tableau<F, NonArtific
         basis_columns
     };
 
-    Tableau::<F, NonArtificial, MatrixData<F>>::new_with_basis(data, carry, basis_indices, basis_columns)
+    Tableau::<RF, NonArtificial, MatrixData<RF>>::new_with_basis(data, carry, basis_indices, basis_columns)
 }

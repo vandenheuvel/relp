@@ -1,5 +1,5 @@
 //! Helper methods for the accuracy of floating point calculations.
-use num::{Float, Signed, Integer, Unsigned, ToPrimitive};
+use num::{Float, Integer, Signed, ToPrimitive, Unsigned};
 
 /// See the docstring of `candidate_to_round_to`: this function could be used instead of the simpler
 /// integer rounding.

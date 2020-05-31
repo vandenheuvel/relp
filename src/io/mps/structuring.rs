@@ -1,12 +1,13 @@
 //! Organizing data read in the `parsing` module, and checking the linear program for
 //! consistency.
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use std::convert::{identity, TryInto};
 use std::convert::TryFrom;
+use std::mem;
 
-use crate::data::linear_algebra::matrix::{ColumnMajorOrdering, MatrixOrder, RowMajorOrdering, SparseMatrix};
-use crate::data::linear_algebra::SparseTuples;
-use crate::data::linear_algebra::vector::DenseVector;
+use crate::data::linear_algebra::matrix::{ColumnMajor, Order as MatrixOrder, RowMajor, Sparse};
+use crate::data::linear_algebra::vector::{DenseVector, Vector};
 use crate::data::linear_program::elements::{ConstraintType, VariableType};
 use crate::data::linear_program::elements::Objective;
 use crate::data::linear_program::general_form::GeneralForm;
@@ -39,9 +40,9 @@ impl<'a, 'b, F> TryFrom<UnstructuredMPS<'a, F>> for MPS<F> {
     /// # Return value
     ///
     /// A "structured" MPS on success, a `LinearProgramError` on failure.
-    fn try_from(mut unstructured_mps: UnstructuredMPS<'a, F>) -> Result<Self, Self::Error> {
-        let (row_names, row_index) = build_row_index(&unstructured_mps.rows);
-        let rows = order_rows(&unstructured_mps.rows, &row_index)?;
+    fn try_from(unstructured_mps: UnstructuredMPS<'a, F>) -> Result<Self, Self::Error> {
+        let (row_names, row_index) = build_row_index(&unstructured_mps.rows)?;
+        let rows = order_rows(unstructured_mps.rows, &row_index);
         let (cost_values, columns, column_names) = build_columns(
             unstructured_mps.columns,
             &unstructured_mps.cost_row_name,
@@ -53,7 +54,6 @@ impl<'a, 'b, F> TryFrom<UnstructuredMPS<'a, F>> for MPS<F> {
         let bounds = build_bounds(unstructured_mps.bounds, &column_index)?;
         let name = unstructured_mps.name.to_string();
         let cost_row_name = unstructured_mps.cost_row_name.to_string();
-        let row_names = row_names.into_iter().map(str::to_string).collect();
 
         Ok(MPS::new(
             name,
@@ -83,15 +83,19 @@ impl<'a, 'b, F> TryFrom<UnstructuredMPS<'a, F>> for MPS<F> {
 /// A tuple consisting of the names of all rows (this includes the cost row) and
 fn build_row_index<'a>(
     unstructured_rows: &Vec<UnstructuredRow<'a>>
-) -> (Vec<&'a str>, HashMap<&'a str, usize>) {
+) -> Result<(Vec<String>, HashMap<&'a str, usize>), Inconsistency> {
+    let mut row_index = HashMap::with_capacity(unstructured_rows.len());
+    let unique = unstructured_rows.iter().enumerate()
+        .all(|(i, row)| row_index.insert(row.name, i).is_none());
+    if !unique {
+        return Err(Inconsistency::new("Not all row names are unique"));
+    }
+
     let row_names = unstructured_rows.iter()
-        .map(|&UnstructuredRow { name, .. }| name)
+        .map(|&UnstructuredRow { name, .. }| name.to_string())
         .collect::<Vec<_>>();
-    let row_index = row_names.iter()
-        .enumerate()
-        .map(|(index, &name)| (name, index))
-        .collect();
-    (row_names, row_index)
+
+    Ok((row_names, row_index))
 }
 
 /// Order the rows according the provided index.
@@ -107,22 +111,21 @@ fn build_row_index<'a>(
 ///
 /// `Constraint`s if successful, a `LinearProgramError` if not.
 fn order_rows<'a>(
-    unstructured_rows: &Vec<UnstructuredRow<'a>>,
-    index: &HashMap<&'a str, usize>,
-) -> Result<Vec<Constraint>, Inconsistency> {
-    let mut rows: Vec<Constraint> = Vec::with_capacity(unstructured_rows.len());
+    unstructured_rows: Vec<UnstructuredRow<'a>>,
+    _index: &HashMap<&'a str, usize>,
+) -> Vec<Constraint> {
+    debug_assert!(unstructured_rows.iter().enumerate().all(|(i, ur)| {
+        _index.get(ur.name).map_or(false, |&ii| ii == i)
+    }));
 
-    for &UnstructuredRow { name, constraint_type, } in unstructured_rows.iter() {
-        rows.push(Constraint {
-            name: match index.get(name) {
-                Some(&index) => index,
-                None => return Err(Inconsistency::new(format!("Unknown row: {}", name))),
-            },
-            constraint_type,
-        });
-    }
-
-    Ok(rows)
+    unstructured_rows.iter().enumerate()
+        .map(|(i, row)| {
+            Constraint {
+                name_index: i,
+                constraint_type: row.constraint_type,
+            }
+        })
+        .collect()
 }
 
 /// Collect the column values.
@@ -151,7 +154,7 @@ fn build_columns<'a, 'b, F>(
 ) -> Result<(Vec<(usize, F)>, Vec<Variable<F>>, Vec<String>), Inconsistency> {
     unstructured_columns.sort_by_key(|&UnstructuredColumn { name, .. }| name);
 
-    let mut cost_values: Vec<(usize, F)> = Vec::new();
+    let mut cost_values = Vec::new();
     let mut columns = Vec::new();
     let mut column_names = Vec::new();
     if !unstructured_columns.is_empty() {
@@ -159,8 +162,9 @@ fn build_columns<'a, 'b, F>(
         let mut values = Vec::new();
         for UnstructuredColumn { name, variable_type, row_name, value, } in unstructured_columns {
             if name != current_name {
+                values.sort_by_key(|&(i, _)| i);
                 columns.push(Variable {
-                    name: column_names.len(),
+                    name_index: column_names.len(),
                     variable_type: current_type,
                     values,
                 });
@@ -181,7 +185,8 @@ fn build_columns<'a, 'b, F>(
                 values.push((index, value));
             }
         }
-        columns.push(Variable { name: column_names.len(), variable_type: current_type, values, });
+        values.sort_by_key(|&(i, _)| i);
+        columns.push(Variable { name_index: column_names.len(), variable_type: current_type, values, });
         column_names.push(current_name.to_string());
     }
 
@@ -253,6 +258,7 @@ fn build_rhss<'a, 'b, F>(
                 None => return Err(Inconsistency::new(format!("Row name \"{}\" not known.", row_name))),
             }, value));
         }
+        values.sort_by_key(|&(i, _)| i);
         rhss.push(Rhs { name: current_name.to_string(), values, });
     }
 
@@ -279,10 +285,21 @@ fn build_rhss<'a, 'b, F>(
 /// Requires that right-hand side data is sorted by the name of the right-hand side.
 ///
 /// TODO: Generalize the method as to relax the above requirement.
-fn build_ranges<'a, 'b, F>(
+fn build_ranges<'a, F>(
     mut unstructured_ranges: Vec<UnstructuredRange<'a, F>>,
     row_index: &HashMap<&'a str, usize>,
 ) -> Result<Vec<Range<F>>, Inconsistency> {
+    let names_ok = {
+        let mut unique = HashSet::with_capacity(unstructured_ranges.len());
+        unstructured_ranges.iter()
+            .all(|range| {
+                row_index.get(range.row_name).map_or(false, |index| unique.insert(index))
+            })
+    };
+    if !names_ok {
+        return Err(Inconsistency::new("A row name is unknown or a row has multiple ranges."));
+    }
+
     unstructured_ranges.sort_by_key(|&UnstructuredRange { name, .. }| name);
 
     let mut ranges = Vec::new();
@@ -301,6 +318,7 @@ fn build_ranges<'a, 'b, F>(
                 None => return Err(Inconsistency::new(format!("Row name \"{}\" not known.", row_name))),
             }, value));
         }
+        values.sort_by_key(|&(i, _)| i);
         ranges.push(Range { name: current_name.to_string(), values, });
     }
 
@@ -330,25 +348,27 @@ fn build_bounds<F>(
     unstructured_bounds.sort_by_key(|&UnstructuredBound { name, .. }| name);
 
     let mut bounds = Vec::new();
-    let UnstructuredBound { name: mut bound_name, .. } = unstructured_bounds[0];
-    let mut values = Vec::new();
-    // TODO: Get the innver bound type value fro m &f to f
-    for UnstructuredBound { name, bound_type, column_name, } in unstructured_bounds {
-        if name != bound_name {
-            bounds.push(Bound { name: bound_name.to_string(), values, });
+    if !unstructured_bounds.is_empty() {
+        let UnstructuredBound { name: mut bound_name, .. } = unstructured_bounds[0];
+        let mut values = Vec::new();
+        // TODO: Get the innver bound type value fro m &f to f
+        for UnstructuredBound { name, bound_type, column_name, } in unstructured_bounds {
+            if name != bound_name {
+                bounds.push(Bound { name: bound_name.to_string(), values, });
 
-            bound_name = name;
-            values = Vec::new();
+                bound_name = name;
+                values = Vec::new();
+            }
+            values.push((
+                bound_type,
+                match column_index.get(column_name) {
+                    Some(&index) => index,
+                    None => return Err(Inconsistency::new(format!("Variable \"{}\" not known", column_name))),
+                },
+            ));
         }
-        values.push((
-            bound_type,
-            match column_index.get(column_name) {
-                Some(&index) => index,
-                None => return Err(Inconsistency::new(format!("Variable \"{}\" not known", column_name))),
-            },
-        ));
+        bounds.push(Bound { name: bound_name.to_string(), values, });
     }
-    bounds.push(Bound { name: bound_name.to_string(), values, });
 
     Ok(bounds)
 }
@@ -375,7 +395,7 @@ pub struct MPS<F> {
     columns: Vec<Variable<F>>,
     /// Right-hand side constraint values
     rhss: Vec<Rhs<F>>,
-    /// Limiting constraint activations two-sidedly
+    /// Limiting constraint activations two-sidedly.
     ranges: Vec<Range<F>>,
     /// Extra bounds on variables
     bounds: Vec<Bound<F>>,
@@ -444,21 +464,22 @@ impl<F: OrderedField> TryInto<GeneralForm<F>> for MPS<F> {
     ///
     /// A linear program in general form.
     fn try_into(self) -> Result<GeneralForm<F>, Self::Error> {
-        let rows = compute_rows(&self.rows, &self.columns)?;
-        let constraint_types = self.rows.iter()
-            .map(|ref row| row.constraint_type)
-            .collect::<Vec<_>>();
-        let b = compute_b(self.rhss, self.rows, &constraint_types)?;
         let (mut variable_info, variable_names) = compute_variable_info(
-            self.columns,
+            &self.columns,
             self.column_names,
             self.cost_values,
         );
+        let (columns, constraint_types, b) = compute_constraint_info(
+            self.rhss,
+            self.columns,
+            self.rows,
+            self.ranges,
+        )?;
         process_bounds(&mut variable_info, self.bounds)?;
 
         Ok(GeneralForm::new(
             Objective::Minimize,
-            rows,
+            columns,
             constraint_types,
             b,
             variable_info,
@@ -468,57 +489,18 @@ impl<F: OrderedField> TryInto<GeneralForm<F>> for MPS<F> {
     }
 }
 
-fn compute_rows<F: Field>(
-    rows: &Vec<Constraint>,
-    columns: &Vec<Variable<F>>,
-) -> Result<SparseMatrix<F, RowMajorOrdering>, Inconsistency> {
-    let column_major_data = columns.iter().map(|column| {
-        column.values.iter().copied().collect::<SparseTuples<_>>()
-    }).collect::<Vec<_>>();
-    let columns = ColumnMajorOrdering::new(
-        column_major_data,
-        rows.len(),
-        columns.len(),
-    );
-    let rows = SparseMatrix::from_column_major_ordered_matrix_although_this_is_expensive(&columns);
-
-    Ok(rows)
-}
-
-fn compute_b<OF: OrderedField>(
-    rhss: Vec<Rhs<OF>>,
-    rows: Vec<Constraint>,
-    constraints: &Vec<ConstraintType>,
-) -> Result<DenseVector<OF>, Inconsistency> {
-    let mut b = DenseVector::constant(OF::additive_identity(), rows.len());
-    for rhs in rhss.iter() {
-        for &(index, value) in &rhs.values {
-            let current = b[index];
-            if current == OF::additive_identity() || match constraints[index] {
-                ConstraintType::Equal if value != current => {
-                    return Err(
-                        Inconsistency::new(
-                            format!("A constraint can't equal both {} and {}", current, value),
-                        )
-                    )
-                },
-                ConstraintType::Less if value < current => true,
-                ConstraintType::Greater if value > current => true,
-                _ => false,
-            } {
-                b[index] = value;
-            }
-        }
-    }
-
-    Ok(b)
-}
-
 fn compute_variable_info<F: Field>(
-    columns: Vec<Variable<F>>,
-    column_names: Vec<String>,
+    columns: &Vec<Variable<F>>,
+    mut column_names: Vec<String>,
     cost_values: Vec<(usize, F)>,
 ) -> (Vec<ShiftedVariable<F>>, Vec<String>) {
+    let variable_names = columns.iter().map(|variable| {
+        mem::take(&mut column_names[variable.name_index])
+    }).collect::<Vec<_>>();
+    drop(column_names);
+    debug_assert!(variable_names.iter().all(|name| name != &String::default()));
+
+    // TODO: Where is this checked for duplicate row indices?
     let cost_values = cost_values.into_iter().collect::<HashMap<_, _>>();
     let variable_info = columns.iter().enumerate().map(|(j, variable)| {
         ShiftedVariable {
@@ -530,11 +512,140 @@ fn compute_variable_info<F: Field>(
             flipped: false
         }
     }).collect();
-    let variable_names = columns.into_iter().map(|variable| {
-        column_names[variable.name].clone()
-    }).collect();
 
     (variable_info, variable_names)
+}
+
+fn compute_constraint_info<OF: OrderedField>(
+    rhss: Vec<Rhs<OF>>,
+    columns: Vec<Variable<OF>>,
+    rows: Vec<Constraint>,
+    ranges: Vec<Range<OF>>,
+) -> Result<(Sparse<OF, ColumnMajor>, Vec<ConstraintType>, DenseVector<OF>), Inconsistency> {
+    let mut range_rows = ranges.iter()
+        .flat_map(|range| range.values.iter().copied())
+        .collect::<Vec<_>>();
+    range_rows.sort_unstable_by_key(|&(i, _)| i);
+    let mut from_original_to_extended = Vec::with_capacity(rows.len());
+    let mut i = 0;
+    for ii in 0..rows.len() {
+        from_original_to_extended.push(ii + i);
+        if i < range_rows.len() && range_rows[i].0 == ii {
+            i += 1;
+        }
+    }
+
+    let columns = compute_columns(columns, rows.len(), &range_rows);
+    let constraint_types = compute_constraint_types(&rows, &range_rows);
+    let b = compute_b(rhss, &constraint_types, rows.len(), &range_rows)?;
+
+    Ok((columns, constraint_types, b))
+}
+
+fn compute_columns<F: Field>(
+    columns: Vec<Variable<F>>,
+    original_nr_rows: usize,
+    ranges: &Vec<(usize, F)>,
+) -> Sparse<F, ColumnMajor> {
+    debug_assert!(ranges.is_sorted_by_key(|&(i, _)| i));
+    debug_assert!(columns.iter().all(|variable| variable.values.is_sorted_by_key(|&(i, _)| i)));
+    let nr_columns = columns.len();
+
+    let mut extra_done = 0;
+    let mut new_columns = vec![Vec::new(); columns.len()];
+    for (j, column) in columns.into_iter().enumerate() {
+        extra_done = 0;
+        for (i, value) in column.values {
+            new_columns[j].push((i + extra_done, value));
+            while extra_done < ranges.len() && ranges[extra_done].0 < i {
+                extra_done += 1;
+            }
+            if extra_done < ranges.len() && ranges[extra_done].0 == i {
+                extra_done += 1;
+                new_columns[j].push((i + extra_done, value));
+            }
+        }
+    }
+
+    ColumnMajor::new(
+        new_columns,
+        original_nr_rows + ranges.len(),
+        nr_columns,
+    )
+}
+
+fn compute_constraint_types<F: Field>(
+    rows: &Vec<Constraint>,
+    ranges: &Vec<(usize, F)>,
+) -> Vec<ConstraintType> {
+    let mut constraint_types = Vec::with_capacity(rows.len() + ranges.len());
+    let mut extra_done = 0;
+    for (i, &constraint) in rows.iter().enumerate() {
+        if extra_done < ranges.len() && ranges[extra_done].0 == i {
+            while extra_done < ranges.len() && ranges[extra_done].0 == i {
+                constraint_types.push(ConstraintType::Greater);
+                constraint_types.push(ConstraintType::Less);
+                extra_done += 1;
+            }
+        } else {
+            constraint_types.push(constraint.constraint_type);
+        }
+    }
+
+    constraint_types
+}
+
+fn compute_b<OF: OrderedField>(
+    rhss: Vec<Rhs<OF>>,
+    constraints: &Vec<ConstraintType>,
+    original_nr_rows: usize,
+    ranges: &Vec<(usize, OF)>,
+) -> Result<DenseVector<OF>, Inconsistency> {
+    debug_assert_eq!(original_nr_rows + ranges.len(), constraints.len());
+    debug_assert!(rhss.iter().all(|rhs| rhs.values.is_sorted_by_key(|&(i, _)| i)));
+
+    let mut b = vec![None; constraints.len()];
+    let mut extra_done = 0;
+    for rhs in rhss {
+        extra_done = 0;
+        for (i, value) in rhs.values {
+            while extra_done < ranges.len() && ranges[extra_done].0 < i {
+                extra_done += 1;
+            }
+            if extra_done < ranges.len() && ranges[extra_done].0 == i {
+                let r = ranges[extra_done].1;
+                let (h, u) = match (constraints[i + extra_done], r.cmp(&OF::zero())) {
+                    (ConstraintType::Greater, _) => (value, value + r.abs()),
+                    (ConstraintType::Less, _) => (value - r.abs(), value),
+                    (ConstraintType::Equal, Ordering::Greater | Ordering::Equal) => (value, value + r.abs()),
+                    (ConstraintType::Equal, Ordering::Less | Ordering::Equal) => (value - r.abs(), value),
+                };
+
+                b[i + extra_done] = Some(h);
+                extra_done += 1;
+                b[i + extra_done] = Some(u);
+            } else if let Some(current) = b[i + extra_done] {
+                match constraints[i + extra_done] {
+                    ConstraintType::Equal => if value != current {
+                        return Err(
+                            Inconsistency::new(
+                                format!("Trivial infeasibility: a constraint can't equal both {} and {}", current, value),
+                            )
+                        )
+                    },
+                    ConstraintType::Greater => b[i + extra_done] = Some(current.max(value)),
+                    ConstraintType::Less => b[i + extra_done] = Some(current.min(value)),
+                }
+            } else {
+                b[i + extra_done] = Some(value);
+            }
+        }
+    }
+
+    Ok(DenseVector::new(
+        b.into_iter().map(|value| value.unwrap_or(OF::zero())).collect(),
+        original_nr_rows + ranges.len(),
+    ))
 }
 
 fn process_bounds<OF: OrderedField>(
@@ -543,7 +654,10 @@ fn process_bounds<OF: OrderedField>(
 ) -> Result<(), Inconsistency> {
     let mut variable_is_touched = vec![false; variable_info.len()];
     for ref bound in bounds.into_iter() {
-        process_bound(variable_info, bound, &mut variable_is_touched)?;
+        for &(bound_type, variable_index) in bound.values.iter() {
+            variable_is_touched[variable_index] = true;
+            process_bound(bound_type, &mut variable_info[variable_index])?;
+        }
     }
     fill_in_default_bounds(variable_info, variable_is_touched);
 
@@ -551,53 +665,48 @@ fn process_bounds<OF: OrderedField>(
 }
 
 fn process_bound<OF: OrderedField>(
-    variable_info: &mut Vec<ShiftedVariable<OF>>,
-    bound: &Bound<OF>,
-    variable_is_touched: &mut Vec<bool>,
+    bound_type: BoundType<OF>,
+    variable: &mut ShiftedVariable<OF>,
 ) -> Result<(), Inconsistency> {
-    for &(bound_type, variable_index) in bound.values.iter() {
-        variable_is_touched[variable_index] = true;
-        let variable = &mut variable_info[variable_index];
-        match bound_type {
-            BoundType::LowerContinuous(value) => replace_existing_with(&mut variable.lower_bound, value, OF::max),
-            BoundType::UpperContinuous(value) => {
-                // TODO: Why the below statement?
-                if variable.lower_bound.is_none() {
-                    variable.lower_bound = Some(OF::additive_identity());
-                }
-                replace_existing_with(&mut variable.upper_bound, value, OF::min);
-            },
-            BoundType::Fixed(value) => {
-                // If there already is a known bound value for this variable, there
-                // won't be any feasible values left after the below two statements.
-                replace_existing_with(&mut variable.lower_bound, value, OF::max);
-                replace_existing_with(&mut variable.upper_bound, value, OF::min);
+    match bound_type {
+        BoundType::LowerContinuous(value) => replace_existing_with(&mut variable.lower_bound, value, OF::max),
+        BoundType::UpperContinuous(value) => {
+            // TODO: Why the below statement?
+            if variable.lower_bound.is_none() {
+                variable.lower_bound = Some(OF::additive_identity());
             }
-            BoundType::Free => {
-                if variable.lower_bound.or(variable.upper_bound.clone()).is_some() {
-                    return Err(Inconsistency::new(format!("Variable can't be bounded and free")))
-                }
-            },
-            BoundType::LowerMinusInfinity => replace_existing_with(&mut variable.upper_bound, OF::additive_identity(), OF::min),
-            BoundType::UpperInfinity => replace_existing_with(&mut variable.lower_bound, OF::additive_identity(), OF::max),
-            BoundType::Binary => {
-                replace_existing_with(&mut variable.lower_bound, OF::additive_identity(), OF::max);
-                replace_existing_with(&mut variable.upper_bound, OF::multiplicative_identity(), OF::min);
-                variable.variable_type = VariableType::Integer;
-            }
-            BoundType::LowerInteger(value) => {
-                replace_existing_with(&mut variable.lower_bound, value, OF::max);
-                variable.variable_type = VariableType::Integer;
-            },
-            BoundType::UpperInteger(value) => {
-                if variable.lower_bound.is_none() {
-                    variable.lower_bound = Some(OF::additive_identity());
-                }
-                replace_existing_with(&mut variable.upper_bound, value, OF::min);
-                variable.variable_type = VariableType::Integer;
-            },
-            BoundType::SemiContinuous(_, _) => unimplemented!(),
+            replace_existing_with(&mut variable.upper_bound, value, OF::min);
+        },
+        BoundType::Fixed(value) => {
+            // If there already is a known bound value for this variable, there
+            // won't be any feasible values left after the below two statements.
+            replace_existing_with(&mut variable.lower_bound, value, OF::max);
+            replace_existing_with(&mut variable.upper_bound, value, OF::min);
         }
+        BoundType::Free => {
+            if variable.lower_bound.or(variable.upper_bound.clone()).is_some() {
+                return Err(Inconsistency::new(format!("Variable can't be bounded and free")))
+            }
+        },
+        BoundType::LowerMinusInfinity => replace_existing_with(&mut variable.upper_bound, OF::additive_identity(), OF::min),
+        BoundType::UpperInfinity => replace_existing_with(&mut variable.lower_bound, OF::additive_identity(), OF::max),
+        BoundType::Binary => {
+            replace_existing_with(&mut variable.lower_bound, OF::additive_identity(), OF::max);
+            replace_existing_with(&mut variable.upper_bound, OF::multiplicative_identity(), OF::min);
+            variable.variable_type = VariableType::Integer;
+        }
+        BoundType::LowerInteger(value) => {
+            replace_existing_with(&mut variable.lower_bound, value, OF::max);
+            variable.variable_type = VariableType::Integer;
+        },
+        BoundType::UpperInteger(value) => {
+            if variable.lower_bound.is_none() {
+                variable.lower_bound = Some(OF::additive_identity());
+            }
+            replace_existing_with(&mut variable.upper_bound, value, OF::min);
+            variable.variable_type = VariableType::Integer;
+        },
+        BoundType::SemiContinuous(_, _) => unimplemented!(),
     }
 
     Ok(())

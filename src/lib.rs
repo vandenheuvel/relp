@@ -13,8 +13,8 @@
 
 #[macro_use]
 extern crate approx;
-extern crate num;
 extern crate daggy;
+extern crate num;
 
 pub mod algorithm;
 pub mod io;
