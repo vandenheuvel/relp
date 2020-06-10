@@ -14,9 +14,9 @@ before_script:
 script:
  - cargo clean
  - cargo build
- - cargo test
+ - cargo test --features burkardt
 
 after_success:
- - cargo tarpaulin --ignore-tests --out Xml
+ - cargo tarpaulin --ignore-tests --features burkardt --out Xml
  - bash <(curl -s https://codecov.io/bash) 
 
