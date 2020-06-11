@@ -6,7 +6,7 @@ use std::fmt;
 
 use itertools::repeat_n;
 
-use crate::algorithm::simplex::matrix_provider::{MatrixProvider, Column};
+use crate::algorithm::simplex::matrix_provider::{Column, MatrixProvider};
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse};
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
@@ -16,25 +16,25 @@ use crate::data::number_types::traits::{Field, FieldRef};
 /// Describes a linear program using a combination of a sparse matrix of constraints, and a vector
 /// with simple variable bounds.
 ///
-/// Created once from `CanonicalForm`. Should allow for reasonably quick data access.
+/// Created once from a `GeneralForm`. Should allow for reasonably quick data access.
 ///
 /// TODO: Is there a faster constraint storage backend possible?
 /// TODO: Should this data structure hold less references?
 ///
 /// The indexing for the variables and constraints is as follows:
 ///
-/// /                           || Vars of which we want a solution | Free variable dummies | Inequality slack vars |   Bound slack vars   |
-/// ============================||==================================|=======================|=======================|======================| -----
-/// Equality constraints        ||            constants             |       constants       |           0           |           0          | |   |
-/// ----------------------------||----------------------------------|-----------------------|-----------------------|----------------------| |   |
-/// Inequality (<=) constraints ||            constants             |       constants       |     I     |     0     |           0          | | b |
-/// ----------------------------||----------------------------------|-----------------------|-----------------------|----------------------| |   |
-/// Inequality (>=) constraints ||            constants             |       constants       |     0     |    - I    |           0          | |   |
-/// ----------------------------||----------------------------------|-----------------------|-----------------------|----------------------| |---|
-///                             ||                                  |                       |                       |  +/- 1               |
-/// Bound constraints           ||    constants (one 1 per row)     |           0           |           0           |         +/- 1        |
-///                             ||                                  |                       |                       |                +/- 1 |
-/// ---------------------------------------------------------------------------------------------------------------------------------------
+/// /                           || Vars of which we want a solution | Inequality slack vars |   Bound slack vars   |
+/// ============================||==================================|=======================|======================| -----
+/// Equality constraints        ||            constants             |           0           |           0          | |   |
+/// ----------------------------||----------------------------------|-----------------------|----------------------| |   |
+/// Inequality (<=) constraints ||            constants             |     I     |     0     |           0          | | b |
+/// ----------------------------||----------------------------------|-----------------------|----------------------| |   |
+/// Inequality (>=) constraints ||            constants             |     0     |    - I    |           0          | |   |
+/// ----------------------------||----------------------------------|-----------------------|----------------------| |---|
+///                             ||                                  |                       |  +/- 1               |
+/// Bound constraints           ||    constants (one 1 per row)     |           0           |         +/- 1        |
+///                             ||                                  |                       |                +/- 1 |
+/// ---------------------------------------------------------------------------------------------------------------
 #[allow(non_snake_case)]
 #[derive(Debug, PartialEq)]
 pub struct MatrixData<'a, F: Field, FZ: SparseElementZero<F>> {
@@ -65,7 +65,7 @@ pub struct MatrixData<'a, F: Field, FZ: SparseElementZero<F>> {
     ZERO: F,
 }
 
-/// Variable for a canonical linear program.
+/// Variable for a standard form linear program.
 ///
 /// Has a lower bound of zero.
 #[allow(missing_docs)]
@@ -280,6 +280,27 @@ where
             ColumnType::Normal(j) => &self.variables[j].upper_bound,
             _ => &None,
         })
+    }
+
+    fn positive_slack_indices(&self) -> Vec<(usize, usize)> {
+        let ineq_start = self.get_variable_separating_indices()[0];
+        let upper_bounded_constraints = (0..self.nr_upper_bounded_constraints)
+            .map(|index| {
+                (self.nr_equality_constraints + index, ineq_start + index)
+            });
+
+        let bound_constraint_start = self.get_constraint_separating_indices()[2];
+        let bound_slack_start = self.get_variable_separating_indices()[2];
+        let upper_bounded_variables = self.non_slack_variable_index_to_bound_index
+            .iter().enumerate()
+            .filter_map(|(_, &index)| index)
+            .map(|index| (bound_constraint_start + index, bound_slack_start + index));
+
+        upper_bounded_constraints.chain(upper_bounded_variables).collect()
+    }
+
+    fn nr_positive_slacks(&self) -> usize {
+        self.nr_upper_bounded_constraints + self.nr_bounds()
     }
 
     fn nr_constraints(&self) -> usize {

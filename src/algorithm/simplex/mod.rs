@@ -3,14 +3,17 @@
 //! This module contains all data structures and logic specific to the simplex algorithm. The
 //! algorithm is implemented as described in chapters 2 and 4 of Combinatorial Optimization, a book
 //! by Christos H. Papadimitriou and Kenneth Steiglitz.
-use crate::algorithm::simplex::data::{Artificial, NonArtificial, RemoveRows, Tableau};
-use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
+use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::MatrixProvider;
+use crate::algorithm::simplex::matrix_provider::remove_rows::RemoveRows;
 use crate::algorithm::simplex::strategy::pivot_rule::PivotRule;
-use crate::data::linear_algebra::traits::SparseElementZero;
+use crate::algorithm::simplex::tableau::kind::{Artificial, NonArtificial};
+use crate::algorithm::simplex::tableau::Tableau;
+use crate::data::linear_algebra::traits::{SparseElementZero, SparseElement, SparseComparator};
 use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
+use crate::data::linear_algebra::vector::Sparse;
 
-pub mod data;
+pub mod tableau;
 pub mod logic;
 pub mod matrix_provider;
 pub mod strategy;
@@ -27,22 +30,32 @@ where
     for<'r> &'r OF: OrderedFieldRef<OF>,
     OFZ: SparseElementZero<OF>,
     MP: MatrixProvider<OF, OFZ>,
-    ArtificialPR: PivotRule<Artificial>,
-    NonArtificialPR: PivotRule<NonArtificial>,
+    ArtificialPR: PivotRule,
+    NonArtificialPR: PivotRule,
 {
-    let mut artificial_tableau = Tableau::<_, _, Artificial, _>::new(provider);
+    let mut artificial_tableau = Tableau::<_, _, Artificial<_, _, _>>::new(provider);
     match artificial_primal::<_, _, _, ArtificialPR>(&mut artificial_tableau) {
         FeasibilityResult::Infeasible => OptimizationResult::Infeasible,
         FeasibilityResult::Feasible(Rank::Deficient(rows_to_remove)) => {
             let rows_removed = RemoveRows::new(provider, rows_to_remove);
-            let mut non_artificial_tableau = Tableau::<_, _, NonArtificial, _>::from_artificial_removing_rows(artificial_tableau, &rows_removed);
+            let mut non_artificial_tableau = Tableau::<_, _, NonArtificial<_, _, _>>::from_artificial_removing_rows(artificial_tableau, &rows_removed);
             primal::<_, _, _, NonArtificialPR>(&mut non_artificial_tableau)
         },
         FeasibilityResult::Feasible(Rank::Full) => {
-            let mut non_artificial_tableau = Tableau::<_, _, NonArtificial, _>::from_artificial(artificial_tableau);
+            let mut non_artificial_tableau = Tableau::<_, _, NonArtificial<_, _, _>>::from_artificial(artificial_tableau);
             primal::<_, _, _, NonArtificialPR>(&mut non_artificial_tableau)
         },
     }
+}
+
+/// A linear program is either infeasible, unbounded or has a finite optimum.
+///
+/// This is determined as the result of an algorithm
+#[derive(Eq, PartialEq, Debug)]
+pub enum OptimizationResult<F: SparseElement<F> + SparseComparator, FZ: SparseElementZero<F>> {
+    Infeasible,
+    FiniteOptimum(Sparse<F, FZ, F>),
+    Unbounded,
 }
 
 #[cfg(test)]
@@ -50,9 +63,8 @@ mod test {
     use num::FromPrimitive;
     use num::rational::Ratio;
 
-    use crate::algorithm::simplex::logic::OptimizationResult;
     use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable};
-    use crate::algorithm::simplex::solve_relaxation;
+    use crate::algorithm::simplex::{solve_relaxation, OptimizationResult};
     use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
     use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};

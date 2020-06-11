@@ -10,10 +10,9 @@ use std::marker::PhantomData;
 
 use num::{FromPrimitive, ToPrimitive};
 
-use crate::algorithm::utilities::remove_indices;
+use crate::algorithm::utilities::{remove_indices, remove_sparse_indices};
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement, SparseElementZero};
-use crate::data::linear_algebra::utilities::remove_sparse_indices;
 use crate::data::number_types::traits::Field;
 
 /// Indices start at `0`.

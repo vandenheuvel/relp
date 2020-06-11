@@ -3,7 +3,6 @@
 //! Linear algebra primitives used to represent data in either a dense or a sparse format.
 pub mod matrix;
 pub mod vector;
-mod utilities;
 pub mod traits;
 
 /// Inner value for the `SparseVector` and `SparseMatrix` type.

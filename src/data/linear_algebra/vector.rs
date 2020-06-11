@@ -15,10 +15,9 @@ use std::slice::Iter;
 
 use num::Zero;
 
-use crate::algorithm::utilities::remove_indices;
+use crate::algorithm::utilities::{remove_indices, remove_sparse_indices};
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement, SparseElementZero};
-use crate::data::linear_algebra::utilities::remove_sparse_indices;
 use crate::data::number_types::traits::{Field, FieldRef};
 
 /// Defines basic ways to create or change a vector, regardless of back-end.
@@ -190,6 +189,7 @@ impl<F: Display> Display for Dense<F> {
 /// TODO: Consider making this backed by a `HashMap`.
 #[allow(non_snake_case)]
 #[derive(Eq, PartialEq, Clone, Debug)]
+// TODO: Remove these trait bounds to simplify the codebase.
 pub struct Sparse<F: SparseElement<C>, FZ: SparseElementZero<C>, C: SparseComparator> {
     data: SparseTupleVec<F>,
     len: usize,

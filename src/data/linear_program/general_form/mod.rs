@@ -206,16 +206,16 @@ where
 
     /// Modify this linear problem such that it is representable by a `MatrixData` structure.
     ///
-    /// The problem gets transformed into `CanonicalForm`, which also includes a presolve operation.
+    /// The problem gets transformed into standard form, which also includes a presolve operation.
     /// Note that this call might be expensive.
     ///
     /// TODO(ENHANCEMENT): Make sure that presolving can be skipped.
     ///
-    /// See also the documentation of the `GeneralForm::canonicalize` method.
+    /// See also the documentation of the `GeneralForm::standardize` method.
     ///
     /// # Return value
     ///
-    /// A `Result` containing either the `MatrixData` form of the presolved and canonicalized
+    /// A `Result` containing either the `MatrixData` form of the presolved and standardized
     /// problem.
     ///
     /// # Errors
@@ -474,7 +474,7 @@ where
     /// Shift all variables, such that the lower bound is zero.
     ///
     /// This allows the removal of those lower bounds afterwards; this lower bound is the only lower
-    /// bound for problems in canonical form. When working with a simplex tableau, this form allows
+    /// bound for problems in standard form. When working with a simplex tableau, this form allows
     /// us to eliminate all rows which describe a lower bound.
     ///
     /// If later on, such as during branch and bound, an extra lower bound needs to be inserted,
@@ -557,7 +557,7 @@ where
     /// Split the constraints out per type.
     ///
     /// The constraints in a `GeneralForm` linear program are mixed; the of the constraint is saved
-    /// in `self.constraint_types`. A `CanonicalForm` linear program has a separate data structure
+    /// in `self.constraint_types`. A standard form linear program has a separate data structure
     /// for each constraint type. This to facilitate the easy creation of a `MatrixData` data
     /// struct, which "simulates" the presence of slack variables based on those different
     /// constraint types.
@@ -866,8 +866,7 @@ where
         self.nr_active_variables()
     }
 }
-/// A variable as part of a linear problem without restrictions (as opposed to for a
-/// `CanonicalFrom` variable).
+/// A variable as part of a linear problem without restrictions (as opposed to for a `MatrixData` variable).
 ///
 /// A variable is named, of continuous or integer type and may be shifted and flipped w.r.t. how it
 /// was originally present in the problem.

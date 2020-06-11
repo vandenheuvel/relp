@@ -74,6 +74,7 @@ macro_rules! BR {
 mod test {
     macro_rules! test_rational {
         ($t:ident, $test_module_name:ident, $in_t:ident) => {
+            #[allow(unused_imports)]
             mod $test_module_name {
                 use num::rational::Ratio;
                 use num::{One, Zero};

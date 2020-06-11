@@ -4,7 +4,6 @@
 use std::path::{Path, PathBuf};
 
 use rust_lp::data::linear_program::general_form::GeneralForm;
-use rust_lp::io::import;
 
 /// # Generation and execution
 #[allow(missing_docs)]

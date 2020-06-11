@@ -1329,7 +1329,7 @@ mod test {
     use crate::data::linear_algebra::matrix::Order;
     use crate::data::linear_algebra::vector::{Dense, Vector};
     use crate::data::linear_algebra::vector::test::TestVector;
-    use crate::data::linear_program::elements::{ConstraintType, LinearProgramType, Objective, VariableType, BoundDirection};
+    use crate::data::linear_program::elements::{BoundDirection, ConstraintType, LinearProgramType, Objective, VariableType};
     use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable, Variable};
     use crate::data::linear_program::general_form::presolve::Index;
     use crate::data::linear_program::solution::Solution;

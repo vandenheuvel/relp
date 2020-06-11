@@ -4,16 +4,19 @@ use num::FromPrimitive;
 use num::rational::Ratio;
 
 use crate::{F, R32};
-use crate::algorithm::simplex::data::{Artificial, CarryMatrix, NonArtificial, Tableau};
-use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
+use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable};
 use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
+use crate::algorithm::simplex::tableau::inverse_maintenance::CarryMatrix;
+use crate::algorithm::simplex::tableau::kind::{Artificial, NonArtificial};
+use crate::algorithm::simplex::tableau::Tableau;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::VariableType;
 use crate::data::number_types::traits::{Field, FieldRef};
+use crate::algorithm::simplex::OptimizationResult;
 
 type T = Ratio<i32>;
 
@@ -23,7 +26,7 @@ fn conversion_pipeline() {
     let matrix_data_form = matrix_data_form(&constraints, &b);
 
     // Artificial tableau form
-    let mut artificial_tableau_form_computed = Tableau::<_, _, Artificial, _>::new(&matrix_data_form);
+    let mut artificial_tableau_form_computed = Tableau::<_, _, Artificial<_, _, _>>::new(&matrix_data_form);
     assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form));
 
     // Get to a basic feasible solution
@@ -31,7 +34,7 @@ fn conversion_pipeline() {
     assert_eq!(feasibility_result, FeasibilityResult::Feasible(Rank::Full));
 
     // Non-artificial tableau form
-    let mut tableau_form_computed = Tableau::<_, _, NonArtificial, _>::from_artificial(artificial_tableau_form_computed);
+    let mut tableau_form_computed = Tableau::<_, _, NonArtificial<_, _, _>>::from_artificial(artificial_tableau_form_computed);
     assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form));
 
     // Get to a basic feasible solution
@@ -86,7 +89,7 @@ pub fn matrix_data_form<'a>(
 
 pub fn artificial_tableau_form<'a, F, FZ>(
     data: &'a MatrixData<'a, F, FZ>,
-) -> Tableau<'a, F, FZ, Artificial, MatrixData<'a, F, FZ>>
+) -> Tableau<F, FZ, Artificial<F, FZ, MatrixData<'a, F, FZ>>>
 where
     F: Field + FromPrimitive,
     for<'r> &'r F: FieldRef<F>,
@@ -95,27 +98,29 @@ where
     let m = 3;
     let carry = {
         let minus_objective = F!(-8);
-        let minus_pi = Dense::from_test_data(vec![-1, -1, -1]);
+        let minus_pi = Dense::from_test_data(vec![-1; 3]);
         let b = Dense::from_test_data(vec![1, 3, 4]);
         let basis_inverse_rows = (0..m)
             .map(|i| SparseVector::standard_basis_vector(i, m))
             .collect();
         CarryMatrix::create(minus_objective, minus_pi, b, basis_inverse_rows)
     };
-    let basis_indices = (0..m).collect();
-    let basis_columns = (0..m).collect();
+    let artificials = (0..3).collect::<Vec<_>>();
+    let basis_indices = artificials.clone();
+    let basis_columns = basis_indices.iter().copied().collect();
 
-    Tableau::new_with_basis(
+    Tableau::<_, _, Artificial<_, _, _>>::new_with_basis(
         data,
         carry,
         basis_indices,
         basis_columns,
+        artificials,
     )
 }
 
 pub fn tableau_form<'a, F, FZ>(
     data: &'a MatrixData<'a, F, FZ>
-) -> Tableau<'a, F, FZ, NonArtificial, MatrixData<'a, F, FZ>>
+) -> Tableau<F, FZ, NonArtificial<F, FZ, MatrixData<'a, F, FZ>>>
     where
         F: Field + FromPrimitive + 'a,
         for<'r> &'r F: FieldRef<F>,
@@ -147,5 +152,10 @@ pub fn tableau_form<'a, F, FZ>(
         basis_columns
     };
 
-    Tableau::<_, _, NonArtificial, _>::new_with_basis(data, carry, basis_indices, basis_columns)
+    Tableau::<_, _, NonArtificial<_, _, _>>::new_with_basis(
+        data,
+        carry,
+        basis_indices,
+        basis_columns,
+    )
 }

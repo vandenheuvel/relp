@@ -5,12 +5,13 @@
 //! (also sparse) matrix data. This module contains structures that can provide a matrix.
 use std::fmt::{Debug, Display};
 
-use crate::data::linear_algebra::traits::{SparseElementZero, SparseElement, SparseComparator};
+use crate::data::linear_algebra::traits::{SparseComparator, SparseElement, SparseElementZero};
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::number_types::traits::Field;
 
 pub mod matrix_data;
+pub mod remove_rows;
 pub mod variable;
 // TODO(ENHANCEMENT): A module for network problems.
 //pub mod network;
@@ -38,8 +39,7 @@ pub mod variable;
 ///
 /// TODO: Use existential types to avoid allocations, for example by using `impl Iterator` as the
 ///  return type of the `column` method.
-///
-pub trait MatrixProvider<F: Field, FZ: SparseElementZero<F>>: Display + Debug {
+pub trait MatrixProvider<F: Field, FZ: SparseElementZero<F>>: PartialEq + Display + Debug {
     /// Column of the problem.
     ///
     /// # Arguments
@@ -91,6 +91,20 @@ pub trait MatrixProvider<F: Field, FZ: SparseElementZero<F>>: Display + Debug {
     ///
     /// A tuple for the (lower, upper) bounds.
     fn bounds(&self, j: usize) -> (&F, &Option<F>);
+    
+    /// Return the indices of all positive slack variables.
+    /// 
+    /// This is used to find a basic feasible solution faster using the two phase method.
+    ///
+    /// # Return value
+    ///
+    /// Collection of tuples with row and column index of (positive) slack coefficients.
+    fn positive_slack_indices(&self) -> Vec<(usize, usize)>;
+
+    /// How many positive slacks there are in the problem.
+    ///
+    /// Is equal to the length of the value returned by `positive_slack_indices`.
+    fn nr_positive_slacks(&self) -> usize;
 
     /// The number of constraints in the problem. This excludes simple variable bounds.
     fn nr_constraints(&self) -> usize;
