@@ -9,7 +9,7 @@ description = "A solver for linear programs"
 edition = "2018"
 
 [dependencies]
-num = "0.2.1"
+num = "0.3.x"
 daggy = "0.6.x"  # Currently only for debug asserts
 
 itertools = "0.9.0"
