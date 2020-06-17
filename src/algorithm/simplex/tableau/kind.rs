@@ -295,8 +295,16 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>
         self.basis_columns
             .iter()
             .filter(|&&v| v < self.nr_artificial_variables())
-            .map(|&v| v)
+            .copied()
             .collect()
+    }
+
+    pub fn pivot_row_from_artificial(&self, artificial_index: usize) -> usize {
+        debug_assert!(artificial_index < self.nr_artificial_variables());
+        // Only used to remove variables from basis
+        debug_assert!(self.is_in_basis(&artificial_index));
+
+        self.kind.column_to_row[artificial_index]
     }
 }
 

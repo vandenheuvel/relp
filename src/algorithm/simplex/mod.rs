@@ -36,14 +36,16 @@ where
     let mut artificial_tableau = Tableau::<_, _, Artificial<_, _, _>>::new(provider);
     match artificial_primal::<_, _, _, ArtificialPR>(&mut artificial_tableau) {
         FeasibilityResult::Infeasible => OptimizationResult::Infeasible,
-        FeasibilityResult::Feasible(Rank::Deficient(rows_to_remove)) => {
-            let rows_removed = RemoveRows::new(provider, rows_to_remove);
-            let mut non_artificial_tableau = Tableau::<_, _, NonArtificial<_, _, _>>::from_artificial_removing_rows(artificial_tableau, &rows_removed);
-            primal::<_, _, _, NonArtificialPR>(&mut non_artificial_tableau)
-        },
-        FeasibilityResult::Feasible(Rank::Full) => {
-            let mut non_artificial_tableau = Tableau::<_, _, NonArtificial<_, _, _>>::from_artificial(artificial_tableau);
-            primal::<_, _, _, NonArtificialPR>(&mut non_artificial_tableau)
+        FeasibilityResult::Feasible(rank) => match rank {
+            Rank::Deficient(rows_to_remove) if !rows_to_remove.is_empty() => {
+                let rows_removed = RemoveRows::new(provider, rows_to_remove);
+                let mut non_artificial_tableau = Tableau::<_, _, NonArtificial<_, _, _>>::from_artificial_removing_rows(artificial_tableau, &rows_removed);
+                primal::<_, _, _, NonArtificialPR>(&mut non_artificial_tableau)
+            },
+            _ => {
+                let mut non_artificial_tableau = Tableau::<_, _, NonArtificial<_, _, _>>::from_artificial(artificial_tableau);
+                primal::<_, _, _, NonArtificialPR>(&mut non_artificial_tableau)
+            },
         },
     }
 }

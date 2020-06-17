@@ -480,15 +480,12 @@ where
     /// If later on, such as during branch and bound, an extra lower bound needs to be inserted,
     /// this information can be stored regardless in a separate data structure.
     fn transform_variables(&mut self) {
-        // debug_assert!(self.variables.iter().all(|v| !v.flipped && v.shift == OF::zero()));
-
         // Compute all changes that need to happen
         for j in 0..self.variables.len() {
             let variable = &mut self.variables[j];
 
             // Flip such that there is not just an upper bound
             if let (None, Some(upper)) = (&variable.lower_bound, &variable.upper_bound) {
-
                 variable.flipped = !variable.flipped;
                 variable.shift *= -OF::one();
                 variable.cost *= -OF::one();

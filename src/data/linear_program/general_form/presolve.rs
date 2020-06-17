@@ -761,6 +761,7 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
         debug_assert_eq!(self.general_form.variables[variable_index].cost, OF::zero());
         debug_assert!(self.updates.is_variable_fixed(variable_index).is_none());
 
+        // Only coefficient in the problem
         let (constraint, coefficient) = self.counters.iter_active_column(variable_index)
             .next().unwrap();
         let coefficient = coefficient.clone(); // TODO: Try to avoid this clone
@@ -1239,8 +1240,6 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
         &mut self,
         constraint: usize,
     ) {
-        debug_assert!(self.counters.constraint[constraint] >= 2);
-
         let variables_to_scan = self.counters.iter_active_row(constraint).map(|(j, _)| j).collect::<Vec<_>>();
         self.counters.constraint[constraint] -= variables_to_scan.len();
         for variable in variables_to_scan {

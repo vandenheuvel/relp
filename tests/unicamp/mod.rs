@@ -1,6 +1,6 @@
-//! # John Burkardt's test files
+//! # Problems from Unicamp
 //!
-//! Retrieved from http://people.math.sc.edu/Burkardt/datasets/mps/mps.html.
+//! Hosted [here](https://www.cenapad.unicamp.br/parque/manuais/OSL/oslweb/features/feat24DT.htm).
 use std::path::{Path, PathBuf};
 
 /// # Generation and execution

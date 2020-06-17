@@ -114,7 +114,6 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
 
     /// Create a `DenseVector` from the provided data.
     fn new(data: Vec<Self::Inner>, len: usize) -> Self {
-        debug_assert_ne!(len, 0);
         debug_assert_eq!(data.len(), len);
 
         Self { data, len, }

@@ -852,7 +852,7 @@ fn compute_constraint_info<OF: OrderedField, OFZ: SparseElementZero<OF>>(
 
     let columns = compute_columns(columns, original_nr_rows, &range_rows);
     let constraint_types = compute_constraint_types(&rows, &range_rows);
-    let b = compute_b(rhss, &constraint_types, original_nr_rows, range_rows)?;
+    let b = compute_b(rhss, &constraint_types, &rows, original_nr_rows, range_rows)?;
 
     Ok((columns, constraint_types, b))
 }
@@ -891,13 +891,15 @@ fn compute_columns<F: Field, FZ: SparseElementZero<F>>(
     for (j, column) in columns.into_iter().enumerate() {
         let mut extra_done = 0;
         for (i, value) in column.values {
-            new_columns[j].push((i + extra_done, value.clone()));
             while extra_done < ranges.len() && ranges[extra_done].0 < i {
                 extra_done += 1;
             }
+            new_columns[j].push((i + extra_done, value));
+
             if extra_done < ranges.len() && ranges[extra_done].0 == i {
                 extra_done += 1;
-                new_columns[j].push((i + extra_done, value));
+                let value_copy = new_columns[j].last().unwrap().1.clone();
+                new_columns[j].push((i + extra_done, value_copy));
             }
         }
     }
@@ -950,6 +952,7 @@ fn compute_constraint_types<F: Field>(
 ///
 /// * `rhss`: Right hand sides (often only one), b's values.
 /// * `constraints`: Constraint directions (relevant for ranges).
+/// * `rows`: Original constraint types.
 /// * `original_nr_rows`: Number of constraints without ranges.
 /// * `ranges`: Tuples with (row index, r value) indicating where an extra range constraint should
 /// be created.
@@ -966,15 +969,16 @@ fn compute_constraint_types<F: Field>(
 fn compute_b<OF: OrderedField>(
     rhss: Vec<Rhs<OF>>,
     constraints: &Vec<ConstraintType>,
+    rows: &Vec<Constraint>,
     original_nr_rows: usize,
     ranges: Vec<SparseTuple<OF>>,
 ) -> Result<DenseVector<OF>, Inconsistency> {
-    debug_assert_eq!(original_nr_rows + ranges.len(), constraints.len());
+    let new_nr_rows = original_nr_rows + ranges.len();
     debug_assert!(rhss.iter().all(|rhs| rhs.values.is_sorted_by_key(|&(i, _)| i)));
     debug_assert!(rhss.iter().all(|rhs| rhs.values.iter().all(|&(i, _)| i < original_nr_rows)));
 
     // We fill be with options, and then explicitly substitute the default value later.
-    let mut b = vec![None; constraints.len()];
+    let mut b = vec![None; new_nr_rows];
     for rhs in rhss {
         let mut extra_done = 0;
         for (i, value) in rhs.values {
@@ -985,7 +989,7 @@ fn compute_b<OF: OrderedField>(
                 let r = &ranges[extra_done].1;
                 // See the documentation of `UnstructuredRhs` for the below logic.
                 let r_abs = r.clone().abs();
-                let (h, u) = match (constraints[i + extra_done], r.cmp(&OF::zero())) {
+                let (h, u) = match (rows[i].constraint_type, r.cmp(&OF::zero())) {
                     (ConstraintType::Greater, _) => (value.clone(), value + r_abs),
                     (ConstraintType::Less, _) => (value.clone() - r_abs, value),
                     (ConstraintType::Equal, Ordering::Greater | Ordering::Equal) => (value.clone(), value + r_abs),
@@ -1020,4 +1024,165 @@ fn compute_b<OF: OrderedField>(
         b.into_iter().map(|value| value.unwrap_or(OF::zero())).collect(),
         original_nr_rows + ranges.len(),
     ))
+}
+
+#[cfg(test)]
+#[allow(clippy::shadow_unrelated)]
+mod test {
+    use num::rational::Ratio;
+
+    use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
+    use crate::io::mps::structuring::{compute_columns, compute_b};
+    use crate::io::mps::{Variable, Rhs, Constraint};
+    use crate::num::FromPrimitive;
+    use crate::R32;
+    use crate::data::linear_algebra::vector::{Dense, Vector};
+    use crate::data::linear_program::elements::{VariableType, ConstraintType};
+
+    type T = Ratio<i32>;
+
+    #[test]
+    fn test_compute_columns() {
+        // No ranges, no values
+        let columns = vec![Variable {
+            name_index: 0,
+            variable_type: VariableType::Continuous,
+            values: vec![],
+        }];
+        let original_nr_rows = 0;
+        let ranges = vec![];
+        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        assert_eq!(columns, ColumnMajor::new(vec![vec![]], 0, 1));
+
+        // No ranges, some values
+        let columns = vec![Variable {
+            name_index: 0,
+            variable_type: VariableType::Continuous,
+            values: vec![(0, R32!(123))],
+        }];
+        let original_nr_rows = 2;
+        let ranges = vec![];
+        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        assert_eq!(columns, ColumnMajor::new(vec![vec![(0, R32!(123))]], 2, 1));
+        let columns = vec![Variable {
+            name_index: 0,
+            variable_type: VariableType::Continuous,
+            values: vec![(1, R32!(123))],
+        }];
+        let original_nr_rows = 2;
+        let ranges = vec![];
+        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        assert_eq!(columns, ColumnMajor::new(vec![vec![(1, R32!(123))]], 2, 1));
+
+        // One range, no values
+        let columns = vec![Variable {
+            name_index: 0,
+            variable_type: VariableType::Continuous,
+            values: vec![],
+        }];
+        let original_nr_rows = 1;
+        let ranges = vec![(0, R32!(1))];
+        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        assert_eq!(columns, ColumnMajor::new(vec![vec![]], 2, 1));
+
+        // One range, some values
+        let columns = vec![Variable {
+            name_index: 0,
+            variable_type: VariableType::Continuous,
+            values: vec![(0, R32!(1))],
+        }];
+        let original_nr_rows = 1;
+        let ranges = vec![(0, R32!(1))];
+        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        assert_eq!(columns, ColumnMajor::new(vec![vec![(0, R32!(1)), (1, R32!(1))]], 2, 1));
+
+        // One range, value before range row
+        let columns = vec![Variable {
+            name_index: 0,
+            variable_type: VariableType::Continuous,
+            values: vec![(0, R32!(1))],
+        }];
+        let original_nr_rows = 2;
+        let ranges = vec![(1, R32!(1))];
+        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        assert_eq!(columns, ColumnMajor::new(vec![vec![(0, R32!(1))]], 3, 1));
+
+        // One range, value after range row
+        let columns = vec![Variable {
+            name_index: 0,
+            variable_type: VariableType::Continuous,
+            values: vec![(1, R32!(1))],
+        }];
+        let original_nr_rows = 2;
+        let ranges = vec![(0, R32!(1))];
+        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        assert_eq!(columns, ColumnMajor::new(vec![vec![(2, R32!(1))]], 3, 1));
+    }
+
+    #[test]
+    fn test_compute_b() {
+        // No ranges, no data
+        let rhss = vec![];
+        let constraints = vec![];
+        let rows = vec![];
+        let original_nr_rows = 0;
+        let ranges = vec![];
+        let b = compute_b(rhss, &constraints, &rows, original_nr_rows, ranges);
+        assert_eq!(b, Ok(Dense::<T>::new(vec![], 0)));
+
+        // No ranges, one rhs
+        let rhss = vec![Rhs { name: "R".to_string(), values: vec![(0, R32!(1))], }];
+        let constraints = vec![ConstraintType::Equal];
+        let rows = vec![Constraint { name_index: 0, constraint_type: ConstraintType::Equal}];
+        let original_nr_rows = 1;
+        let ranges = vec![];
+        let b = compute_b(rhss, &constraints, &rows, original_nr_rows, ranges);
+        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1)], 1)));
+
+        // No ranges, two rhses
+        let rhss = vec![
+            Rhs { name: "R1".to_string(), values: vec![(0, R32!(1))], },
+            Rhs { name: "R2".to_string(), values: vec![(0, R32!(2))], },
+        ];
+        let constraints = vec![ConstraintType::Greater];
+        let rows = vec![Constraint { name_index: 0, constraint_type: ConstraintType::Greater}];
+        let original_nr_rows = 1;
+        let ranges = vec![];
+        let b = compute_b(rhss, &constraints, &rows, original_nr_rows, ranges);
+        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(2)], 1)));
+
+        // One range with data before
+        let rhss = vec![
+            Rhs { name: "R".to_string(), values: vec![(0, R32!(1)), (1, R32!(5))], },
+        ];
+        let constraints = vec![
+            ConstraintType::Greater,
+            ConstraintType::Equal,
+        ];
+        let rows = vec![
+            Constraint { name_index: 0, constraint_type: ConstraintType::Greater,},
+            Constraint { name_index: 1, constraint_type: ConstraintType::Equal,},
+        ];
+        let original_nr_rows = 2;
+        let ranges = vec![(1, R32!(2))];
+        let b = compute_b(rhss, &constraints, &rows, original_nr_rows, ranges);
+        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1), R32!(5), R32!(7)], 3)));
+
+        // One range with data after
+        let rhss = vec![
+            Rhs { name: "R".to_string(), values: vec![(0, R32!(1)), (1, R32!(5))], },
+        ];
+        let constraints = vec![
+            ConstraintType::Greater,
+            ConstraintType::Equal,
+        ];
+        let rows = vec![
+            Constraint { name_index: 0, constraint_type: ConstraintType::Greater,},
+            Constraint { name_index: 1, constraint_type: ConstraintType::Equal,},
+        ];
+        let original_nr_rows = 2;
+        let ranges = vec![(0, R32!(2))];
+        let b = compute_b(rhss, &constraints, &rows, original_nr_rows, ranges);
+        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1), R32!(3), R32!(5)], 3)));
+    }
 }

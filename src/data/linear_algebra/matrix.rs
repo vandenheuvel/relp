@@ -386,8 +386,6 @@ impl<F: SparseElement<C>, FZ: SparseElementZero<C>, C: SparseComparator, MO: Ord
         major_dimension_size: usize,
         minor_dimension_size: usize,
     ) -> Self {
-        debug_assert_ne!(major_dimension_size, 0);
-        debug_assert_ne!(minor_dimension_size, 0);
         debug_assert_eq!(data.len(), major_dimension_size);
         debug_assert!(data.iter().all(|v| v.is_sorted_by_key(|&(i, _)| i)));
         debug_assert!(data.iter()

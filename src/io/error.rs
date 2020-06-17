@@ -196,7 +196,7 @@ pub(super) type FileLocation<'a> = (u64, &'a str);
 ///
 /// This `Error` is not returned when the linear program is unfeasible or unbounded. It is meant
 /// only for descriptions of linear programs, and should not be used after the importing process.
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Inconsistency {
     description: String,
 }

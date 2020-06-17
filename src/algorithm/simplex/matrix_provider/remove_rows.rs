@@ -180,11 +180,14 @@ impl<'a, F, FZ, MP> MatrixProvider<F, FZ> for RemoveRows<'a, F, FZ, MP>
                 Column::Sparse(vector)
             },
             Column::Slack(index, value) => {
-                if self.rows_to_skip.contains(&index) {
-                    debug_assert!(false);
-                    Column::Sparse(SparseVector::new(Vec::with_capacity(0), self.nr_rows()))
-                } else {
-                    Column::Slack(index, value)
+                match self.rows_to_skip.binary_search(&index) {
+                    Ok(_) => {
+                        let new_length = self.provider.nr_rows() - self.rows_to_skip.len();
+                        Column::Sparse(SparseVector::new(Vec::with_capacity(0), new_length))
+                    },
+                    Err(skipped_before) => {
+                        Column::Slack(index - skipped_before, value)
+                    },
                 }
             },
         }

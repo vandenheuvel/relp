@@ -106,9 +106,7 @@ mod test {
         let matrix_data = problem_2::matrix_data_form(&constraints, &b);
         let artificial_tableau = problem_2::artificial_tableau_form(&matrix_data);
         let mut rule = <FirstProfitable as PivotRule>::new();
-        if let Some((value, _)) = rule.select_primal_pivot_column(&artificial_tableau) {
-            assert_eq!(value, 3);
-        } else { assert!(false); }
+        assert!(matches!(rule.select_primal_pivot_column(&artificial_tableau), Some((3, _))));
 
         let tableau = problem_2::tableau_form(&matrix_data);
         let mut rule = <FirstProfitable as PivotRule>::new();

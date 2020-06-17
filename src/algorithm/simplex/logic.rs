@@ -5,8 +5,8 @@
 use crate::algorithm::simplex::matrix_provider::MatrixProvider;
 use crate::algorithm::simplex::OptimizationResult;
 use crate::algorithm::simplex::strategy::pivot_rule::PivotRule;
-use crate::algorithm::simplex::tableau::kind::{Artificial, NonArtificial};
 use crate::algorithm::simplex::tableau::Tableau;
+use crate::algorithm::simplex::tableau::kind::{Artificial, NonArtificial};
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::number_types::traits::{Field, FieldRef, OrderedField, OrderedFieldRef};
 
@@ -41,8 +41,7 @@ where
                     None => panic!("Artificial cost can not be unbounded."),
                 }
             },
-            // TODO: We accept numerical errors to swing the objective function even below the trimming range by requiring `<= 0` instead of `== 0`
-            None => break if tableau.objective_function_value() <= OF::zero() {
+            None => break if tableau.objective_function_value().is_zero() {
                 if tableau.has_artificial_in_basis() {
                     let rows_to_remove = remove_artificial_basis_variables(tableau);
                     FeasibilityResult::Feasible(Rank::Deficient(rows_to_remove))
@@ -101,19 +100,18 @@ where
     FZ: SparseElementZero<F>,
     MP: MatrixProvider<F, FZ>,
 {
-    let artificial_variable_indices = tableau.artificial_basis_columns();
+    let mut artificial_variable_indices = tableau.artificial_basis_columns().into_iter().collect::<Vec<_>>();
+    artificial_variable_indices.sort();
     let mut rows_to_remove = Vec::new();
 
-    for artificial in artificial_variable_indices.into_iter() {
-        let pivot_row = artificial; // The problem was initialized with the artificial variable as a basis column, and it is still in the basis
+    for artificial in artificial_variable_indices {
+        // The problem was initialized with the artificial variable as a basis column, and it is still in the basis
+        let pivot_row = tableau.pivot_row_from_artificial(artificial);
         let column_cost = (tableau.nr_artificial_variables()..tableau.nr_columns())
             .filter(|j| !tableau.is_in_basis(j))
             .map(|j| (j, tableau.relative_cost(j)))
-            // TODO: Check this zero comparison, is no tolerance needed?
             .filter(|(_, cost)| cost.is_zero())
-            // TODO: Check this zero comparison, is no tolerance needed?
-            .filter(|&(j, _)| tableau.generate_element(pivot_row, j) != F::zero())
-            .nth(0); // Pick the first one
+            .find(|&(j, _)| tableau.generate_element(pivot_row, j) != F::zero());
 
         if let Some((pivot_column, cost)) = column_cost {
             let column = tableau.generate_column(pivot_column);

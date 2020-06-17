@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use num::{BigInt, FromPrimitive, One, Zero};
+use num::{BigInt, FromPrimitive, Zero};
 use num::rational::Ratio;
 
 use rust_lp::BR;
@@ -8,7 +8,6 @@ use rust_lp::algorithm::simplex::matrix_provider::MatrixProvider;
 use rust_lp::algorithm::simplex::{solve_relaxation, OptimizationResult};
 use rust_lp::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
 use rust_lp::data::linear_algebra::traits::SparseElementZero;
-use rust_lp::data::linear_algebra::vector::Sparse as SparseVector;
 use rust_lp::data::linear_program::general_form::GeneralForm;
 use rust_lp::data::linear_program::solution::Solution;
 use rust_lp::data::number_types::traits::{OrderedField, OrderedFieldRef};

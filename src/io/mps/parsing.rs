@@ -4,7 +4,7 @@
 //! doesn't do any consistency checks for e.g. undefined row names in the column section.
 use std::convert::TryFrom;
 
-use num::FromPrimitive;
+use num::{FromPrimitive, One};
 
 use crate::data::linear_program::elements::{ConstraintType, VariableType};
 use crate::io::error::{FileLocation, Parse};
@@ -143,7 +143,7 @@ pub(crate) struct UnstructuredBound<'a, F> {
     pub column_name: &'a str,
 }
 
-impl<'a, F: Clone> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a, F>>)>> for UnstructuredMPS<'a, F> {
+impl<'a, F: Clone + One + PartialEq> TryFrom<Vec<(FileLocation<'a>, Vec<Atom<'a, F>>)>> for UnstructuredMPS<'a, F> {
     type Error = Parse;
 
     /// Try to read an `UnstructuredMPS` struct from lines of `Atom`s.
@@ -332,7 +332,7 @@ fn parse_rhs_line<'a, F>(
 /// # Return value
 ///
 /// A `ParseError` in case of an unknown format.
-fn parse_bound_line<'a, F>(
+fn parse_bound_line<'a, F: One + PartialEq>(
     line: Vec<Atom<'a, F>>,
     bound_collector: &mut Vec<UnstructuredBound<'a, F>>,
 ) -> Result<(), Parse> {
@@ -340,6 +340,13 @@ fn parse_bound_line<'a, F>(
     let bound = match [line.next(), line.next(), line.next(), line.next(), line.next(), line.next()] {
         [Some(Word(ty)), Some(Word(name)), Some(Word(column_name)), None, None, None] => {
             UnstructuredBound { name, bound_type: BoundType::try_from(ty)?, column_name }
+        },
+        [Some(Word("BV")), Some(Word(name)), Some(Word(column_name)), Some(Number(value)), None, None] => {
+            if value.is_one() {
+                UnstructuredBound { name, bound_type: BoundType::try_from("BV")?, column_name }
+            } else {
+                return Err(Parse::new("Binary variable bounds must have bound 1.0, if any."))
+            }
         },
         [Some(Word(ty)), Some(Word(name)), Some(Word(column_name)), Some(Number(value)), None, None] => {
             UnstructuredBound { name, bound_type: BoundType::try_from((ty, value))?, column_name }

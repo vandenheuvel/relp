@@ -1,14 +1,11 @@
 use std::convert::TryInto;
 
-use num::{BigInt, FromPrimitive, ToPrimitive};
+use num::{BigInt, ToPrimitive};
 use num::rational::Ratio;
 
 use rust_lp::algorithm::simplex::matrix_provider::MatrixProvider;
 use rust_lp::algorithm::simplex::{solve_relaxation, OptimizationResult};
 use rust_lp::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
-use rust_lp::data::linear_program::elements::LinearProgramType;
-use rust_lp::data::linear_program::general_form::GeneralForm;
-use rust_lp::data::number_types::traits::OrderedField;
 use rust_lp::io::import;
 
 use super::get_test_file_path;
