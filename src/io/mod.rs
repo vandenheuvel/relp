@@ -43,7 +43,7 @@ where
     // Choose the right parser
     match file_path.extension() {
         Some(extension) => match extension.to_str() {
-            Some("mps") => mps::import(&program),
+            Some("mps" | "SIF") => mps::import(&program),
             Some(extension_string) => Err(Import::FileExtension(format!(
                 "Could not recognise file extension \"{}\" of file: {:?}",
                 extension_string, file_path

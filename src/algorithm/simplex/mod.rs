@@ -53,6 +53,7 @@ where
 /// A linear program is either infeasible, unbounded or has a finite optimum.
 ///
 /// This is determined as the result of an algorithm
+#[allow(missing_docs)]
 #[derive(Eq, PartialEq, Debug)]
 pub enum OptimizationResult<F: SparseElement<F> + SparseComparator, FZ: SparseElementZero<F>> {
     Infeasible,

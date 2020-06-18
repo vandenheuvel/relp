@@ -148,6 +148,7 @@ where
         debug_assert!(j < self.nr_columns());
 
         let separating_indices = self.get_variable_separating_indices();
+        debug_assert_eq!(separating_indices[3], self.nr_columns());
 
         if j < separating_indices[0] {
             ColumnType::Normal(j)
@@ -158,7 +159,7 @@ where
         } else if j < separating_indices[3] {
             ColumnType::BoundSlack(j - separating_indices[2])
         } else {
-            unreachable!()
+            unreachable!("Should have `self.nr_columns() == separating_indices[3]`")
         }
     }
 

@@ -43,9 +43,8 @@ fn adlittle() {
         OptimizationResult::FiniteOptimum(vector) => {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
-            println!("{}", solution.objective_value);
             let expected = Solution::new(
-                T::new(BigInt::from_i32(207003).unwrap(), BigInt::from_i32(1).unwrap()),
+                BR!(207003, 1),  // GLPK
                 vec![
                     ("...100".to_string(), BR!(0, 1)),
                 ],
@@ -71,7 +70,7 @@ fn afiro_big_int() {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             let expected = Solution::new(
-                BR!(-406659, 875),
+                BR!(-406659, 875),  // GLPK
                 vec![
                     ("X01".to_string(), BR!(80, 1)),
                     ("X02".to_string(), BR!(51, 2)),
@@ -129,7 +128,7 @@ fn afiro() {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             let expected = Solution::new(
-                T::new(-406659, 875),
+                T::new(-406659, 875),  // GLPK
                 vec![
                     ("X01".to_string(), T::new(80, 1)),
                     ("X02".to_string(), T::new(51, 2)),
@@ -194,7 +193,7 @@ fn maros_bigint() {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(solution, Solution::new(
-                BR!(385, 3),
+                BR!(385, 3),  // GLPK
                 vec![
                     ("VOL1".to_string(), BR!(10, 3)),
                     ("VOL2".to_string(), BR!(40, 3)),
@@ -220,7 +219,7 @@ fn maros() {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(solution, Solution::new(
-                T::new(385, 3),
+                T::new(385, 3),  // GLPK
                 vec![
                     ("VOL1".to_string(), T::new(10, 3)),
                     ("VOL2".to_string(), T::new(40, 3)),
@@ -240,7 +239,7 @@ fn nazareth_bigint() {
     let mut general = to_general_form("nazareth");
     let data = general.derive_matrix_data().ok().unwrap();
     let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
-    assert_eq!(result, OptimizationResult::Unbounded);
+    assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
 }
 
 #[test]
@@ -250,7 +249,7 @@ fn nazareth() {
     let mut general = to_general_form("nazareth");
     let data = general.derive_matrix_data().ok().unwrap();
     let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
-    assert_eq!(result, OptimizationResult::Unbounded);
+    assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
 }
 
 #[test]
@@ -266,7 +265,7 @@ fn testprob_bigint() {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(solution, Solution::new(
-                BR!(54),
+                BR!(54),  // GLPK
                 vec![
                     ("X1".to_string(), BR!(4)),
                     ("X2".to_string(), BR!(-1)),
@@ -291,7 +290,7 @@ fn testprob() {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(solution, Solution::new(
-                T::new(54, 1),
+                T::new(54, 1),  // GLPK
                 vec![
                     ("X1".to_string(), T::new(4, 1)),
                     ("X2".to_string(), T::new(-1, 1)),

@@ -1,7 +1,6 @@
 //! # Linear programs in "general form"
 //!
 //! Data structure for manipulation of linear programs.
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::mem;
 
@@ -18,7 +17,6 @@ use crate::data::linear_algebra::SparseTupleVec;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::{BoundDirection, ConstraintType, LinearProgramType, Objective, VariableType};
-use crate::data::linear_program::general_form::OriginalVariable::Removed;
 use crate::data::linear_program::general_form::presolve::Index as PresolveIndex;
 use crate::data::linear_program::general_form::RemovedVariable::{FunctionOfOthers, Solved};
 use crate::data::linear_program::solution::Solution;
@@ -296,10 +294,9 @@ where
             bounds,
             removed_variables,
             constraints_marked_removed,
-            variables_marked_removed,
-            columns_optimized_independently,
         ) = self.compute_presolve_changes()?;
 
+        let variable_indices_only = removed_variables.iter().map(|&(j, _)| j).collect();
         self.update_values_that_remain(
             b,
             constraints,
@@ -307,8 +304,7 @@ where
             bounds,
             removed_variables,
         );
-        self.optimize_disjoint_variables(columns_optimized_independently)?;
-        self.remove_rows_and_columns(constraints_marked_removed,variables_marked_removed);
+        self.remove_rows_and_columns(constraints_marked_removed, variable_indices_only);
         debug_assert!(is_consistent(&self));
 
         self.compute_solution_where_possible();
@@ -337,10 +333,8 @@ where
         HashMap<(usize, BoundDirection), OF>,
         Vec<(usize, RemovedVariable<OF>)>,
         Vec<usize>,
-        Vec<usize>,
-        Vec<usize>,
     ), LinearProgramType<OF>> {
-        let mut index = PresolveIndex::new(&self);
+        let mut index = PresolveIndex::new(&self)?;
 
         while !index.queues.are_empty() {
             index.presolve_step()?;
@@ -390,41 +384,6 @@ where
                 BoundDirection::Upper => &mut variable.upper_bound,
             } = Some(value);
         }
-    }
-
-    /// Sets variables that can be optimized independently of all others to their optimal values.
-    ///
-    /// # Arguments
-    ///
-    /// * `to_optimize`: Collection of variable indices that should be optimized.
-    fn optimize_disjoint_variables(
-        &mut self,
-        to_optimize: Vec<usize>,
-    ) -> Result<(), LinearProgramType<OF>> {
-        for j in to_optimize {
-            let variable = &mut self.variables[j];
-
-            let new_value = match (self.objective, variable.cost.cmp(&OF::zero())) {
-                (_, Ordering::Equal) => panic!("Should not be called if there is no cost"),
-                (Objective::Minimize, Ordering::Less) | (Objective::Maximize, Ordering::Greater) => {
-                    match &variable.upper_bound {
-                        Some(v) => v,
-                        None => return Err(LinearProgramType::Unbounded),
-                    }
-                },
-                (Objective::Minimize, Ordering::Greater) | (Objective::Maximize, Ordering::Less) => {
-                    match &variable.lower_bound {
-                        Some(v) => v,
-                        None => return Err(LinearProgramType::Unbounded),
-                    }
-                },
-            };
-
-            self.original_variables[j].1 = Removed(Solved(new_value.clone()));
-            self.fixed_cost += &variable.cost * new_value;
-        }
-
-        Ok(())
     }
 
     /// Remove a set of rows and columns from the constraint data.
@@ -660,6 +619,9 @@ where
                 self.original_variables[variable].1 = OriginalVariable::Removed(Solved(value));
             }
         }
+
+        // TODO: Include updating of fixed cost in case a presolved variable as a function of others
+        //  had a nonzero cost.
     }
 
     /// Compute the solution value for a single variable.
@@ -927,6 +889,13 @@ where
             (Some(lower), Some(upper)) => lower <= upper,
             _ => true,
         }
+    }
+
+    /// Get any feasible value, if there is one.
+    fn get_feasible_value(&self) -> Option<OF> {
+        if self.has_feasible_value() {
+            self.upper_bound.as_ref().or(self.lower_bound.as_ref()).cloned().or(Some(OF::zero()))
+        } else { None }
     }
 
     /// Change the lower bound if the given bound is higher.

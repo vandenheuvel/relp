@@ -10,9 +10,8 @@ use std::ops::BitXor;
 use crate::data::linear_algebra::matrix::{RowMajor, Sparse};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::linear_program::elements::{BoundDirection, ConstraintType, LinearProgramType};
+use crate::data::linear_program::elements::{BoundDirection, ConstraintType, LinearProgramType, Objective};
 use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable};
-use crate::data::linear_program::general_form::RemovedVariable::FunctionOfOthers;
 use crate::data::number_types::traits::{Field, OrderedField, OrderedFieldRef};
 
 /// Container data structure to keep track of presolve status.
@@ -27,7 +26,7 @@ pub(super) struct Index<'a, F: Field, FZ: SparseElementZero<F>> {
     /// Set of changes that doesn't change the solution to the problem.
     pub updates: Updates<'a, F, FZ>,
     /// Indices to speed up solving.
-    counters: Counters<'a, F, FZ>,
+    pub counters: Counters<'a, F, FZ>,
 
     /// We maintain the computed activity bounds.
     /// TODO(PRECISION): Include counter for recomputation (numerical errors accumulate)
@@ -81,8 +80,8 @@ impl Queues {
     fn new<OF: OrderedField, OFZ: SparseElementZero<OF>>(
         general_form: &GeneralForm<OF, OFZ>, counters: &Counters<OF, OFZ>,
     ) -> Self
-        where
-                for<'r> &'r OF: OrderedFieldRef<OF>,
+    where
+        for<'r> &'r OF: OrderedFieldRef<OF>,
     {
         Self {
             empty_row: counters.constraint.iter().enumerate()
@@ -106,11 +105,15 @@ impl Queues {
                 }).collect(),
 
             substitution: general_form.variables.iter().enumerate()
+                // Columns with no values get substituted right away, as they removal doesn't lead
+                // to any further actions. The only values that should be put in the queue are those
+                // that lead to other actions, that is, have a nonzero counter.
+                .filter(|&(j, _)| counters.variable[j] > 0)
                 .filter_map(|(j, variable)| variable.is_fixed().map(|_| j))
                 .collect(),
             slack: counters.variable.iter().enumerate()
                 .filter(|&(_, &count)| count == 1)
-                .filter(|&(j, _)| general_form.variables[j].cost == OF::zero())
+                .filter(|&(j, _)| general_form.variables[j].cost.is_zero())
                 .map(|(j, _)| j).collect(),
         }
     }
@@ -147,10 +150,6 @@ pub(super) struct Updates<'a, F: Field, FZ: SparseElementZero<F>> {
     ///
     /// This collection is here only to avoid an extra scan over the `column_counters`.
     constraints_marked_removed: Vec<usize>,
-    /// Collecting the indices, relative to the active part of the problem, that should be removed.
-    ///
-    /// This collection is here only to avoid an extra scan over the `column_counters`.
-    variables_marked_removed: Vec<usize>,
     /// These columns still need to be optimized independently.
     ///
     /// They could be removed from the problem because they at some point during presolving no
@@ -181,41 +180,46 @@ impl<'a, OF: OrderedField, OFZ: SparseElementZero<OF>> Updates<'a, OF, OFZ>
     /// # Return value
     ///
     /// A new instance.
-    fn new(general_form: &'a GeneralForm<OF, OFZ>, counters: &Counters<OF, OFZ>) -> Self {
-        Self {
+    fn new(
+        general_form: &'a GeneralForm<OF, OFZ>,
+        counters: &Counters<OF, OFZ>,
+    ) -> Result<Self, LinearProgramType<OF>> {
+        let mut fixed_cost = OF::zero();
+        let removed_variables = counters.variable.iter().enumerate()
+            .filter(|&(_, &count)| count == 0)
+            .map(|(j, _)| {
+                let variable = &general_form.variables[j];
+                // There should be a feasible value, otherwise, reading of the problem should
+                // have been ended due to a trivial infeasibility.
+                debug_assert!(variable.has_feasible_value());
+
+                let value = if variable.cost.is_zero() {
+                    variable.get_feasible_value().unwrap()
+                } else {
+                    let value = Self::get_optimized_value(
+                        general_form.objective,
+                        &variable.cost,
+                        (variable.lower_bound.as_ref(), variable.upper_bound.as_ref()),
+                    )?;
+                    fixed_cost += &variable.cost * &value;
+                    value
+                };
+
+                Ok((j, RemovedVariable::Solved(value)))
+            }).collect::<Result<_, _>>()?;
+
+        Ok(Self {
             b: HashMap::new(),
             constraints: HashMap::new(),
-            fixed_cost: OF::zero(),
+            fixed_cost,
             bounds: HashMap::new(),
             // Variables that don't appear in any constraint are removed right away.
-            removed_variables: counters.variable.iter().enumerate()
-                .filter(|&(_, &count)| count == 0)
-                .map(|(j, _)| {
-                    let variable = &general_form.variables[j];
-                    // There should be a feasible value, otherwise, reading of the problem should
-                    // have been ended due to a trivial infeasibility.
-                    debug_assert!(variable.has_feasible_value());
-
-                    // Just pick any feasible value
-                    let any_bound = variable.lower_bound.as_ref().or(variable.upper_bound.as_ref());
-                    let feasible_value =  match any_bound {
-                        None => OF::zero(), // Arbitrary default
-                        Some(bound) => bound.clone(),
-                    };
-
-                    (j, RemovedVariable::Solved(feasible_value))
-                }).collect(),
+            removed_variables,
             constraints_marked_removed: Vec::default(),
-            variables_marked_removed: counters.variable.iter().enumerate()
-                .filter(|&(_, &count)| count == 0)
-                .map(|(j, _)| j).collect(),
-            columns_optimized_independently: counters.variable.iter().enumerate()
-                .filter(|&(_, &count)| count == 0)
-                .filter(|&(j, _)| general_form.variables[j].cost != OF::zero())
-                .map(|(j, _)| j).collect(),
+            columns_optimized_independently: Vec::default(),
 
             general_form,
-        }
+        })
     }
 
     /// Get the latest constraint value.
@@ -247,14 +251,14 @@ impl<'a, OF: OrderedField, OFZ: SparseElementZero<OF>> Updates<'a, OF, OFZ>
         debug_assert!(!self.constraints_marked_removed.contains(&constraint));
 
         self.constraints.get(&constraint)
-            .map(|&v| v)
+            .copied()
             .unwrap_or(self.general_form.constraint_types[constraint])
     }
 
     /// Whether the latest version of a variable has exactly one feasible value.
     fn is_variable_fixed(&self, variable: usize) -> Option<&OF> {
         // There is no reason to want to know the latest value for a variable already removed.
-        debug_assert!(!self.variables_marked_removed.contains(&variable));
+        debug_assert!(!self.removed_variables.iter().any(|&(j, _)| j == variable));
 
         match self.variable_bounds(variable) {
             (Some(lower), Some(upper)) if lower == upper => Some(lower),
@@ -264,7 +268,7 @@ impl<'a, OF: OrderedField, OFZ: SparseElementZero<OF>> Updates<'a, OF, OFZ>
     /// Whether a the latest version of variable has any feasible value.
     fn variable_has_feasible_value(&self, variable: usize) -> bool {
         // There is no reason to want to know the latest value for a variable already removed.
-        debug_assert!(!self.variables_marked_removed.contains(&variable));
+        debug_assert!(!self.removed_variables.iter().any(|&(j, _)| j == variable));
 
         if let (Some(lower), Some(upper)) = self.variable_bounds(variable) {
             lower <= upper
@@ -272,12 +276,22 @@ impl<'a, OF: OrderedField, OFZ: SparseElementZero<OF>> Updates<'a, OF, OFZ>
             true
         }
     }
+    /// Any feasible value for a variable, if there is one.
+    fn get_feasible_value(&self, variable: usize) -> Option<OF> {
+        if self.variable_has_feasible_value(variable) {
+            let (lower, upper) = self.variable_bounds(variable);
+            // It is often positive slacks that get removed here, so we pick the upper bound if
+            // there is one, because it makes it more likely that a meaningful variable is zero,
+            // which in turn might lead to sparser solutions.
+            upper.cloned().or(lower.cloned()).or(Some(OF::zero()))
+        } else { None }
+    }
     /// Latest version of both bounds of a variable at once.
     ///
     /// Convenience method.
     fn variable_bounds(&self, variable: usize) -> (Option<&OF>, Option<&OF>) {
         // There is no reason to want to know the latest value for a variable already removed.
-        debug_assert!(!self.variables_marked_removed.contains(&variable));
+        debug_assert!(!self.removed_variables.iter().any(|&(j, _)| j == variable));
 
         let lower = self.variable_bound(variable, BoundDirection::Lower);
         let upper = self.variable_bound(variable, BoundDirection::Upper);
@@ -286,7 +300,7 @@ impl<'a, OF: OrderedField, OFZ: SparseElementZero<OF>> Updates<'a, OF, OFZ>
     /// Latest version of a variable bound.
     fn variable_bound(&self, variable: usize, direction: BoundDirection) -> Option<&OF> {
         // There is no reason to want to know the latest value for a variable already removed.
-        debug_assert!(!self.variables_marked_removed.contains(&variable));
+        debug_assert!(!self.removed_variables.iter().any(|&(j, _)| j == variable));
 
         self.bounds.get(&(variable, direction))
             .or_else(|| {
@@ -313,7 +327,7 @@ impl<'a, OF: OrderedField, OFZ: SparseElementZero<OF>> Updates<'a, OF, OFZ>
     #[allow(clippy::option_option)]
     fn update_bound(&mut self, variable: usize, direction: BoundDirection, new: &OF) -> Option<Option<OF>> {
         // There is no reason to update the bound for a variable already removed.
-        debug_assert!(!self.variables_marked_removed.contains(&variable));
+        debug_assert!(!self.removed_variables.iter().any(|&(j, _)| j == variable));
 
 
         if let Some(existing) = self.variable_bound(variable, direction) {
@@ -369,6 +383,48 @@ impl<'a, OF: OrderedField, OFZ: SparseElementZero<OF>> Updates<'a, OF, OFZ>
         (!bound_direction, change)
     }
 
+    /// Sets variables that can be optimized independently of all others to their optimal values.
+    fn optimize_column_independently(
+        &mut self,
+        column: usize,
+    ) -> Result<RemovedVariable<OF>, LinearProgramType<OF>> {
+        let variable = &self.general_form.variables[column];
+        debug_assert_ne!(variable.cost, OF::zero());
+
+        let new_value = Self::get_optimized_value(
+            self.general_form.objective,
+            &variable.cost,
+            (variable.lower_bound.as_ref(), variable.upper_bound.as_ref()),
+        )?;
+        self.fixed_cost += &self.general_form.variables[column].cost * &new_value;
+
+        Ok(RemovedVariable::Solved(new_value))
+    }
+
+    /// Gets the value that maximizes a column's contribution in the objective direction.
+    fn get_optimized_value(
+        objective: Objective,
+        cost: &OF,
+        (lower_bound, upper_bound): (Option<&OF>, Option<&OF>),
+    ) -> Result<OF, LinearProgramType<OF>> {
+        let cost_sign = cost.cmp(&OF::zero());
+        match (objective, cost_sign) {
+            (Objective::Minimize, Ordering::Less) | (Objective::Maximize, Ordering::Greater) => {
+                match upper_bound {
+                    Some(v) => Ok(v),
+                    None => Err(LinearProgramType::Unbounded),
+                }
+            },
+            (Objective::Minimize, Ordering::Greater) | (Objective::Maximize, Ordering::Less) => {
+                match lower_bound {
+                    Some(v) => Ok(v),
+                    None => Err(LinearProgramType::Unbounded),
+                }
+            },
+            (_, Ordering::Equal) => panic!("Should not be called if there is no cost"),
+        }.cloned()
+    }
+
     /// Get all changes that the presolving resulted in.
     ///
     /// This method only exists because this struct also holds a borrow to the original problem,
@@ -385,22 +441,15 @@ impl<'a, OF: OrderedField, OFZ: SparseElementZero<OF>> Updates<'a, OF, OFZ>
         HashMap<(usize, BoundDirection), OF>,
         Vec<(usize, RemovedVariable<OF>)>,
         Vec<usize>,
-        Vec<usize>,
-        Vec<usize>,
     ) {
         for constraint in &self.constraints_marked_removed {
             self.b.remove(constraint);
             self.constraints.remove(constraint);
         }
-        for variable in &self.variables_marked_removed {
-            self.bounds.remove(&(*variable, BoundDirection::Lower));
-            self.bounds.remove(&(*variable, BoundDirection::Upper));
+        for variable in self.removed_variables.iter().map(|&(j, _)| j) {
+            self.bounds.remove(&(variable, BoundDirection::Lower));
+            self.bounds.remove(&(variable, BoundDirection::Upper));
         }
-
-        debug_assert_eq!(self.removed_variables.len(), self.variables_marked_removed.len());
-        debug_assert!(self.columns_optimized_independently.iter()
-            .all(|j| self.variables_marked_removed.contains(j)));
-
 
         (
             self.b,
@@ -409,13 +458,11 @@ impl<'a, OF: OrderedField, OFZ: SparseElementZero<OF>> Updates<'a, OF, OFZ>
             self.bounds,
             self.removed_variables,
             self.constraints_marked_removed,
-            self.variables_marked_removed,
-            self.columns_optimized_independently,
         )
     }
 }
 
-struct Counters<'a, F: Field, FZ: SparseElementZero<F>> {
+pub struct Counters<'a, F: Field, FZ: SparseElementZero<F>> {
     /// Amount of meaningful elements still in the column or row.
     /// The elements should at least be considered when the counter drops below 2. This also
     /// depends on whether the variable appears in the cost function.
@@ -559,18 +606,19 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
     /// # Arguments
     ///
     /// * `general_form`: Problem description which is being presolved.
-    pub(super) fn new(general_form: &'a GeneralForm<OF, OFZ>) -> Self {
+    pub(super) fn new(general_form: &'a GeneralForm<OF, OFZ>) -> Result<Self, LinearProgramType<OF>> {
         let counters = Counters::new(general_form);
+        let updates = Updates::new(general_form, &counters)?;
 
-        Self {
+        Ok(Self {
             queues: Queues::new(general_form, &counters),
-            updates: Updates::new(general_form, &counters),
+            updates,
             counters,
 
             activity_bounds: vec![(None, None); general_form.nr_constraints()],
 
             general_form: &general_form,
-        }
+        })
     }
 
     /// Apply a single presolve rule.
@@ -594,8 +642,7 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
         // Actions that are guaranteed to make the problem smaller
         // Remove a row
         if let Some(&row) = self.queues.empty_row.iter().next() {
-            self.presolve_empty_constraint(row)?;
-            return Ok(());
+            return self.presolve_empty_constraint(row);
         }
         // Remove a column
         if let Some(&variable) = self.queues.substitution.iter().next() {
@@ -604,20 +651,17 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
         }
         // Remove a bound
         if let Some(&constraint) = self.queues.bound.iter().next() {
-            self.presolve_simple_bound_constraint(constraint)?;
-            return Ok(());
+            return self.presolve_simple_bound_constraint(constraint);
         }
 
         // Actions not guaranteed to make the problem smaller
         // Test whether a variable can be seen as a slack
         if let Some(&variable) = self.queues.slack.iter().next() {
-            self.presolve_constraint_if_slack_with_suitable_bounds(variable);
-            return Ok(());
+            return self.presolve_constraint_if_slack_with_suitable_bounds(variable);
         }
         // Domain propagation
         if let Some(&(constraint, direction)) = self.queues.activity.iter().next() {
-            self.presolve_constraint_by_domain_propagation(constraint, direction)?;
-            return Ok(());
+            return self.presolve_constraint_by_domain_propagation(constraint, direction);
         }
 
         Ok(())
@@ -661,6 +705,7 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
         &mut self,
         variable: usize,
     ) {
+        debug_assert!(!self.updates.removed_variables.iter().any(|&(j, _)| j == variable));
         debug_assert!(self.updates.is_variable_fixed(variable).is_some());
 
         let value = self.updates.is_variable_fixed(variable).unwrap().clone();
@@ -684,9 +729,7 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
         }
         self.updates.fixed_cost += &self.general_form.variables[variable].cost * &value;
 
-        self.updates.removed_variables.push((variable, RemovedVariable::Solved(value)));
-
-        self.remove_variable(variable);
+        self.remove_variable(variable, RemovedVariable::Solved(value));
     }
 
     /// Remove a constraint that is a bound on a variable.
@@ -731,9 +774,7 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
             self.counters.constraint[constraint] -= 1;
             self.counters.variable[column] -= 1;
             self.remove_constraint(constraint);
-            self.readd_column_to_queues_based_on_counter(column);
-
-            Ok(())
+            self.readd_column_to_queues_based_on_counter(column)
         } else {
             Err(LinearProgramType::Infeasible)
         }
@@ -755,7 +796,7 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
     fn presolve_constraint_if_slack_with_suitable_bounds(
         &mut self,
         variable_index: usize,
-    ) {
+    ) -> Result<(), LinearProgramType<OF>> {
         debug_assert_eq!(self.counters.variable[variable_index], 1);
         debug_assert_eq!(self.counters.iter_active_column(variable_index).count(), 1);
         debug_assert_eq!(self.general_form.variables[variable_index].cost, OF::zero());
@@ -786,8 +827,7 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
                     (self.general_form.from_active_to_original[j], other_coefficient / &coefficient)
                 })
                 .collect();
-            let removed = FunctionOfOthers { constant, coefficients };
-            self.updates.removed_variables.push((variable_index, removed));
+            let removed = RemovedVariable::FunctionOfOthers { constant, coefficients };
 
             // Administration to keep the index up to date
             self.counters.constraint[constraint] -= 1;
@@ -805,10 +845,11 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
                 }
             }
 
-            self.remove_variable(variable_index);
-            self.update_or_remove_bound(constraint, &coefficient, new_situation);
+            self.remove_variable(variable_index, removed);
+            self.update_or_remove_bound(constraint, &coefficient, new_situation)
         } else {
             self.queues.slack.remove(&variable_index);
+            Ok(())
         }
     }
 
@@ -872,7 +913,7 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
         constraint: usize,
         coefficient: &OF,
         maybe_new_bound: Option<(BoundDirection, OF)>,
-    ) {
+    ) -> Result<(), LinearProgramType<OF>> {
         if let Some((direction, bound)) = maybe_new_bound {
             self.updates.change_b(constraint, -coefficient * bound);
 
@@ -881,9 +922,11 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
                 BoundDirection::Upper => ConstraintType::Less,
             });
         } else {
-            self.remove_constraint_values(constraint);
+            self.remove_constraint_values(constraint)?;
             self.remove_constraint(constraint)
         }
+
+        Ok(())
     }
 
     /// Attempt to tighten bounds using activity bounds.
@@ -951,7 +994,7 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
         }
 
         if self.is_constraint_removable(constraint, &bound, direction) {
-            self.remove_constraint_values(constraint);
+            self.remove_constraint_values(constraint)?;
             self.remove_constraint(constraint);
             return Ok(());
         }
@@ -1239,31 +1282,41 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
     fn remove_constraint_values(
         &mut self,
         constraint: usize,
-    ) {
+    ) -> Result<(), LinearProgramType<OF>> {
         let variables_to_scan = self.counters.iter_active_row(constraint).map(|(j, _)| j).collect::<Vec<_>>();
         self.counters.constraint[constraint] -= variables_to_scan.len();
         for variable in variables_to_scan {
             self.counters.variable[variable] -= 1;
-            self.readd_column_to_queues_based_on_counter(variable);
+            self.readd_column_to_queues_based_on_counter(variable)?;
         }
 
         debug_assert_eq!(self.counters.constraint[constraint], 0);
+        Ok(())
     }
 
     /// When the variable counter drops low, this has implications for rules that should be tested.
-    fn readd_column_to_queues_based_on_counter(&mut self, column: usize) {
+    fn readd_column_to_queues_based_on_counter(&mut self, column: usize) -> Result<(), LinearProgramType<OF>> {
         match self.counters.variable[column] {
             0 => {
-                self.remove_variable(column);
-                if !self.general_form.variables[column].cost.is_zero() {
-                    self.updates.columns_optimized_independently.push(column);
-                }
+                // If a variable is unfeasible before presolving, should have been detected during
+                // loading as a trivial infeasibility. If unfeasible later, should be detected at
+                // bound change.
+                debug_assert!(self.updates.variable_has_feasible_value(column));
+
+                let value = if self.general_form.variables[column].cost.is_zero() {
+                    RemovedVariable::Solved(self.updates.get_feasible_value(column).unwrap())
+                } else {
+                    self.updates.optimize_column_independently(column)?
+                };
+                self.remove_variable(column, value);
             },
             1 => if self.general_form.variables[column].cost.is_zero() {
                 self.queues.slack.insert(column);
             },
             _ => (),
         }
+
+        Ok(())
     }
 
     /// Mark a constraint as removed.
@@ -1275,10 +1328,10 @@ impl<'a, OF, OFZ> Index<'a, OF, OFZ>
     }
 
     /// Mark a variable as removed.
-    fn remove_variable(&mut self, variable: usize) {
+    fn remove_variable(&mut self, variable: usize, solution: RemovedVariable<OF>) {
         debug_assert_eq!(self.counters.variable[variable], 0);
 
-        self.updates.variables_marked_removed.push(variable);
+        self.updates.removed_variables.push((variable, solution));
         self.queues.remove_variable_from_all(variable);
     }
 
@@ -1341,16 +1394,16 @@ mod test {
         let create = |constraint_type, value| {
             GeneralForm::<_, T>::new(
                 Objective::Minimize,
-                ColumnMajor::from_test_data(&vec![vec![0]], 1),
-                vec![constraint_type],
-                Dense::from_test_data(vec![value]),
+                ColumnMajor::from_test_data(&vec![vec![0], vec![1]], 1),
+                vec![constraint_type, ConstraintType::Equal],
+                Dense::from_test_data(vec![value, 123]),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
                     lower_bound: None,
                     upper_bound: None,
                     shift: R32!(0),
-                    flipped: false
+                    flipped: false,
                 }],
                 vec!["X".to_string()],
                 R32!(0),
@@ -1358,31 +1411,28 @@ mod test {
         };
 
         let initial = create(ConstraintType::Equal, 0);
-        let mut index = Index::new(&initial);
+        let mut index = Index::new(&initial).unwrap();
         assert!(index.presolve_empty_constraint(0).is_ok());
-        assert_eq!(index.counters.constraint, vec![0]);
-        assert_eq!(index.counters.variable, vec![0]);
+        assert_eq!(index.counters.constraint, vec![0, 1]);
+        assert_eq!(index.counters.variable, vec![1]);
         assert_eq!(index.updates.constraints_marked_removed, vec![0]);
-        assert!(index.queues.are_empty());
 
         let initial = create(ConstraintType::Greater, 0);
-        let mut index = Index::new(&initial);
+        let mut index = Index::new(&initial).unwrap();
         assert!(index.presolve_empty_constraint(0).is_ok());
-        assert_eq!(index.counters.constraint, vec![0]);
-        assert_eq!(index.counters.variable, vec![0]);
+        assert_eq!(index.counters.constraint, vec![0, 1]);
+        assert_eq!(index.counters.variable, vec![1]);
         assert_eq!(index.updates.constraints_marked_removed, vec![0]);
-        assert!(index.queues.are_empty());
 
         let initial = create(ConstraintType::Less, 1);
-        let mut index = Index::new(&initial);
+        let mut index = Index::new(&initial).unwrap();
         assert!(index.presolve_empty_constraint(0).is_ok());
-        assert_eq!(index.counters.constraint, vec![0]);
-        assert_eq!(index.counters.variable, vec![0]);
+        assert_eq!(index.counters.constraint, vec![0, 1]);
+        assert_eq!(index.counters.variable, vec![1]);
         assert_eq!(index.updates.constraints_marked_removed, vec![0]);
-        assert!(index.queues.are_empty());
 
         let initial = create(ConstraintType::Greater, 1);
-        let mut index = Index::new(&initial);
+        let mut index = Index::new(&initial).unwrap();
         assert!(index.presolve_empty_constraint(0).is_err());
     }
 
@@ -1404,13 +1454,13 @@ mod test {
             vec!["X".to_string()],
             R32!(7),
         );
-        let mut index = Index::new(&initial);
+        let mut index = Index::new(&initial).unwrap();
 
         index.presolve_fixed_variable(0);
         assert_eq!(index.counters.constraint, vec![0, 0]);
         assert_eq!(index.counters.variable, vec![0]);
         assert_eq!(index.updates.constraints_marked_removed, vec![]);
-        assert_eq!(index.updates.variables_marked_removed, vec![0]);
+        assert_eq!(index.updates.removed_variables, vec![(0, RemovedVariable::Solved(R32!(1)))]);
         assert_eq!(index.updates.b.get(&0), Some(&R32!(0)));
         assert_eq!(index.updates.b.get(&1), Some(&R32!(-1)));
         assert_eq!(index.updates.fixed_cost, R32!(1) * R32!(1));
@@ -1421,7 +1471,7 @@ mod test {
     fn presolve_simple_bound_constraint() {
         let initial = GeneralForm::<T, T>::new(
             Objective::Minimize,
-            ColumnMajor::from_test_data(&vec![vec![1], vec![0]], 1),
+            ColumnMajor::from_test_data(&vec![vec![1]; 2], 1),
             vec![ConstraintType::Equal; 2],
             Dense::from_test_data(vec![2; 2]),
             vec![Variable {
@@ -1435,13 +1485,13 @@ mod test {
             vec!["X".to_string()],
             R32!(0),
         );
-        let mut index = Index::new(&initial);
+        let mut index = Index::new(&initial).unwrap();
 
         assert_eq!(index.presolve_simple_bound_constraint(0), Ok(()));
-        assert_eq!(index.counters.constraint, vec![0, 0]);
-        assert_eq!(index.counters.variable, vec![0]);
+        assert_eq!(index.counters.constraint, vec![0, 1]);
+        assert_eq!(index.counters.variable, vec![1]);
         assert_eq!(index.updates.constraints_marked_removed, vec![0]);
-        assert_eq!(index.updates.variables_marked_removed, vec![0]);
+        assert_eq!(index.updates.removed_variables, vec![]);
         assert_eq!(index.updates.bounds.get(&(0, BoundDirection::Lower)), Some(&R32!(2)));
         assert_eq!(index.updates.bounds.get(&(0, BoundDirection::Upper)), Some(&R32!(2)));
         assert!(!index.queues.are_empty());
@@ -1472,23 +1522,22 @@ mod test {
 
         // Don't change a thing
         let initial = create(ConstraintType::Equal, Some(R32!(1)), Some(R32!(2)));
-        let mut index = Index::new(&initial);
-        index.presolve_constraint_if_slack_with_suitable_bounds(0);
+        let mut index = Index::new(&initial).unwrap();
+        assert!(index.presolve_constraint_if_slack_with_suitable_bounds(0).is_ok());
         assert_eq!(index.counters.constraint, vec![3]);
         assert_eq!(index.counters.variable, vec![1, 1, 1]);
         assert_eq!(index.updates.constraints_marked_removed, vec![]);
-        assert_eq!(index.updates.variables_marked_removed, vec![]);
+        assert_eq!(index.updates.removed_variables, vec![]);
         assert_eq!(initial.constraint_types, vec![ConstraintType::Equal]);
         assert_eq!(initial.b, Dense::from_test_data(vec![3]));
 
         // Change a thing
         let initial = create(ConstraintType::Equal, Some(R32!(1)), None);
-        let mut index = Index::new(&initial);
-        index.presolve_constraint_if_slack_with_suitable_bounds(0);
+        let mut index = Index::new(&initial).unwrap();
+        assert!(index.presolve_constraint_if_slack_with_suitable_bounds(0).is_ok());
         assert_eq!(index.counters.constraint, vec![2]);
         assert_eq!(index.counters.variable, vec![0, 1, 1]);
         assert_eq!(index.updates.constraints_marked_removed, vec![]);
-        assert_eq!(index.updates.variables_marked_removed, vec![0]);
         assert_eq!(index.updates.constraint_types(0), ConstraintType::Less);
         assert_eq!(index.updates.removed_variables, vec![(0, RemovedVariable::FunctionOfOthers {
             constant: R32!(3, 2),
@@ -1497,12 +1546,11 @@ mod test {
         assert_eq!(index.updates.b(0), &R32!(3 - 2));
 
         let initial = create(ConstraintType::Equal, None, Some(R32!(1)));
-        let mut index = Index::new(&initial);
-        index.presolve_constraint_if_slack_with_suitable_bounds(0);
+        let mut index = Index::new(&initial).unwrap();
+        assert!(index.presolve_constraint_if_slack_with_suitable_bounds(0).is_ok());
         assert_eq!(index.counters.constraint, vec![2]);
         assert_eq!(index.counters.variable, vec![0, 1, 1]);
         assert_eq!(index.updates.constraints_marked_removed, vec![]);
-        assert_eq!(index.updates.variables_marked_removed, vec![0]);
         assert_eq!(index.updates.constraint_types(0), ConstraintType::Greater);
         assert_eq!(index.updates.removed_variables, vec![(0, RemovedVariable::FunctionOfOthers {
             constant: R32!(3, 2),
@@ -1511,17 +1559,20 @@ mod test {
         assert_eq!(index.updates.b(0), &R32!(3 - 2));
 
         let initial = create(ConstraintType::Greater, Some(R32!(1)), None);
-        let mut index = Index::new(&initial);
-        index.presolve_constraint_if_slack_with_suitable_bounds(0);
+        let mut index = Index::new(&initial).unwrap();
+        assert!(index.presolve_constraint_if_slack_with_suitable_bounds(0).is_ok());
         assert_eq!(index.counters.constraint, vec![0]);
         assert_eq!(index.counters.variable, vec![0; 3]);
         assert_eq!(index.updates.constraints_marked_removed, vec![0]);
-        assert_eq!(index.updates.variables_marked_removed, vec![0, 1, 2]);
         assert_eq!(initial.constraint_types.len(), 1); // Removed after
-        assert_eq!(index.updates.removed_variables, vec![(0, RemovedVariable::FunctionOfOthers {
-            constant: R32!(3, 2),
-            coefficients: vec![(1, R32!(1)), (2, R32!(1))],
-        })]);
+        assert_eq!(index.updates.removed_variables, vec![
+            (0, RemovedVariable::FunctionOfOthers {
+                constant: R32!(3, 2),
+                coefficients: vec![(1, R32!(1)), (2, R32!(1))],
+            }),
+            (1, RemovedVariable::Solved(R32!(1))),
+            (2, RemovedVariable::Solved(R32!(1))),
+        ]);
         assert_eq!(initial.b.len(), 1); // Removed after
     }
 

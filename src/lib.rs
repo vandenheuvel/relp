@@ -6,6 +6,7 @@
 #![feature(is_sorted)]
 #![feature(or_patterns)]
 #![feature(drain_filter)]
+#![feature(result_cloned)]
 
 extern crate daggy;
 extern crate num;

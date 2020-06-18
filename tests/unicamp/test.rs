@@ -42,7 +42,7 @@ fn model_data_1() {
 
     let result = solve::<T, T>("model_data_1");
     assert!(result.is_probably_equal_to(&Solution::new(
-        R32!(123, 38),
+        R32!(123, 38),  // GLPK
         vec![
             ("COL01".to_string(), R32!(5, 2)),
             ("COL02".to_string(), R32!(0)),
@@ -62,7 +62,7 @@ fn model_data_2() {
     type T = Ratio<i32>;
 
     let result = solve::<T, T>("model_data_2");
-    assert_eq!(result, Solution::new(
+    assert_eq!(result, Solution::new(  // GLPK
         R32!(0),
         vec![
             ("DCOL1".to_string(), R32!(0)),
@@ -75,7 +75,7 @@ fn model_data_3() {
     type T = Ratio<i32>;
 
     let result = solve::<T, T>("model_data_3");
-    assert_eq!(result, Solution::new(
+    assert_eq!(result, Solution::new(  // GLPK
         R32!(70),
         vec![
             ("SUP1".to_string(), R32!(200, 3)),
@@ -90,7 +90,7 @@ fn model_data_4() {
     type T = Ratio<i32>;
 
     let result = solve::<T, T>("model_data_4");
-    assert_eq!(result, Solution::new(
+    assert_eq!(result, Solution::new(  // GLPK
         R32!(7, 1),
         vec![
             ("COL01".to_string(), R32!(1, 1)),
@@ -106,7 +106,7 @@ fn model_data_5() {
     type T = Ratio<i32>;
 
     let result = solve::<T, T>("model_data_5");
-    assert_eq!(result, Solution::new(
+    assert_eq!(result, Solution::new(  // GLPK
         R32!(332, 1),
         vec![
             ("COL01".to_string(), R32!(1, 1)),
@@ -121,7 +121,7 @@ fn model_data_6() {
     type T = Ratio<i32>;
 
     let result = solve::<T, T>("model_data_6");
-    assert!(result.is_probably_equal_to(&Solution::new(
+    assert!(result.is_probably_equal_to(&Solution::new(  // GLPK
         R32!(28, 1),
         vec![
             ("X00".to_string(), R32!(0)),
@@ -174,7 +174,7 @@ fn model_data_9() {
     type T = Ratio<i32>;
 
     let result = solve::<T, T>("model_data_9");
-    let expected = Solution::new(
+    let expected = Solution::new(  // GLPK
         R32!(-100, 1),
         vec![
             ("C0000001".to_string(), R32!(0)),

@@ -212,7 +212,9 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>
                 (false, true) => {
                     real_column()
                 },
-                (false, false) => unreachable!(),
+                (false, false) => {
+                    unreachable!("If both `ac == nr_a` and `i - ac == nr_r`, loop should have ended")
+                },
             }
         }).collect::<Vec<_>>();
         let basis_columns = basis_indices.iter().copied().collect();

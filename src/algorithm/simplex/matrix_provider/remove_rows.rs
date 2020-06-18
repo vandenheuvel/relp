@@ -1,3 +1,8 @@
+//! # Removing rows from a matrix provider without modifying it
+//!
+//! When a matrix is represented with an unusual backend, like a network, it might be practical to
+//! remove rows from the matrix it represents without having to adapt the underlying implementation.
+//! This module provides a wrapper around any matrix provider that removes rows from it.
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fmt;
