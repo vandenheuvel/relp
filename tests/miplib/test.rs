@@ -5,7 +5,7 @@ use num::rational::Ratio;
 
 use rust_lp::algorithm::simplex::matrix_provider::MatrixProvider;
 use rust_lp::algorithm::simplex::{solve_relaxation, OptimizationResult};
-use rust_lp::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
+use rust_lp::algorithm::simplex::strategy::pivot_rule::{FirstProfitable, FirstProfitableWithMemory, GlobalLowest};
 use rust_lp::io::import;
 
 use super::get_test_file_path;
@@ -19,7 +19,7 @@ fn test(file_name: &str, objective: f64) {
 
     let mut general = result.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
+    let result = solve_relaxation::<T, T, _, GlobalLowest, GlobalLowest>(&data);
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {

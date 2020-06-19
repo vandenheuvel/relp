@@ -93,6 +93,40 @@ impl PivotRule for FirstProfitableWithMemory {
     }
 }
 
+/// Simply pivot on the column, which has the most negative relative cost.
+pub struct GlobalLowest;
+impl PivotRule for GlobalLowest {
+    fn new() -> Self {
+        Self
+    }
+
+    fn select_primal_pivot_column<OF, OFZ, K>(
+        &mut self,
+        tableau: &Tableau<OF, OFZ, K>,
+    ) -> Option<SparseTuple<OF>>
+        where
+            OF: OrderedField,
+            for<'r> &'r OF: OrderedFieldRef<OF>,
+            OFZ: SparseElementZero<OF>,
+            K: Kind<OF, OFZ>,
+    {
+        let mut smallest = None;
+        for (j, cost) in (tableau.kind.nr_artificial_variables()..tableau.nr_columns())
+            .filter(|column| !tableau.is_in_basis(column))
+            .map(|column| (column, tableau.relative_cost(column)))
+            .filter(|(_, cost)| cost < &OF::zero()) {
+            if let Some((existing_j, existing_cost)) = smallest.as_mut() {
+                if &cost < existing_cost {
+                    *existing_j = j;
+                    *existing_cost = cost;
+                }
+            } else { smallest = Some((j, cost)) }
+        }
+
+        smallest
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::algorithm::simplex::strategy::pivot_rule::{FirstProfitable, PivotRule};
