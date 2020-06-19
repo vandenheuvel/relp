@@ -804,6 +804,10 @@ pub mod test {
             let w = SparseVector::<T, T, T>::from_test_data(vec![0, 3]);
             assert_eq!(v.inner_product(&w), R32!(0));
 
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![3, 0]);
+            assert_eq!(v.inner_product(&w), R32!(0));
+
             let v = SparseVector::<T, T, T>::from_test_data(vec![0, 0, 0]);
             let w = SparseVector::<T, T, T>::from_test_data(vec![0, 3, 7]);
             assert_eq!(v.inner_product(&w), R32!(0));
@@ -811,6 +815,30 @@ pub mod test {
             let v = SparseVector::<T, T, T>::from_test_data(vec![2, 3]);
             let w = SparseVector::<T, T, T>::from_test_data(vec![5, 7]);
             assert_eq!(v.inner_product(&w), R32!(31));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2, 0]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![0, 3, 0]);
+            assert_eq!(v.inner_product(&w), R32!(6));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 0, 0]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![5, 7, 0]);
+            assert_eq!(v.inner_product(&w), R32!(0));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 0, 2]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![5, 7, 0]);
+            assert_eq!(v.inner_product(&w), R32!(0));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![2, 3, 0]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![5, 7, 0]);
+            assert_eq!(v.inner_product(&w), R32!(31));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![2, 0, 0]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![5, 7, 0]);
+            assert_eq!(v.inner_product(&w), R32!(10));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2, 0]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![5, 7, 0]);
+            assert_eq!(v.inner_product(&w), R32!(14));
         }
 
         #[test]

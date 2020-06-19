@@ -33,6 +33,7 @@ where
 {
     let mut rule = PR::new();
     loop {
+        println!("{}", tableau.objective_function_value());
         match rule.select_primal_pivot_column(tableau) {
             Some((column_nr, cost)) => {
                 let column = tableau.generate_column(column_nr);
@@ -149,6 +150,7 @@ where
 {
     let mut rule = PR::new();
     loop {
+        println!("{}", tableau.objective_function_value());
         match rule.select_primal_pivot_column(tableau) {
             Some((column_index, cost)) => {
                 let column = tableau.generate_column(column_index);
