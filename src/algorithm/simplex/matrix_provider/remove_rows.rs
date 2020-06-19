@@ -132,7 +132,7 @@ impl<'a, F: 'a, FZ, MP> RemoveRows<'a, F, FZ, MP>
                 i + skip_indices_array.len()
             }
         } else {
-            // skip_indices_array >= 2
+            // skip_indices_array.len() >= 2
             if i < skip_indices_array[0] {
                 i
             } else {
@@ -209,6 +209,9 @@ impl<'a, F, FZ, MP> MatrixProvider<F, FZ> for RemoveRows<'a, F, FZ, MP>
     }
 
     fn bound_row_index(&self, j: usize, bound_type: BoundDirection) -> Option<usize> {
+        debug_assert!(self.rows_to_skip.iter().all(|&i| i < self.provider.nr_constraints()));
+
+        // Only constraint rows are deleted,
         self.provider.bound_row_index(j, bound_type).map(|nr| nr - self.nr_constraints_deleted())
     }
 
@@ -235,6 +238,8 @@ impl<'a, F, FZ, MP> MatrixProvider<F, FZ> for RemoveRows<'a, F, FZ, MP>
 
     /// This implementation assumes that only constraint rows are removed from the `MatrixProvider`.
     fn nr_bounds(&self) -> usize {
+        debug_assert!(self.rows_to_skip.iter().all(|&i| i < self.provider.nr_constraints()));
+
         self.provider.nr_bounds()
     }
 

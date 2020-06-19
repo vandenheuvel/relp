@@ -9,9 +9,9 @@ use crate::algorithm::simplex::matrix_provider::remove_rows::RemoveRows;
 use crate::algorithm::simplex::strategy::pivot_rule::PivotRule;
 use crate::algorithm::simplex::tableau::kind::{Artificial, NonArtificial};
 use crate::algorithm::simplex::tableau::Tableau;
-use crate::data::linear_algebra::traits::{SparseElementZero, SparseElement, SparseComparator};
-use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
+use crate::data::linear_algebra::traits::{SparseComparator, SparseElement, SparseElementZero};
 use crate::data::linear_algebra::vector::Sparse;
+use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 pub mod tableau;
 pub mod logic;
@@ -66,8 +66,8 @@ mod test {
     use num::FromPrimitive;
     use num::rational::Ratio;
 
+    use crate::algorithm::simplex::{OptimizationResult, solve_relaxation};
     use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable};
-    use crate::algorithm::simplex::{solve_relaxation, OptimizationResult};
     use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
     use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};

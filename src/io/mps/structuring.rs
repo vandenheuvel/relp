@@ -1032,12 +1032,12 @@ mod test {
     use num::rational::Ratio;
 
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
-    use crate::io::mps::structuring::{compute_columns, compute_b};
-    use crate::io::mps::{Variable, Rhs, Constraint};
+    use crate::data::linear_algebra::vector::{Dense, Vector};
+    use crate::data::linear_program::elements::{ConstraintType, VariableType};
+    use crate::io::mps::{Constraint, Rhs, Variable};
+    use crate::io::mps::structuring::{compute_b, compute_columns};
     use crate::num::FromPrimitive;
     use crate::R32;
-    use crate::data::linear_algebra::vector::{Dense, Vector};
-    use crate::data::linear_program::elements::{VariableType, ConstraintType};
 
     type T = Ratio<i32>;
 

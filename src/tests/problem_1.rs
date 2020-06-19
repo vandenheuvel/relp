@@ -10,6 +10,7 @@ use num::rational::Ratio;
 use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
 use crate::algorithm::simplex::matrix_provider::MatrixProvider;
+use crate::algorithm::simplex::OptimizationResult;
 use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::simplex::tableau::inverse_maintenance::CarryMatrix;
 use crate::algorithm::simplex::tableau::kind::{Artificial, NonArtificial};
@@ -24,7 +25,6 @@ use crate::io::mps::{Bound, BoundType, Constraint, Rhs, Variable};
 use crate::io::mps::parsing::{into_atom_lines, UnstructuredBound, UnstructuredColumn, UnstructuredMPS, UnstructuredRhs, UnstructuredRow};
 use crate::io::mps::structuring::MPS;
 use crate::R32;
-use crate::algorithm::simplex::OptimizationResult;
 
 type T = Ratio<i32>;
 

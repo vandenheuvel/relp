@@ -6,6 +6,7 @@ use num::rational::Ratio;
 use crate::{F, R32};
 use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, primal, Rank};
 use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable};
+use crate::algorithm::simplex::OptimizationResult;
 use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::simplex::tableau::inverse_maintenance::CarryMatrix;
 use crate::algorithm::simplex::tableau::kind::{Artificial, NonArtificial};
@@ -16,7 +17,6 @@ use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::VariableType;
 use crate::data::number_types::traits::{Field, FieldRef};
-use crate::algorithm::simplex::OptimizationResult;
 
 type T = Ratio<i32>;
 

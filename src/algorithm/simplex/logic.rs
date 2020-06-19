@@ -33,7 +33,6 @@ where
 {
     let mut rule = PR::new();
     loop {
-        println!("{}", tableau.objective_function_value());
         match rule.select_primal_pivot_column(tableau) {
             Some((column_nr, cost)) => {
                 let column = tableau.generate_column(column_nr);
@@ -112,7 +111,7 @@ where
             .filter(|j| !tableau.is_in_basis(j))
             .map(|j| (j, tableau.relative_cost(j)))
             .filter(|(_, cost)| cost.is_zero())
-            .find(|&(j, _)| tableau.generate_element(pivot_row, j) != F::zero());
+            .find(|&(j, _)| !tableau.generate_element(pivot_row, j).is_zero());
 
         if let Some((pivot_column, cost)) = column_cost {
             let column = tableau.generate_column(pivot_column);
@@ -150,7 +149,6 @@ where
 {
     let mut rule = PR::new();
     loop {
-        println!("{}", tableau.objective_function_value());
         match rule.select_primal_pivot_column(tableau) {
             Some((column_index, cost)) => {
                 let column = tableau.generate_column(column_index);

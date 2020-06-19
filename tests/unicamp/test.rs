@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use num::{BigInt, FromPrimitive};
+use num::FromPrimitive;
 use num::rational::Ratio;
 
 use rust_lp::algorithm::simplex::{OptimizationResult, solve_relaxation};

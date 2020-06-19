@@ -190,7 +190,6 @@ impl<F, FZ> CarryMatrix<F, FZ>
     /// * `artificial_carry_matrix`: A `CarryMatrix` which has an artificial cost row.
     /// * `provider`: Provider of the reduced problem.
     /// * `basis`: Vector with, ordered by pivot row, the basis indices of the new basis.
-    /// * `to_remove`: All rows and columns to remove from the carry matrix.
     ///
     /// # Return value
     ///
@@ -206,7 +205,7 @@ impl<F, FZ> CarryMatrix<F, FZ>
         let mut basis_inverse_rows = artificial_carry_matrix.basis_inverse_rows;
         remove_indices(&mut basis_inverse_rows, &remove_rows_provider.rows_to_skip);
         // Remove the columns
-        for element in basis_inverse_rows.iter_mut() {
+        for element in &mut basis_inverse_rows {
             element.remove_indices(&remove_rows_provider.rows_to_skip);
         }
 

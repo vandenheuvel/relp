@@ -3,6 +3,7 @@
 //! Sparse and dense vectors. These were written by hand, because a certain specific set of
 //! operations needs to be done quickly with these types.
 use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::fmt::Error;
@@ -481,22 +482,45 @@ where
     {
         debug_assert_eq!(other.len(), self.len());
 
-        // TODO(OPTIMIZATION): When can binary search-like strategies be used?
-        let mut self_tuple_index = 0;
-        let mut other_tuple_index = 0;
+        let mut self_lowest = 0;
+        let mut other_lowest = 0;
 
         let mut total = C::zero();
-
-        while self_tuple_index < self.data.len() && other_tuple_index < other.data.len() {
-            if self.data[self_tuple_index].0 < other.data[other_tuple_index].0 {
-                self_tuple_index += 1;
-            } else if self.data[self_tuple_index].0 > other.data[other_tuple_index].0 {
-                other_tuple_index += 1;
-            } else {
-                // self_tuple.0 == other_tuple.0
-                total += other.data[other_tuple_index].1.borrow() * self.data[self_tuple_index].1.borrow();
-                self_tuple_index += 1;
-                other_tuple_index += 1;
+        while self_lowest < self.data.len() && other_lowest < other.data.len() {
+            let self_sought = self.data[self_lowest].0;
+            let other_sought = other.data[other_lowest].0;
+            match self_sought.cmp(&other_sought) {
+                Ordering::Less => {
+                    match self.data[self_lowest..].binary_search_by_key(&other_sought, |&(i, _)| i) {
+                        Err(diff) => {
+                            self_lowest += diff;
+                            other_lowest += 1;
+                        },
+                        Ok(diff) => {
+                            total += self.data[self_lowest + diff].1.borrow() * other.data[other_lowest].1.borrow();
+                            self_lowest += diff + 1;
+                            other_lowest += 1;
+                        },
+                    }
+                },
+                Ordering::Greater => {
+                    match other.data[other_lowest..].binary_search_by_key(&self_sought, |&(i, _)| i) {
+                        Err(diff) => {
+                            self_lowest += 1;
+                            other_lowest += diff;
+                        },
+                        Ok(diff) => {
+                            total += self.data[self_lowest].1.borrow() * other.data[other_lowest + diff].1.borrow();
+                            self_lowest += 1;
+                            other_lowest += diff + 1;
+                        },
+                    }
+                },
+                Ordering::Equal => {
+                    total += self.data[self_lowest].1.borrow() * other.data[other_lowest].1.borrow();
+                    self_lowest += 1;
+                    other_lowest += 1;
+                },
             }
         }
 
@@ -808,13 +832,17 @@ pub mod test {
             let w = SparseVector::<T, T, T>::from_test_data(vec![3, 0]);
             assert_eq!(v.inner_product(&w), R32!(0));
 
-            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 0, 0]);
-            let w = SparseVector::<T, T, T>::from_test_data(vec![0, 3, 7]);
-            assert_eq!(v.inner_product(&w), R32!(0));
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![0, 3]);
+            assert_eq!(v.inner_product(&w), R32!(6));
 
             let v = SparseVector::<T, T, T>::from_test_data(vec![2, 3]);
             let w = SparseVector::<T, T, T>::from_test_data(vec![5, 7]);
             assert_eq!(v.inner_product(&w), R32!(31));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 0, 0]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![0, 3, 7]);
+            assert_eq!(v.inner_product(&w), R32!(0));
 
             let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2, 0]);
             let w = SparseVector::<T, T, T>::from_test_data(vec![0, 3, 0]);
@@ -839,6 +867,14 @@ pub mod test {
             let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2, 0]);
             let w = SparseVector::<T, T, T>::from_test_data(vec![5, 7, 0]);
             assert_eq!(v.inner_product(&w), R32!(14));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2, 0]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![5, 0, 7]);
+            assert_eq!(v.inner_product(&w), R32!(0));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0]);
+            let w = SparseVector::<T, T, T>::from_test_data(vec![-1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+            assert_eq!(v.inner_product(&w), R32!(0));
         }
 
         #[test]

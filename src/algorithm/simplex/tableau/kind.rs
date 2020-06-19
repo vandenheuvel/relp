@@ -469,16 +469,21 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, NonArtificial<'provider, F, FZ, MP>>
         artificial_tableau: Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>,
         rows_removed: &'b RemoveRows<'provider, F, FZ, MP>,
     ) -> Tableau<F, FZ, NonArtificial<'b, F, FZ, RemoveRows<'provider, F, FZ, MP>>> {
+        let nr_artificial = artificial_tableau.nr_artificial_variables();
         debug_assert!(
             artificial_tableau.basis_indices.iter()
-                .all(|&v| v >= artificial_tableau.nr_artificial_variables() || rows_removed.rows_to_skip.contains(&v))
+                .all(|&v| v >= nr_artificial || rows_removed.rows_to_skip.contains(&v))
         );
 
-        let nr_artificial = artificial_tableau.nr_artificial_variables();
+        let mut basis_columns = artificial_tableau.basis_columns;
+        for &row in &rows_removed.rows_to_skip {
+            let was_there = basis_columns.remove(&artificial_tableau.basis_indices[row]);
+            debug_assert!(was_there);
+        }
+        let basis_columns = basis_columns.into_iter().map(|j| j - nr_artificial).collect();
 
         let mut basis_indices = artificial_tableau.basis_indices;
         remove_indices(&mut basis_indices, &rows_removed.rows_to_skip);
-        // Shift the basis column indices back
         basis_indices.iter_mut().for_each(|index| *index -= nr_artificial);
 
         // Remove same row and column from carry matrix
@@ -487,17 +492,6 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, NonArtificial<'provider, F, FZ, MP>>
             rows_removed,
             &basis_indices,
         );
-
-        // TODO(DOCUMENTATION): Why the below loop exactly?
-        let mut basis_columns = artificial_tableau.basis_columns;
-        for index in &rows_removed.rows_to_skip {
-            let was_there = basis_columns.remove(index);
-            debug_assert!(was_there);
-        }
-        // Shift the basis column indices back
-        let basis_columns = basis_columns.into_iter()
-            .map(|v| v - nr_artificial)
-            .collect();
 
         Tableau {
             carry,
