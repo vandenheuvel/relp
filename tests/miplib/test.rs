@@ -3,9 +3,9 @@ use std::convert::TryInto;
 use num::{BigInt, ToPrimitive};
 use num::rational::Ratio;
 
+use rust_lp::algorithm::simplex::{OptimizationResult, solve_relaxation};
 use rust_lp::algorithm::simplex::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::simplex::{solve_relaxation, OptimizationResult};
-use rust_lp::algorithm::simplex::strategy::pivot_rule::{FirstProfitable, FirstProfitableWithMemory, GlobalLowest};
+use rust_lp::algorithm::simplex::strategy::pivot_rule::GlobalLowest;
 use rust_lp::io::import;
 
 use super::get_test_file_path;

@@ -9,7 +9,7 @@ use num::rational::Ratio;
 use crate::data::number_types::traits::{Field, FieldRef, OrderedField, OrderedFieldRef};
 
 macro_rules! impl_rational {
-    ($in_t:ident, $t:ident) => {
+    ($in_t:ident) => {
         impl OrderedField for Ratio<$in_t> {
         }
 
@@ -24,10 +24,10 @@ macro_rules! impl_rational {
         }
     }
 }
-impl_rational!(i32, R32);
-impl_rational!(i64, R64);
-impl_rational!(i128, R128);
-impl_rational!(BigInt, BI);
+impl_rational!(i32);
+impl_rational!(i64);
+impl_rational!(i128);
+impl_rational!(BigInt);
 
 /// Shorthand for creating a rational number in tests.
 #[macro_export]
