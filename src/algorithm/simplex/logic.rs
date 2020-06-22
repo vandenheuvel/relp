@@ -5,8 +5,8 @@
 use crate::algorithm::simplex::matrix_provider::MatrixProvider;
 use crate::algorithm::simplex::OptimizationResult;
 use crate::algorithm::simplex::strategy::pivot_rule::PivotRule;
-use crate::algorithm::simplex::tableau::Tableau;
 use crate::algorithm::simplex::tableau::kind::{Artificial, NonArtificial};
+use crate::algorithm::simplex::tableau::Tableau;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::number_types::traits::{Field, FieldRef, OrderedField, OrderedFieldRef};
 
@@ -169,26 +169,25 @@ where
 
 #[cfg(test)]
 mod test {
+    use num::rational::Ratio;
+
     use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, OptimizationResult, primal, Rank};
     use crate::algorithm::simplex::solve_relaxation;
     use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
     use crate::algorithm::simplex::tableau::kind::Artificial;
     use crate::algorithm::simplex::tableau::Tableau;
     use crate::data::linear_algebra::vector::Sparse as SparseVector;
+    use crate::R32;
     use crate::tests::problem_2::{create_matrix_data_data, matrix_data_form, tableau_form};
 
-    #[ignore]
     #[test]
     fn simplex() {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
         let mut tableau = tableau_form(&matrix_data_form);
-        let _result = primal::<_, _, _, FirstProfitable>(&mut tableau);
-        // TODO: Finish this test
-        // assert!(matches!(result, OptimizationResult::FiniteOptimum(_)));
-        // drop(result);
-        // let obj = tableau.objective_function_value();
-        // assert_eq!(tableau.objective_function_value(), Ratio::<i32>::new(9, 2));
+        let result = primal::<_, _, _, FirstProfitable>(&mut tableau);
+        assert!(matches!(result, OptimizationResult::FiniteOptimum(_)));
+        assert_eq!(tableau.objective_function_value(), R32!(9, 2));
     }
 
     #[test]

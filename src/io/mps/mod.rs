@@ -31,7 +31,9 @@ mod token;
 /// # Return value
 ///
 /// A `Result<MPS, ImportError>` instance.
-pub fn import<F: FromPrimitive + One + PartialEq + Clone>(program: &impl AsRef<str>) -> Result<MPS<F>, Import> {
+pub fn import<F: FromPrimitive + One + PartialEq + Clone>(
+    program: &impl AsRef<str>,
+) -> Result<MPS<F>, Import> {
     let atom_lines = into_atom_lines(program);
     let unstructured_mps = UnstructuredMPS::try_from(atom_lines)
         .map_err(|e| Import::Parse(e))?;
