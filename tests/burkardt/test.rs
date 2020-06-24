@@ -3,10 +3,10 @@ use std::convert::TryInto;
 use num::{BigInt, FromPrimitive, Zero};
 use num::rational::Ratio;
 
+use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
+use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use rust_lp::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use rust_lp::BR;
-use rust_lp::algorithm::simplex::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::simplex::{solve_relaxation, OptimizationResult};
-use rust_lp::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
 use rust_lp::data::linear_algebra::traits::SparseElementZero;
 use rust_lp::data::linear_program::general_form::GeneralForm;
 use rust_lp::data::linear_program::solution::Solution;
@@ -37,7 +37,7 @@ fn adlittle() {
 
     let mut general = result.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
+    let result = data.solve_relaxation();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -61,9 +61,9 @@ fn adlittle() {
 fn afiro_big_int() {
     type T = Ratio<BigInt>;
 
-    let mut general = to_general_form("afiro");
+    let mut general = to_general_form::<T, T>("afiro");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
+    let result = data.solve_relaxation();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -119,9 +119,9 @@ fn afiro_big_int() {
 fn afiro() {
     type T = Ratio<i128>;
 
-    let mut general = to_general_form("afiro");
+    let mut general = to_general_form::<T, T>("afiro");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
+    let result = data.solve_relaxation();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -184,9 +184,9 @@ fn empstest() {
 fn maros_bigint() {
     type T = Ratio<BigInt>;
 
-    let mut general = to_general_form("maros");
+    let mut general = to_general_form::<T, T>("maros");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
+    let result = data.solve_relaxation();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -210,9 +210,9 @@ fn maros_bigint() {
 fn maros() {
     type T = Ratio<i32>;
 
-    let mut general = to_general_form("maros");
+    let mut general = to_general_form::<T, T>("maros");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
+    let result = data.solve_relaxation();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -236,9 +236,9 @@ fn maros() {
 fn nazareth_bigint() {
     type T = Ratio<BigInt>;
 
-    let mut general = to_general_form("nazareth");
+    let mut general = to_general_form::<T, T>("nazareth");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
+    let result = data.solve_relaxation();
     assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
 }
 
@@ -246,9 +246,9 @@ fn nazareth_bigint() {
 fn nazareth() {
     type T = Ratio<i32>;
 
-    let mut general = to_general_form("nazareth");
+    let mut general = to_general_form::<T, T>("nazareth");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
+    let result = data.solve_relaxation();
     assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
 }
 
@@ -256,9 +256,9 @@ fn nazareth() {
 fn testprob_bigint() {
     type T = Ratio<BigInt>;
 
-    let mut general = to_general_form("testprob");
+    let mut general = to_general_form::<T, T>("testprob");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
+    let result = data.solve_relaxation();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -281,9 +281,9 @@ fn testprob_bigint() {
 fn testprob() {
     type T = Ratio<i32>;
 
-    let mut general = to_general_form("testprob");
+    let mut general = to_general_form::<T, T>("testprob");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, FirstProfitable, FirstProfitable>(&data);
+    let result = data.solve_relaxation();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {

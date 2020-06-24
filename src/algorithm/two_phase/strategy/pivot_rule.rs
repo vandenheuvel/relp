@@ -1,8 +1,9 @@
 //! # Pivot rules
 //!
 //! Strategies for moving from basis to basis, whether primal or dual.
-use crate::algorithm::simplex::tableau::kind::Kind;
-use crate::algorithm::simplex::tableau::Tableau;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
+use crate::algorithm::two_phase::tableau::kind::Kind;
+use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
@@ -18,15 +19,16 @@ pub trait PivotRule {
     /// Create a new instance.
     fn new() -> Self;
     /// Column selection rule for the primal Simplex method.
-    fn select_primal_pivot_column<OF, OFZ, K>(
+    fn select_primal_pivot_column<OF, OFZ, IM, K>(
         &mut self,
-        tableau: &Tableau<OF, OFZ, K>,
+        tableau: &Tableau<OF, OFZ, IM, K>,
     ) -> Option<SparseTuple<OF>>
-        where
-            OF: OrderedField,
-            for<'r> &'r OF: OrderedFieldRef<OF>,
-            OFZ: SparseElementZero<OF>,
-            K: Kind<OF, OFZ>,
+    where
+        OF: OrderedField,
+        for<'r> &'r OF: OrderedFieldRef<OF>,
+        OFZ: SparseElementZero<OF>,
+        IM: InverseMaintenance<OF, OFZ>,
+        K: Kind<OF, OFZ>,
     ;
 }
 
@@ -39,14 +41,15 @@ impl PivotRule for FirstProfitable {
         Self
     }
 
-    fn select_primal_pivot_column<OF, OFZ, K>(
+    fn select_primal_pivot_column<OF, OFZ, IM, K>(
         &mut self,
-        tableau: &Tableau<OF, OFZ, K>,
+        tableau: &Tableau<OF, OFZ, IM, K>,
     ) -> Option<SparseTuple<OF>>
     where
         OF: OrderedField,
         for<'r> &'r OF: OrderedFieldRef<OF>,
         OFZ: SparseElementZero<OF>,
+        IM: InverseMaintenance<OF, OFZ>,
         K: Kind<OF, OFZ>,
     {
         (tableau.kind.nr_artificial_variables()..tableau.nr_columns())
@@ -66,14 +69,15 @@ impl PivotRule for FirstProfitableWithMemory {
         Self { last_selected: None }
     }
 
-    fn select_primal_pivot_column<OF, OFZ, K>(
+    fn select_primal_pivot_column<OF, OFZ, IM, K>(
         &mut self,
-        tableau: &Tableau<OF, OFZ, K>,
+        tableau: &Tableau<OF, OFZ, IM, K>,
     ) -> Option<SparseTuple<OF>>
         where
             OF: OrderedField,
             for<'r> &'r OF: OrderedFieldRef<OF>,
             OFZ: SparseElementZero<OF>,
+            IM: InverseMaintenance<OF, OFZ>,
             K: Kind<OF, OFZ>,
     {
         let to_consider = if let Some(last) = self.last_selected {
@@ -94,20 +98,21 @@ impl PivotRule for FirstProfitableWithMemory {
 }
 
 /// Simply pivot on the column, which has the most negative relative cost.
-pub struct GlobalLowest;
-impl PivotRule for GlobalLowest {
+pub struct SteepestDescent;
+impl PivotRule for SteepestDescent {
     fn new() -> Self {
         Self
     }
 
-    fn select_primal_pivot_column<OF, OFZ, K>(
+    fn select_primal_pivot_column<OF, OFZ, IM, K>(
         &mut self,
-        tableau: &Tableau<OF, OFZ, K>,
+        tableau: &Tableau<OF, OFZ, IM, K>,
     ) -> Option<SparseTuple<OF>>
         where
             OF: OrderedField,
             for<'r> &'r OF: OrderedFieldRef<OF>,
             OFZ: SparseElementZero<OF>,
+            IM: InverseMaintenance<OF, OFZ>,
             K: Kind<OF, OFZ>,
     {
         let mut smallest = None;
@@ -129,7 +134,7 @@ impl PivotRule for GlobalLowest {
 
 #[cfg(test)]
 mod test {
-    use crate::algorithm::simplex::strategy::pivot_rule::{FirstProfitable, PivotRule};
+    use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
     use crate::data::linear_algebra::vector::Sparse as SparseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::tests::problem_2;

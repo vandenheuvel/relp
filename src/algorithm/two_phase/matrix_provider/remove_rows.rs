@@ -10,8 +10,9 @@ use std::marker::PhantomData;
 
 use itertools::repeat_n;
 
-use crate::algorithm::simplex::matrix_provider::{Column, MatrixProvider};
-use crate::algorithm::simplex::matrix_provider::variable::FeasibilityLogic;
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::variable::FeasibilityLogic;
+use crate::algorithm::two_phase::PartialInitialBasis;
 use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector, Vector};
@@ -23,7 +24,7 @@ use crate::data::number_types::traits::Field;
 ///
 /// Used for deleting duplicate constraints after finding primal feasibility.
 #[derive(PartialEq, Debug)]
-pub struct RemoveRows<'a, F: Field, FZ: SparseElementZero<F>, MP: MatrixProvider<F, FZ>> {
+pub struct RemoveRows<'a, F, FZ, MP> {
     provider: &'a MP,
     /// List of rows that this method removes.
     ///
@@ -215,20 +216,8 @@ impl<'a, F, FZ, MP> MatrixProvider<F, FZ> for RemoveRows<'a, F, FZ, MP>
         self.provider.bound_row_index(j, bound_type).map(|nr| nr - self.nr_constraints_deleted())
     }
 
-    fn bounds(&self, j: usize) -> (&F, &Option<F>) {
+    fn bounds(&self, j: usize) -> (&F, Option<&F>) {
         self.provider.bounds(j)
-    }
-
-    fn positive_slack_indices(&self) -> Vec<(usize, usize)> {
-        let mut from_parent = self.provider.positive_slack_indices();
-        remove_sparse_indices(&mut from_parent, &self.rows_to_skip);
-        from_parent
-    }
-
-    fn nr_positive_slacks(&self) -> usize {
-        // Requires introduction of a counter, but this code should never be run anyways (this is
-        // never part of a first phase search for a feasible value, when this is relevant).
-        unimplemented!();
     }
 
     /// This implementation assumes that only constraint rows are removed from the `MatrixProvider`.
@@ -256,6 +245,23 @@ impl<'a, F, FZ, MP> MatrixProvider<F, FZ> for RemoveRows<'a, F, FZ, MP>
         column_values: SparseVector<F, FZ2, F>,
     ) -> SparseVector<F, FZ2, F> {
         self.provider.reconstruct_solution(column_values)
+    }
+}
+
+impl<'a, F, FZ, MP> PartialInitialBasis for RemoveRows<'a, F, FZ, MP>
+where
+    MP: MatrixProvider<F, FZ> + PartialInitialBasis,
+{
+    fn pivot_element_indices(&self) -> Vec<(usize, usize)> {
+        let mut from_parent = self.provider.pivot_element_indices();
+        remove_sparse_indices(&mut from_parent, &self.rows_to_skip);
+        from_parent
+    }
+
+    fn nr_initial_elements(&self) -> usize {
+        // Requires introduction of a counter, but this code should never be run anyways (this is
+        // never part of a first phase search for a feasible value, when this is relevant).
+        unimplemented!();
     }
 }
 
@@ -314,8 +320,8 @@ impl<'a, F, FZ, MP> Display for RemoveRows<'a, F, FZ, MP>
 mod test {
     use num::rational::Ratio;
 
-    use crate::algorithm::simplex::matrix_provider::matrix_data::MatrixData;
-    use crate::algorithm::simplex::matrix_provider::remove_rows::RemoveRows;
+    use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
+    use crate::algorithm::two_phase::matrix_provider::remove_rows::RemoveRows;
 
     #[test]
     fn get_underlying_index() {

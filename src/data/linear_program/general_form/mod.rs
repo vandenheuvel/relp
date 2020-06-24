@@ -8,8 +8,8 @@ use daggy::{Dag, WouldCycle};
 use daggy::petgraph::data::Element;
 use itertools::repeat_n;
 
-use crate::algorithm::simplex::matrix_provider::matrix_data;
-use crate::algorithm::simplex::matrix_provider::matrix_data::MatrixData;
+use crate::algorithm::two_phase::matrix_provider::matrix_data;
+use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::matrix::ColumnMajor;
 use crate::data::linear_algebra::matrix::Sparse;

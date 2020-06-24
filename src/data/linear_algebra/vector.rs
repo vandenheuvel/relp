@@ -190,7 +190,7 @@ impl<F: Display> Display for Dense<F> {
 #[allow(non_snake_case)]
 #[derive(Eq, PartialEq, Clone, Debug)]
 // TODO: Remove these trait bounds to simplify the codebase.
-pub struct Sparse<F: SparseElement<C>, FZ: SparseElementZero<C>, C: SparseComparator> {
+pub struct Sparse<F, FZ, C> {
     data: SparseTupleVec<F>,
     len: usize,
 
@@ -217,21 +217,20 @@ impl<F: SparseElement<C>, FZ: SparseElementZero<C>, C: SparseComparator> Index<u
     }
 }
 
-impl<F: SparseElement<C>, FZ: SparseElementZero<C>, C: SparseComparator> Sparse<F, FZ, C> {
+impl<F, FZ, C> Sparse<F, FZ, C> {
     fn get_data_index(&self, i: usize) -> Result<usize, usize> {
         self.data.binary_search_by_key(&i, |&(index, _)| index)
     }
 
     fn set_zero(&mut self, i: usize) {
-        match self.get_data_index(i) {
-            Ok(index) => { self.data.remove(index); },
-            Err(_) => (),
+        if let Ok(index) = self.get_data_index(i) {
+            self.data.remove(index);
         }
     }
 
-    /// Consume this `SparseVector` by iterating over it's inner `SparseTuple`'s.
-    pub fn values(self) -> impl IntoIterator<Item = SparseTuple<F>> {
-        self.data
+    /// Increase the length of the vector by passing with zeros.
+    pub fn extend(&mut self, extra_len: usize) {
+        self.len += extra_len;
     }
 }
 
@@ -553,7 +552,7 @@ pub mod test {
     use crate::data::number_types::traits::{Field, FieldRef};
     use crate::F;
 
-    pub trait TestVector<F: Field + FromPrimitive>: Vector<F> {
+    pub trait TestVector<F>: Vector<F> {
         fn from_test_data<T: ToPrimitive>(data: Vec<T>) -> Self;
     }
     impl<F: Field + FromPrimitive> TestVector<F> for Dense<F> {

@@ -3,18 +3,15 @@
 //! The Simplex method algorithms work on a tableau. Because this tableau is very sparse in
 //! practice, we store in a matrix that describes the current basis together with the original
 //! (also sparse) matrix data. This module contains structures that can provide a matrix.
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
-use crate::data::linear_algebra::traits::{SparseComparator, SparseElement, SparseElementZero};
+use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
-use crate::data::number_types::traits::Field;
 
 pub mod matrix_data;
 pub mod remove_rows;
 pub mod variable;
-// TODO(ENHANCEMENT): A module for network problems.
-//pub mod network;
 
 /// Abstract interface for a matrix and constraint vector.
 ///
@@ -39,7 +36,7 @@ pub mod variable;
 ///
 /// TODO: Use existential types to avoid allocations, for example by using `impl Iterator` as the
 ///  return type of the `column` method.
-pub trait MatrixProvider<F: Field, FZ: SparseElementZero<F>>: PartialEq + Display + Debug {
+pub trait MatrixProvider<F, FZ> {
     /// Column of the problem.
     ///
     /// # Arguments
@@ -64,12 +61,18 @@ pub trait MatrixProvider<F: Field, FZ: SparseElementZero<F>>: PartialEq + Displa
 
     /// Constraint values.
     ///
+    /// Note: constraint values of both the constraints and bounds. Lengths should be
+    /// `self.nr_rows()`.
+    ///
     /// # Return value
     ///
     /// A dense vector of constraint values, often called `b` in mathematical notation.
     fn constraint_values(&self) -> Dense<F>;
 
     /// Index of the row of a virtual bound, if any.
+    ///
+    /// TODO(ARCHITECTURE): Currently, the return value is a row index. Make this relative to
+    ///  `self.nr_constraints`?
     ///
     /// # Arguments
     ///
@@ -90,21 +93,7 @@ pub trait MatrixProvider<F: Field, FZ: SparseElementZero<F>>: PartialEq + Displa
     /// # Return value
     ///
     /// A tuple for the (lower, upper) bounds.
-    fn bounds(&self, j: usize) -> (&F, &Option<F>);
-    
-    /// Return the indices of all positive slack variables.
-    /// 
-    /// This is used to find a basic feasible solution faster using the two phase method.
-    ///
-    /// # Return value
-    ///
-    /// Collection of tuples with row and column index of (positive) slack coefficients.
-    fn positive_slack_indices(&self) -> Vec<(usize, usize)>;
-
-    /// How many positive slacks there are in the problem.
-    ///
-    /// Is equal to the length of the value returned by `positive_slack_indices`.
-    fn nr_positive_slacks(&self) -> usize;
+    fn bounds(&self, j: usize) -> (&F, Option<&F>);
 
     /// The number of constraints in the problem. This excludes simple variable bounds.
     fn nr_constraints(&self) -> usize;
@@ -144,7 +133,7 @@ pub trait MatrixProvider<F: Field, FZ: SparseElementZero<F>>: PartialEq + Displa
 ///
 /// Introduced for the interface of
 #[derive(Eq, PartialEq, Debug)]
-pub enum Column<F: SparseElement<C>, FZ: SparseElementZero<C>, C: SparseComparator> {
+pub enum Column<F, FZ, C> {
     /// A (probably non-slack) column.
     Sparse(SparseVector<F, FZ, C>),
     /// A slack column.

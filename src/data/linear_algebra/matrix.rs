@@ -20,7 +20,7 @@ use crate::data::number_types::traits::Field;
 ///  avoided (e.g. flattening) avoided?
 #[allow(non_snake_case)]
 #[derive(Eq, PartialEq, Debug, Clone)]
-pub struct Sparse<F: SparseElement<C>, FZ: SparseElementZero<C>, C: SparseComparator, O: Order> {
+pub struct Sparse<F, FZ, C, O: Order> {
     pub data: Vec<SparseTupleVec<F>>,
     major_dimension_size: usize,
     minor_dimension_size: usize,
@@ -64,10 +64,10 @@ pub trait Order: Sized {
 }
 
 /// Row major sparse matrix ordering.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub struct RowMajor;
 /// Column major sparse matrix ordering.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub struct ColumnMajor;
 impl Order for RowMajor {
     fn new<F, FZ, C>(

@@ -3,9 +3,8 @@ use std::convert::TryInto;
 use num::FromPrimitive;
 use num::rational::Ratio;
 
-use rust_lp::algorithm::simplex::{OptimizationResult, solve_relaxation};
-use rust_lp::algorithm::simplex::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
+use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
+use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use rust_lp::data::linear_algebra::traits::SparseElementZero;
 use rust_lp::data::linear_program::solution::Solution;
 use rust_lp::data::number_types::traits::{OrderedField, OrderedFieldRef};
@@ -21,11 +20,11 @@ where
     for<'r> &'r T: OrderedFieldRef<T>,
 {
     let path = get_test_file_path(file_name);
-    let mps = import(&path).unwrap();
+    let mps = import::<T, T>(&path).unwrap();
 
     let mut general = mps.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, TZ, _, FirstProfitable, FirstProfitable>(&data);
+    let result = data.solve_relaxation();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {

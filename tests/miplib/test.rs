@@ -3,9 +3,8 @@ use std::convert::TryInto;
 use num::{BigInt, ToPrimitive};
 use num::rational::Ratio;
 
-use rust_lp::algorithm::simplex::{OptimizationResult, solve_relaxation};
-use rust_lp::algorithm::simplex::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::simplex::strategy::pivot_rule::GlobalLowest;
+use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
+use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use rust_lp::io::import;
 
 use super::get_test_file_path;
@@ -19,7 +18,7 @@ fn test(file_name: &str, objective: f64) {
 
     let mut general = result.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = solve_relaxation::<T, T, _, GlobalLowest, GlobalLowest>(&data);
+    let result = data.solve_relaxation();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {

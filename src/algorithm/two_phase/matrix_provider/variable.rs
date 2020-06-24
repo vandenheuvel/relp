@@ -2,7 +2,7 @@
 //!
 //! If this project is ever extended to a branch and bound framework, we can generalize variables
 //! as the trait in this module specifies.
-use crate::algorithm::simplex::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::number_types::traits::Field;
 

@@ -1,20 +1,19 @@
 //! Simple linear program.
 //!
 //! From https://en.wikipedia.org/w/index.php?title=MPS_(format)&oldid=941892011
-use std::collections::HashSet;
 use std::convert::{TryFrom, TryInto};
 
 use num::FromPrimitive;
 use num::rational::Ratio;
 
-use crate::algorithm::simplex::logic::{artificial_primal, FeasibilityResult, primal, Rank};
-use crate::algorithm::simplex::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
-use crate::algorithm::simplex::matrix_provider::MatrixProvider;
-use crate::algorithm::simplex::OptimizationResult;
-use crate::algorithm::simplex::strategy::pivot_rule::FirstProfitable;
-use crate::algorithm::simplex::tableau::inverse_maintenance::CarryMatrix;
-use crate::algorithm::simplex::tableau::kind::{Artificial, NonArtificial};
-use crate::algorithm::simplex::tableau::Tableau;
+use crate::algorithm::OptimizationResult;
+use crate::algorithm::two_phase::{artificial_primal, primal, Rank, RankedFeasibilityResult};
+use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
+use crate::algorithm::two_phase::tableau::kind::{Artificial, NonArtificial};
+use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
@@ -64,19 +63,34 @@ fn conversion_pipeline() {
     assert_eq!(matrix_data_form_computed, matrix_data_form(&constraints, &b));
 
     // Artificial tableau form
-    let mut artificial_tableau_form_computed = Tableau::<_, _, Artificial<_, _, _>>::new(&matrix_data_form_computed);
+    let artificial_tableau_form_computed = Tableau::<_, _, _, Artificial<_, _, _>>::new_with_partial_basis(&matrix_data_form_computed);
     assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form(&constraints, &b)));
 
     // Get to a basic feasible solution
-    let feasibility_result = artificial_primal::<_, _, _, FirstProfitable>(&mut artificial_tableau_form_computed);
-    assert_eq!(feasibility_result, FeasibilityResult::Feasible(Rank::Full));
+    let feasibility_result = artificial_primal::<_, _, _, _, FirstProfitable>(artificial_tableau_form_computed);
+    let mut tableau_form_computed = match feasibility_result {
+        RankedFeasibilityResult::Feasible {
+            rank,
+            nr_artificial_variables,
+            inverse_maintainer,
+            basis,
+        } => {
+            assert_eq!(rank, Rank::Full);
+            Tableau::<_, _, _, NonArtificial<_, _, _>>::from_artificial(
+                inverse_maintainer,
+                nr_artificial_variables,
+                basis,
+                &matrix_data_form_computed,
+            )
+        },
+        _ => panic!(),
+    };
 
     // Non-artificial tableau form
-    let mut tableau_form_computed = Tableau::<_, _, NonArtificial<_, _, _>>::from_artificial(artificial_tableau_form_computed);
-    // assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form(&constraints, &b)));
+    assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form(&constraints, &b)));
 
     // Get to a basic feasible solution
-    let result = primal::<T, T, _, FirstProfitable>(&mut tableau_form_computed);
+    let result = primal::<T, T, _, _, FirstProfitable>(&mut tableau_form_computed);
     assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
         (0, 2),
         (5, 2),
@@ -457,7 +471,7 @@ pub fn matrix_data_form<'a>(
 
 pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
     provider: &MP,
-) -> Tableau<T, T, Artificial<T, T, MP>> {
+) -> Tableau<T, T, CarryMatrix<T, T>, Artificial<T, T, MP>> {
     let m = 5;
     let carry = {
         let minus_objective = R32!(-2);
@@ -466,14 +480,14 @@ pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
         let basis_inverse_rows = (0..m)
             .map(|i| SparseVector::standard_basis_vector(i, m))
             .collect();
-        CarryMatrix::create(minus_objective, minus_pi, b, basis_inverse_rows)
+        CarryMatrix::new(minus_objective, minus_pi, b, basis_inverse_rows)
     };
     let artificials = vec![0, 1];
     let mut basis_indices = artificials.clone();
     basis_indices.extend(vec![2 + 4, 2 + 5, 2 + 6]);
     let basis_columns = basis_indices.iter().copied().collect();
 
-    Tableau::<_, _, Artificial<_, _, _>>::new_with_basis(
+    Tableau::<_, _, _, Artificial<_, _, _>>::new_with_basis(
         provider,
         carry,
         basis_indices,
@@ -484,29 +498,24 @@ pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
 
 pub fn tableau_form<MP: MatrixProvider<T, T>>(
     provider: &MP,
-) -> Tableau<T, T, NonArtificial<T, T, MP>> {
+) -> Tableau<T, T, CarryMatrix<T, T>, NonArtificial<T, T, MP>> {
     let carry = {
-        let minus_objective = R32!(-28);
-        let minus_pi = Dense::from_test_data(vec![-9, 0, -1, -13, 0]);
-        let b = Dense::from_test_data(vec![2, 2, 2, 2, 0]);
+        let minus_objective = R32!(-2);
+        let minus_pi = Dense::from_test_data(vec![-8, -1, 0, 0, 0]);
+        let b = Dense::from_test_data(vec![0, 2, 0, 2, 2]);
         let basis_inverse_rows = vec![
-            SparseVector::from_test_data(vec![1, 0, 0, 1, 0]),
-            SparseVector::from_test_data(vec![0, 0, 1, 0, 0]),
-            SparseVector::from_test_data(vec![1, -1, 1, 1, 0]),
+            SparseVector::from_test_data(vec![1, 0, 0, 0, 0]),
+            SparseVector::from_test_data(vec![-1, 1, 0, 0, 0]),
+            SparseVector::from_test_data(vec![1, -1, 1, 0, 0]),
             SparseVector::from_test_data(vec![0, 0, 0, 1, 0]),
-            SparseVector::from_test_data(vec![-1, 0, 0, -1, 1]),
+            SparseVector::from_test_data(vec![-1, 0, 0, 0, 1]),
         ];
-        CarryMatrix::create(minus_objective, minus_pi, b, basis_inverse_rows)
+        CarryMatrix::new(minus_objective, minus_pi, b, basis_inverse_rows)
     };
-    let basis_indices = vec![2, 0, 3, 1, 6];
-    let mut basis_columns = HashSet::new();
-    basis_columns.insert(2);
-    basis_columns.insert(0);
-    basis_columns.insert(3);
-    basis_columns.insert(1);
-    basis_columns.insert(6);
+    let basis_indices = vec![2, 0, 4, 5, 6];
+    let basis_columns = basis_indices.iter().copied().collect();
 
-    Tableau::<_, _, NonArtificial<_, _, _>>::new_with_basis(
+    Tableau::<_, _, _, NonArtificial<_, _, _>>::new_with_inverse_maintainer(
         provider,
         carry,
         basis_indices,

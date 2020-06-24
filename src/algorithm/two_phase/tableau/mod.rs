@@ -6,11 +6,12 @@ use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter, Result as FormatResult};
 use std::iter::repeat;
+use std::marker::PhantomData;
 
 use itertools::repeat_n;
 
-use crate::algorithm::simplex::tableau::inverse_maintenance::CarryMatrix;
-use crate::algorithm::simplex::tableau::kind::Kind;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
+use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Sparse as SparseVector, Vector};
 use crate::data::number_types::traits::{Field, FieldRef, OrderedField};
@@ -24,16 +25,16 @@ pub mod kind;
 /// that describe the current solution basis.
 #[allow(non_snake_case)]
 #[derive(Eq, PartialEq, Debug)]
-pub struct Tableau<F, FZ, K>
+pub struct Tableau<F, FZ, IM, K>
 where
     F: Field,
     FZ: SparseElementZero<F>,
     K: Kind<F, FZ>,
 {
-    /// Matrix of size (m + 1) x (m + 1).
+    /// Represents a matrix of size (m + 1) x (m + 1) (includes -pi, objective value, constraints).
     ///
     /// This attribute changes with a basis change.
-    carry: CarryMatrix<F, FZ>,
+    inverse_maintainer: IM,
 
     /// Maps the rows to the column containing its pivot.
     ///
@@ -50,14 +51,17 @@ where
     /// Whether this tableau has artificial variables (and is in the first phase of the two-phase
     /// algorithm) or not. See the `Kind` trait for more information.
     pub kind: K,
+
+    phantom: PhantomData<(F, FZ)>,
 }
 
-impl<'a, F, FZ, K> Tableau<F, FZ, K>
-    where
-        F: Field + 'a,
-        for <'r> &'r F: FieldRef<F>,
-        FZ: SparseElementZero<F>,
-        K: Kind<F, FZ>,
+impl<'a, F, FZ, IM, K> Tableau<F, FZ, IM, K>
+where
+    F: Field + 'a,
+    for <'r> &'r F: FieldRef<F>,
+    FZ: SparseElementZero<F>,
+    IM: InverseMaintenance<F, FZ>,
+    K: Kind<F, FZ>,
 {
     /// Brings a column into the basis by updating the `self.carry` matrix and updating the
     /// data structures holding the collection of basis columns.
@@ -71,7 +75,7 @@ impl<'a, F, FZ, K> Tableau<F, FZ, K>
         debug_assert!(pivot_column_index < self.kind.nr_columns());
         debug_assert!(pivot_row_index < self.nr_rows());
 
-        self.carry.row_reduce_for_basis_change(pivot_row_index, column, cost);
+        self.inverse_maintainer.change_basis(pivot_row_index, column, cost);
         self.update_basis_indices(pivot_row_index, pivot_column_index);
     }
 
@@ -114,7 +118,7 @@ impl<'a, F, FZ, K> Tableau<F, FZ, K>
     pub fn relative_cost(&self, j: usize) -> F {
         debug_assert!(j < self.nr_columns());
 
-        self.carry.cost_difference(self.kind.original_column(j)) + self.kind.initial_cost_value(j)
+        self.inverse_maintainer.cost_difference(self.kind.original_column(j)) + self.kind.initial_cost_value(j)
     }
 
     /// Column of original problem with respect to the current basis.
@@ -132,7 +136,7 @@ impl<'a, F, FZ, K> Tableau<F, FZ, K>
     pub fn generate_column(&self, j: usize) -> SparseVector<F, FZ, F> {
         debug_assert!(j < self.nr_columns());
 
-        self.carry.generate_column(self.kind.original_column(j))
+        self.inverse_maintainer.generate_column(self.kind.original_column(j))
     }
 
     /// Single element with respect to the current basis.
@@ -140,7 +144,7 @@ impl<'a, F, FZ, K> Tableau<F, FZ, K>
         debug_assert!(i < self.nr_rows());
         debug_assert!(j < self.nr_columns());
 
-        self.carry.generate_element(i, self.kind.original_column(j))
+        self.inverse_maintainer.generate_element(i, self.kind.original_column(j))
     }
 
     /// Whether a column is in the basis.
@@ -164,7 +168,8 @@ impl<'a, F, FZ, K> Tableau<F, FZ, K>
     ///
     /// `SparseVector<T>` of the solution.
     pub fn current_bfs(&self) -> SparseVector<F, FZ, F> {
-        let mut tuples = self.carry.b.iter_values()
+        let b = self.inverse_maintainer.b();
+        let mut tuples = b.iter_values()
             .enumerate()
             .map(|(i, v)| (self.basis_indices[i], v))
             .filter(|(_, v)| v.borrow() != FZ::zero().borrow())
@@ -186,7 +191,7 @@ impl<'a, F, FZ, K> Tableau<F, FZ, K>
     ///
     /// This function works for both artificial and non-artificial tableau's.
     pub fn objective_function_value(&self) -> F {
-        self.carry.get_objective_function_value()
+        self.inverse_maintainer.get_objective_function_value()
     }
 
     /// Number of rows in the tableau.
@@ -212,12 +217,13 @@ impl<'a, F, FZ, K> Tableau<F, FZ, K>
     }
 }
 
-impl<'a, OF, OFZ, K> Tableau<OF, OFZ, K>
+impl<'a, OF, OFZ, IM, K> Tableau<OF, OFZ, IM, K>
 where
-        OF: OrderedField + 'a,
-        for<'r> &'r OF: FieldRef<OF>,
-        OFZ: SparseElementZero<OF>,
-        K: Kind<OF, OFZ>,
+    OF: OrderedField + 'a,
+    for<'r> &'r OF: FieldRef<OF>,
+    OFZ: SparseElementZero<OF>,
+    IM: InverseMaintenance<OF, OFZ>,
+    K: Kind<OF, OFZ>,
 {
     /// Determine the row to pivot on.
     ///
@@ -227,7 +233,7 @@ where
     /// When there are multiple choices for the pivot row, Bland's anti cycling algorithm
     /// is used to avoid cycles.
     ///
-    /// TODO: Reconsider the below
+    /// TODO(ARCHITECTURE): Reconsider the below; should this be a strategy?
     /// Because this method allows for less strategy and heuristics, it is not included in the
     /// `PivotRule` trait.
     ///
@@ -245,7 +251,7 @@ where
         let mut min_values: Option<(usize, OF, usize)> = None;
         for (row, xij) in column.iter_values() {
             if xij > &OF::zero() {
-                let ratio = self.carry.get_constraint_value(*row) / xij;
+                let ratio = self.inverse_maintainer.get_constraint_value(*row) / xij;
                 // Bland's anti cycling algorithm
                 let leaving_column = self.basis_indices[*row];
                 if let Some((min_index, min_ratio, min_leaving_column)) = &mut min_values {
@@ -267,19 +273,18 @@ where
     }
 }
 
-
-
 /// Check whether the tableau currently has a valid basic feasible solution.
 ///
 /// Only used for debug purposes.
 #[allow(clippy::nonminimal_bool)]
-pub fn is_in_basic_feasible_solution_state<'a, OF, OFZ, K>(
-    tableau: &Tableau<OF, OFZ, K>,
+pub fn is_in_basic_feasible_solution_state<'a, OF, OFZ, IM, K>(
+    tableau: &Tableau<OF, OFZ, IM, K>,
 ) -> bool
 where
     OF: OrderedField + 'a,
     for<'r> &'r OF: FieldRef<OF>,
     OFZ: SparseElementZero<OF>,
+    IM: InverseMaintenance<OF, OFZ>,
     K: Kind<OF, OFZ>,
 {
     // Checking basis_columns
@@ -318,7 +323,7 @@ where
         }
         // `b` >= 0
         let mut b_ok = true;
-        let b = &tableau.carry.b;
+        let b = &tableau.inverse_maintainer.b();
         for row in 0..tableau.nr_rows() {
             if !(b[row] >= OF::zero()) {
                 b_ok = false;
@@ -337,12 +342,13 @@ where
         && carry
 }
 
-impl<'a, F, FZ, K> Display for Tableau<F, FZ, K>
-    where
-        F: Field + 'a,
-        for<'r> &'r F: FieldRef<F>,
-        FZ: SparseElementZero<F>,
-        K: Kind<F, FZ>,
+impl<'a, F, FZ, IM, K> Display for Tableau<F, FZ, IM, K>
+where
+    F: Field + 'a,
+    for<'r> &'r F: FieldRef<F>,
+    FZ: SparseElementZero<F>,
+    IM: InverseMaintenance<F, FZ>,
+    K: Kind<F, FZ>,
 {
     fn fmt(&self, f: &mut Formatter) -> FormatResult {
         writeln!(f, "Tableau:")?;
@@ -365,7 +371,7 @@ impl<'a, F, FZ, K> Display for Tableau<F, FZ, K>
 
         // Cost row
         write!(f, "{0:>width$}", format!("{}  |", "cost"), width = counter_width)?;
-        let value = format!("{}", -self.carry.get_objective_function_value());
+        let value = format!("{}", -self.inverse_maintainer.get_objective_function_value());
         write!(f, "{0:^width$}", value, width = column_width)?;
         write!(f, "|")?;
         for column_index in 0..self.nr_columns() {
@@ -382,7 +388,7 @@ impl<'a, F, FZ, K> Display for Tableau<F, FZ, K>
         // Row counter and row data
         for row_index in 0..self.nr_rows() {
             write!(f, "{:>width$}", format!("{}  |", row_index), width = counter_width)?;
-            write!(f, "{0:^width$}", format!("{}", self.carry.b[row_index]), width = column_width)?;
+            write!(f, "{0:^width$}", format!("{}", self.inverse_maintainer.b()[row_index]), width = column_width)?;
             write!(f, "|")?;
             for column_index in 0..self.nr_columns() {
                 let number = format!("{}", self.generate_column(column_index)[row_index]);
@@ -401,7 +407,7 @@ impl<'a, F, FZ, K> Display for Tableau<F, FZ, K>
         writeln!(f, "{:?}", basis)?;
 
         writeln!(f, "=== Basis Inverse ===")?;
-        <CarryMatrix<F, FZ> as Display>::fmt(&self.carry, f)
+        self.inverse_maintainer.fmt(f)
     }
 }
 
@@ -412,11 +418,11 @@ mod test {
     use num::FromPrimitive;
     use num::rational::Ratio;
 
-    use crate::algorithm::simplex::matrix_provider::matrix_data::MatrixData;
-    use crate::algorithm::simplex::strategy::pivot_rule::{FirstProfitable, PivotRule};
-    use crate::algorithm::simplex::tableau::inverse_maintenance::CarryMatrix;
-    use crate::algorithm::simplex::tableau::kind::NonArtificial;
-    use crate::algorithm::simplex::tableau::Tableau;
+    use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
+    use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
+    use crate::algorithm::two_phase::tableau::kind::NonArtificial;
+    use crate::algorithm::two_phase::tableau::Tableau;
     use crate::data::linear_algebra::traits::SparseElementZero;
     use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
     use crate::data::linear_algebra::vector::test::TestVector;
@@ -426,7 +432,7 @@ mod test {
 
     fn tableau<'a, F, FZ>(
         data: &'a MatrixData<'a, F, FZ>,
-    ) -> Tableau<F, FZ, NonArtificial<'a, F, FZ, MatrixData<'a, F, FZ>>>
+    ) -> Tableau<F, FZ, CarryMatrix<F, FZ>, NonArtificial<'a, F, FZ, MatrixData<'a, F, FZ>>>
     where
         F: Field + FromPrimitive + 'a,
         for<'r> &'r F: FieldRef<F>,
@@ -441,7 +447,7 @@ mod test {
                 SparseVector::from_test_data(vec![-1, 1, 0]),
                 SparseVector::from_test_data(vec![-1, 0, 1]),
             ];
-            CarryMatrix::<F, FZ>::create(minus_objective, minus_pi, b, basis_inverse_rows)
+            CarryMatrix::<F, FZ>::new(minus_objective, minus_pi, b, basis_inverse_rows)
         };
         let basis_indices = vec![2, 3, 4];
         let mut basis_columns = HashSet::new();
@@ -449,7 +455,7 @@ mod test {
         basis_columns.insert(3);
         basis_columns.insert(4);
 
-        Tableau::<_, _, NonArtificial<_, _, _>>::new_with_basis(
+        Tableau::<_, _, _, NonArtificial<_, _, _>>::new_with_inverse_maintainer(
             data,
             carry,
             basis_indices,
@@ -536,7 +542,7 @@ mod test {
 
     fn bfs_tableau<'a, F, FZ>(
         data: &'a MatrixData<'a, F, FZ>,
-    ) -> Tableau<F, FZ, NonArtificial<'a, F, FZ, MatrixData<'a, F, FZ>>>
+    ) -> Tableau<F, FZ, CarryMatrix<F, FZ>, NonArtificial<'a, F, FZ, MatrixData<'a, F, FZ>>>
     where
         F: Field + FromPrimitive,
         for<'r> &'r F: FieldRef<F>,
@@ -552,7 +558,7 @@ mod test {
                 SparseVector::from_test_data(vec![-1, 1, 0]),
                 SparseVector::from_test_data(vec![-1, 0, 1]),
             ];
-            CarryMatrix::<F, FZ>::create(minus_objective, minus_pi, b, basis_inverse_rows)
+            CarryMatrix::<F, FZ>::new(minus_objective, minus_pi, b, basis_inverse_rows)
         };
         let basis_indices = vec![m + 2, m + 3, m + 4];
         let mut basis_columns = HashSet::new();
@@ -560,7 +566,7 @@ mod test {
         basis_columns.insert(m + 3);
         basis_columns.insert(m + 4);
 
-        Tableau::<_, _, NonArtificial<_, _, _>>::new_with_basis(
+        Tableau::<_, _, _, NonArtificial<_, _, _>>::new_with_inverse_maintainer(
             data,
             carry,
             basis_indices,

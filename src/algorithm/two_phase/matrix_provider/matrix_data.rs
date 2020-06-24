@@ -6,9 +6,10 @@ use std::fmt;
 
 use itertools::repeat_n;
 
-use crate::algorithm::simplex::matrix_provider::{Column, MatrixProvider};
-use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse};
-use crate::data::linear_algebra::traits::SparseElementZero;
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::PartialInitialBasis;
+use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
+use crate::data::linear_algebra::traits::{SparseElement, SparseElementZero};
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::{BoundDirection, VariableType};
 use crate::data::number_types::traits::{Field, FieldRef};
@@ -37,11 +38,11 @@ use crate::data::number_types::traits::{Field, FieldRef};
 /// ---------------------------------------------------------------------------------------------------------------
 #[allow(non_snake_case)]
 #[derive(Debug, PartialEq)]
-pub struct MatrixData<'a, F: Field, FZ: SparseElementZero<F>> {
+pub struct MatrixData<'a, F, FZ> {
     /// Coefficient matrix.
     ///
     /// This should not contain variable bounds.
-    constraints: &'a Sparse<F, FZ, F, ColumnMajor>,
+    constraints: &'a SparseMatrix<F, FZ, F, ColumnMajor>,
     /// Constraint values for the constraints, excludes the simple bounds.
     b: &'a Dense<F>,
     /// How many of which constraint do we have?
@@ -86,9 +87,9 @@ enum ColumnType {
 
 impl<'a, F, FZ> MatrixData<'a, F, FZ>
 where
-    F: Field,
-    for<'r> &'r F: FieldRef<F>,
+    F: SparseElement<F> + Field,
     FZ: SparseElementZero<F>,
+    for <'r> &'r F: FieldRef<F>,
 {
     /// Create a new `MatrixData` struct.
     ///
@@ -100,7 +101,7 @@ where
     /// * `negative_free_variable_dummy_index`: Index i contains the index of the i'th free
     /// variable.
     pub fn new(
-        constraints: &'a Sparse<F, FZ, F, ColumnMajor>,
+        constraints: &'a SparseMatrix<F, FZ, F, ColumnMajor>,
         b: &'a Dense<F>,
         nr_equality_constraints: usize,
         nr_upper_bounded_constraints: usize,
@@ -274,34 +275,13 @@ where
         }
     }
 
-    fn bounds(&self, j: usize) -> (&F, &Option<F>) {
+    fn bounds(&self, j: usize) -> (&F, Option<&F>) {
         debug_assert!(j < self.nr_columns());
 
         (&self.ZERO, match self.column_type(j) {
-            ColumnType::Normal(j) => &self.variables[j].upper_bound,
-            _ => &None,
+            ColumnType::Normal(j) => self.variables[j].upper_bound.as_ref(),
+            _ => None,
         })
-    }
-
-    fn positive_slack_indices(&self) -> Vec<(usize, usize)> {
-        let ineq_start = self.get_variable_separating_indices()[0];
-        let upper_bounded_constraints = (0..self.nr_upper_bounded_constraints)
-            .map(|index| {
-                (self.nr_equality_constraints + index, ineq_start + index)
-            });
-
-        let bound_constraint_start = self.get_constraint_separating_indices()[2];
-        let bound_slack_start = self.get_variable_separating_indices()[2];
-        let upper_bounded_variables = self.non_slack_variable_index_to_bound_index
-            .iter().enumerate()
-            .filter_map(|(_, &index)| index)
-            .map(|index| (bound_constraint_start + index, bound_slack_start + index));
-
-        upper_bounded_constraints.chain(upper_bounded_variables).collect()
-    }
-
-    fn nr_positive_slacks(&self) -> usize {
-        self.nr_upper_bounded_constraints + self.nr_bounds()
     }
 
     fn nr_constraints(&self) -> usize {
@@ -328,6 +308,34 @@ where
 
         column_values.remove_indices(&(self.nr_normal_variables()..self.nr_columns()).collect());
         column_values
+    }
+}
+
+impl<'a, F, FZ> PartialInitialBasis for MatrixData<'a, F, FZ>
+where
+    F: SparseElement<F> + Field,
+    FZ: SparseElementZero<F>,
+    for <'r> &'r F: FieldRef<F>,
+{
+    fn pivot_element_indices(&self) -> Vec<(usize, usize)> {
+        let ineq_start = self.get_variable_separating_indices()[0];
+        let upper_bounded_constraints = (0..self.nr_upper_bounded_constraints)
+            .map(|index| {
+                (self.nr_equality_constraints + index, ineq_start + index)
+            });
+
+        let bound_constraint_start = self.get_constraint_separating_indices()[2];
+        let bound_slack_start = self.get_variable_separating_indices()[2];
+        let upper_bounded_variables = self.non_slack_variable_index_to_bound_index
+            .iter().enumerate()
+            .filter_map(|(_, &index)| index)
+            .map(|index| (bound_constraint_start + index, bound_slack_start + index));
+
+        upper_bounded_constraints.chain(upper_bounded_variables).collect()
+    }
+
+    fn nr_initial_elements(&self) -> usize {
+        self.nr_upper_bounded_constraints + self.nr_bounds()
     }
 }
 
@@ -390,8 +398,8 @@ mod test {
     use num::rational::Ratio;
     use num::traits::FromPrimitive;
 
-    use crate::algorithm::simplex::matrix_provider::Column;
-    use crate::algorithm::simplex::matrix_provider::MatrixProvider;
+    use crate::algorithm::two_phase::matrix_provider::Column;
+    use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
     use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::BoundDirection;
@@ -406,12 +414,12 @@ mod test {
         assert_eq!(matrix_data.nr_normal_variables(), 3);
 
         // // Variables with bound
-        assert_eq!(matrix_data.bounds(0), (&R32!(0), &Some(R32!(2))));
-        assert_eq!(matrix_data.bounds(1), (&R32!(0), &Some(R32!(2))));
+        assert_eq!(matrix_data.bounds(0), (&R32!(0), Some(&R32!(2))));
+        assert_eq!(matrix_data.bounds(1), (&R32!(0), Some(&R32!(2))));
         // Variable without bound
-        assert_eq!(matrix_data.bounds(2), (&R32!(0), &Some(R32!(2))));
+        assert_eq!(matrix_data.bounds(2), (&R32!(0), Some(&R32!(2))));
         // Slack variable, as such without bound
-        assert_eq!(matrix_data.bounds(3), (&R32!(0), &None));
+        assert_eq!(matrix_data.bounds(3), (&R32!(0), None));
 
         // Variable column with bound constant
         assert_eq!(
@@ -467,11 +475,11 @@ mod test {
         assert_eq!(matrix_data.bound_row_index(4, BoundDirection::Lower), None);
         assert_eq!(matrix_data.bound_row_index(5, BoundDirection::Lower), None);
 
-        assert_eq!(matrix_data.bounds(0), (&R32!(0), &Some(R32!(2))));
-        assert_eq!(matrix_data.bounds(2), (&R32!(0), &Some(R32!(2))));
-        assert_eq!(matrix_data.bounds(3), (&R32!(0), &None));
-        assert_eq!(matrix_data.bounds(4), (&R32!(0), &None));
-        assert_eq!(matrix_data.bounds(5), (&R32!(0), &None));
+        assert_eq!(matrix_data.bounds(0), (&R32!(0), Some(&R32!(2))));
+        assert_eq!(matrix_data.bounds(2), (&R32!(0), Some(&R32!(2))));
+        assert_eq!(matrix_data.bounds(3), (&R32!(0), None));
+        assert_eq!(matrix_data.bounds(4), (&R32!(0), None));
+        assert_eq!(matrix_data.bounds(5), (&R32!(0), None));
 
         assert_eq!(matrix_data.nr_constraints(), 2);
         assert_eq!(matrix_data.nr_bounds(), 3);

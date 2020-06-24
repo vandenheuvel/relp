@@ -8,10 +8,11 @@
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
-use crate::algorithm::simplex::matrix_provider::{Column, MatrixProvider};
-use crate::algorithm::simplex::matrix_provider::remove_rows::RemoveRows;
-use crate::algorithm::simplex::tableau::inverse_maintenance::CarryMatrix;
-use crate::algorithm::simplex::tableau::Tableau;
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::remove_rows::RemoveRows;
+use crate::algorithm::two_phase::PartialInitialBasis;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
+use crate::algorithm::two_phase::tableau::Tableau;
 use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_program::elements::BoundDirection;
@@ -21,7 +22,7 @@ use crate::data::number_types::traits::{Field, FieldRef};
 /// any virtual artificial variables should be included in the problem.
 ///
 /// This is not a typical trait, as the only two reasonable implementations are already implemented.
-pub trait Kind<F: Field, FZ: SparseElementZero<F>>: Sized + PartialEq {
+pub trait Kind<F, FZ> {
     /// Coefficient of variable `j` in the objective function.
     ///
     /// # Arguments
@@ -73,6 +74,8 @@ pub struct Artificial<'a, F: Field, FZ: SparseElementZero<F>, MP: MatrixProvider
     /// Values that can be referred to when unsized constants need to be returned.
     ///
     /// TODO(ARCHITECTURE): Replace with values that are Copy, or an enum?
+    /// TODO(ARCHITECTURE): Rename the (single) method that uses these to shift the the relevant 
+    ///  value to be able to remove these fields.
     ONE: F,
     ZERO: F,
     /// Supplies data about the problem.
@@ -83,10 +86,10 @@ pub struct Artificial<'a, F: Field, FZ: SparseElementZero<F>, MP: MatrixProvider
     phantom_zero: PhantomData<FZ>,
 }
 impl<'a, F, FZ, MP> Kind<F, FZ> for Artificial<'a, F, FZ, MP>
-    where
-        F: Field,
-        FZ: SparseElementZero<F>,
-        MP: MatrixProvider<F, FZ>,
+where
+    F: Field,
+    FZ: SparseElementZero<F>,
+    MP: MatrixProvider<F, FZ>,
 {
     /// Coefficient of variable `j` in the objective function.
     ///
@@ -140,12 +143,13 @@ impl<'a, F, FZ, MP> Kind<F, FZ> for Artificial<'a, F, FZ, MP>
     }
 }
 
-impl<'provider, F, FZ, MP> Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>
-    where
-        F: Field + 'provider,
-        for<'r> &'r F: FieldRef<F>,
-        FZ: SparseElementZero<F>,
-        MP: MatrixProvider<F, FZ>,
+impl<'provider, F, FZ, IM, MP> Tableau<F, FZ, IM, Artificial<'provider, F, FZ, MP>>
+where
+    F: Field + 'provider,
+    for<'r> &'r F: FieldRef<F>,
+    FZ: SparseElementZero<F>,
+    IM: InverseMaintenance<F, FZ>,
+    MP: MatrixProvider<F, FZ>,
 {
     /// Create a `Tableau` augmented with artificial variables.
     ///
@@ -162,8 +166,46 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>
     pub(crate) fn new(provider: &'provider MP) -> Self {
         let m = provider.nr_rows();
 
+        Tableau {
+            inverse_maintainer: IM::create_for_fully_artificial(provider.constraint_values()),
+            basis_indices: (0..m).collect(),
+            basis_columns: (0..m).collect(),
+
+            // TODO: Make a special `Artificial` variant with this trivial basis
+            kind: Artificial {
+                column_to_row: (0..m).collect(),
+
+                ONE: F::one(),
+                ZERO: F::zero(),
+
+                provider,
+                phantom_zero: PhantomData,
+            },
+
+            phantom: PhantomData,
+        }
+    }
+
+    /// Create a `Tableau` augmented with artificial variables.
+    ///
+    /// The tableau is then in a basic feasible solution having only the artificial variables in the
+    /// basis.
+    ///
+    /// # Arguments
+    ///
+    /// * `provider`: Provides the problem to find a basic feasible solution for.
+    ///
+    /// # Return value
+    ///
+    /// The tableau.
+    pub(crate) fn new_with_partial_basis(provider: &'provider MP) -> Self
+    where
+        MP: PartialInitialBasis
+    {
+        let m = provider.nr_rows();
+
         // (row index, column index) coordinate tuples of suitable pivots in a slack column.
-        let real = provider.positive_slack_indices();
+        let real = provider.pivot_element_indices();
         debug_assert!(real.is_sorted_by_key(|&(row, _column)| row));
         // Amount of slack variables that can be used for the initial artificial basis.
         let nr_real = real.len();
@@ -219,19 +261,19 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>
         }).collect::<Vec<_>>();
         let basis_columns = basis_indices.iter().copied().collect();
 
-        let carry = CarryMatrix::create_for_artificial(
+        let inverse_maintainer = IM::create_for_partially_artificial(
             &artificial,
             &real,
             provider.constraint_values(),
         );
 
         Tableau {
-            carry,
+            inverse_maintainer,
             basis_indices,
             basis_columns,
 
             kind: Artificial {
-                column_to_row: artificial.clone(),
+                column_to_row: artificial,
 
                 ONE: F::one(),
                 ZERO: F::zero(),
@@ -239,6 +281,8 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>
                 provider,
                 phantom_zero: PhantomData,
             },
+
+            phantom: PhantomData,
         }
     }
 
@@ -257,7 +301,7 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>
     /// `Tableau` with for the provided problem with the provided basis.
     pub(crate) fn new_with_basis(
         provider: &'provider MP,
-        carry: CarryMatrix<F, FZ>,
+        inverse_maintainer: IM,
         basis_indices: Vec<usize>,
         basis_columns: HashSet<usize>,
         column_to_row_artificials: Vec<usize>,
@@ -265,7 +309,7 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>
         debug_assert!(column_to_row_artificials.iter().all(|i| basis_indices.contains(&i)));
 
         Tableau {
-            carry,
+            inverse_maintainer,
             basis_indices,
             basis_columns,
 
@@ -279,6 +323,8 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>
 
                 phantom_zero: PhantomData
             },
+
+            phantom: PhantomData,
         }
     }
 
@@ -308,6 +354,11 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>
 
         self.kind.column_to_row[artificial_index]
     }
+
+    pub fn export_basis_representation(self) -> (IM, usize, (Vec<usize>, HashSet<usize>)) {
+        let nr_artificial = self.nr_artificial_variables();
+        (self.inverse_maintainer, nr_artificial, (self.basis_indices, self.basis_columns))
+    }
 }
 
 /// The `TableauType` in case the `Tableau` does not contain any artificial variables.
@@ -324,10 +375,10 @@ pub struct NonArtificial<'a, F: Field, FZ: SparseElementZero<F>, MP: MatrixProvi
     phantom: PhantomData<(F, FZ)>,
 }
 impl<'a, F, FZ, MP> Kind<F, FZ> for NonArtificial<'a, F, FZ, MP>
-    where
-        F: Field,
-        FZ: SparseElementZero<F>,
-        MP: MatrixProvider<F, FZ>,
+where
+    F: Field,
+    FZ: SparseElementZero<F>,
+    MP: MatrixProvider<F, FZ>,
 {
     /// Coefficient of variable `j` in the objective function.
     ///
@@ -374,12 +425,13 @@ impl<'a, F, FZ, MP> Kind<F, FZ> for NonArtificial<'a, F, FZ, MP>
     }
 }
 
-impl<'provider, F, FZ, MP> Tableau<F, FZ, NonArtificial<'provider, F, FZ, MP>>
-    where
-        F: Field,
-        for<'r> &'r F: FieldRef<F>,
-        FZ: SparseElementZero<F>,
-        MP: MatrixProvider<F, FZ>,
+impl<'provider, F, FZ, IM, MP> Tableau<F, FZ, IM, NonArtificial<'provider, F, FZ, MP>>
+where
+    F: Field,
+    for<'r> &'r F: FieldRef<F>,
+    FZ: SparseElementZero<F>,
+    IM: InverseMaintenance<F, FZ>,
+    MP: MatrixProvider<F, FZ>,
 {
     /// Creates a Simplex tableau with a specific basis.
     ///
@@ -394,14 +446,14 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, NonArtificial<'provider, F, FZ, MP>>
     /// # Return value
     ///
     /// `Tableau` with for the provided problem with the provided basis.
-    pub(crate) fn new_with_basis(
+    pub(crate) fn new_with_inverse_maintainer(
         provider: &'provider MP,
-        carry: CarryMatrix<F, FZ>,
+        inverse_maintainer: IM,
         basis_indices: Vec<usize>,
         basis_columns: HashSet<usize>,
     ) -> Self {
         Tableau {
-            carry,
+            inverse_maintainer,
             basis_indices,
             basis_columns,
 
@@ -410,6 +462,41 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, NonArtificial<'provider, F, FZ, MP>>
 
                 phantom: PhantomData,
             },
+
+            phantom: PhantomData,
+        }
+    }
+
+    /// Creates a Simplex tableau with a specific basis.
+    ///
+    /// # Arguments
+    ///
+    /// * `provider`: Provides the original problem for which the other arguments describe a basis.
+    /// * `carry`: `CarryMatrix` with the basis transformation. Corresponds to `basis_indices`.
+    /// * `basis_indices`: Maps each row to a column, describing a basis. Corresponds to `carry`.
+    ///
+    /// # Return value
+    ///
+    /// `Tableau` with for the provided problem with the provided basis.
+    pub(crate) fn new_with_basis(
+        provider: &'provider MP,
+        // TODO(OPTIMIZATION): Order doesn't matter, document and make this a Vec
+        basis: &HashSet<usize>,
+    ) -> Self {
+        let arbitrary_order = basis.iter().copied().collect::<Vec<_>>();
+
+        Tableau {
+            inverse_maintainer: IM::from_basis(&arbitrary_order, provider),
+            basis_indices: arbitrary_order,
+            basis_columns: basis.clone(),
+
+            kind: NonArtificial {
+                provider,
+
+                phantom: PhantomData,
+            },
+
+            phantom: PhantomData,
         }
     }
 
@@ -423,34 +510,35 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, NonArtificial<'provider, F, FZ, MP>>
     ///
     /// `Tableau` with the same basis, but non-artificial cost row.
     pub fn from_artificial(
-        mut artificial_tableau: Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>,
+        inverse_maintainer: IM,
+        nr_artificial: usize,
+        basis: (Vec<usize>, HashSet<usize>),
+        provider: &'provider MP,
     ) -> Self {
-        debug_assert!(artificial_tableau.artificial_basis_columns().is_empty());
+        let (mut basis_indices, basis_columns) = basis;
 
         // Shift the basis column indices back
-        let nr_artificial = artificial_tableau.nr_artificial_variables();
-        artificial_tableau.basis_indices.iter_mut()
-            .for_each(|column| *column -= nr_artificial);
-        let basis_columns = artificial_tableau.basis_columns.into_iter()
-            .map(|column| column - nr_artificial)
-            .collect();
-
-        let carry = CarryMatrix::from_artificial(
-            artificial_tableau.carry,
-            artificial_tableau.kind.provider,
-            &artificial_tableau.basis_indices,
-        );
+        basis_indices.iter_mut().for_each(|column| *column -= nr_artificial);
 
         Tableau {
-            carry,
-            basis_indices: artificial_tableau.basis_indices,
-            basis_columns,
+            inverse_maintainer: IM::from_artificial(
+                inverse_maintainer,
+                provider,
+                // TODO(CORRECTNESS): Should these be shifted?
+                &basis_indices,
+            ),
+            basis_indices,
+            basis_columns: basis_columns.into_iter()
+                .map(|column| column - nr_artificial)
+                .collect(),
 
             kind: NonArtificial {
-                provider: artificial_tableau.kind.provider,
+                provider,
 
                 phantom: PhantomData,
             },
+
+            phantom: PhantomData,
         }
     }
 
@@ -466,35 +554,32 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, NonArtificial<'provider, F, FZ, MP>>
     ///
     /// `Tableau` with the same basis, but non-artificial cost row.
     pub fn from_artificial_removing_rows<'b: 'provider>(
-        artificial_tableau: Tableau<F, FZ, Artificial<'provider, F, FZ, MP>>,
+        inverse_maintainer: IM,
+        nr_artificial: usize,
+        basis: (Vec<usize>, HashSet<usize>),
         rows_removed: &'b RemoveRows<'provider, F, FZ, MP>,
-    ) -> Tableau<F, FZ, NonArtificial<'b, F, FZ, RemoveRows<'provider, F, FZ, MP>>> {
-        let nr_artificial = artificial_tableau.nr_artificial_variables();
-        debug_assert!(
-            artificial_tableau.basis_indices.iter()
-                .all(|&v| v >= nr_artificial || rows_removed.rows_to_skip.contains(&v))
-        );
+    ) -> Tableau<F, FZ, IM, NonArtificial<'b, F, FZ, RemoveRows<'provider, F, FZ, MP>>> {
+        debug_assert!(basis.0.iter().all(|&v| v >= nr_artificial || rows_removed.rows_to_skip.contains(&v)));
 
-        let mut basis_columns = artificial_tableau.basis_columns;
+        let (mut basis_indices, mut basis_columns) = basis;
         for &row in &rows_removed.rows_to_skip {
-            let was_there = basis_columns.remove(&artificial_tableau.basis_indices[row]);
+            let was_there = basis_columns.remove(&basis_indices[row]);
             debug_assert!(was_there);
         }
         let basis_columns = basis_columns.into_iter().map(|j| j - nr_artificial).collect();
 
-        let mut basis_indices = artificial_tableau.basis_indices;
         remove_indices(&mut basis_indices, &rows_removed.rows_to_skip);
         basis_indices.iter_mut().for_each(|index| *index -= nr_artificial);
 
         // Remove same row and column from carry matrix
-        let carry = CarryMatrix::from_artificial_remove_rows(
-            artificial_tableau.carry,
+        let inverse_maintainer = IM::from_artificial_remove_rows(
+            inverse_maintainer,
             rows_removed,
             &basis_indices,
         );
 
         Tableau {
-            carry,
+            inverse_maintainer,
             basis_indices,
             basis_columns,
 
@@ -503,6 +588,12 @@ impl<'provider, F, FZ, MP> Tableau<F, FZ, NonArtificial<'provider, F, FZ, MP>>
 
                 phantom: PhantomData,
             },
+
+            phantom: PhantomData,
         }
+    }
+
+    pub fn export_basis_representation(self) -> (IM, (Vec<usize>, HashSet<usize>)) {
+        (self.inverse_maintainer, (self.basis_indices, self.basis_columns))
     }
 }
