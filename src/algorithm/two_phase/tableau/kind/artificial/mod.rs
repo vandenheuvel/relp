@@ -14,7 +14,7 @@ use crate::data::number_types::traits::{Field, FieldRef};
 pub mod fully;
 pub mod partially;
 
-/// Tableau's with artificial variables.
+/// tableaus with artificial variables.
 ///
 /// There are currently two implementations; either all variables are artificial, or not necessarily
 /// all variables are. See the two submodules.
@@ -27,7 +27,7 @@ pub trait Artificial<F, FZ>: Kind<F, FZ> {
     ///
     /// # Return value
     ///
-    /// This number can be zero (for non artificial tableau's, represented by the `NonArtificial`
+    /// This number can be zero (for non artificial tableaus, represented by the `NonArtificial`
     /// struct), or any number through the number of rows (`self.nr_rows`).
     fn nr_artificial_variables(&self) -> usize;
 
@@ -43,7 +43,7 @@ pub trait Artificial<F, FZ>: Kind<F, FZ> {
     fn pivot_row_from_artificial(&self, artificial_index: usize) -> usize;
 }
 
-/// Functionality needed only, and for all, artificial tableau's.
+/// Functionality needed only, and for all, artificial tableaus.
 ///
 /// Most of these functions get called in the artificial simplex method, or the method that removes
 /// artificial variables from the problem at zero level.

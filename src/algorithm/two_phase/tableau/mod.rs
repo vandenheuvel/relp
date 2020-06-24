@@ -189,7 +189,7 @@ where
     ///
     /// # Note
     ///
-    /// This function works for both artificial and non-artificial tableau's.
+    /// This function works for both artificial and non-artificial tableaus.
     pub fn objective_function_value(&self) -> F {
         self.inverse_maintainer.get_objective_function_value()
     }

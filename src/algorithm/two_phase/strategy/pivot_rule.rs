@@ -1,13 +1,14 @@
 //! # Pivot rules
 //!
 //! Strategies for moving from basis to basis, whether primal or dual.
+use std::ops::Range;
+
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
-use std::ops::Range;
 
 /// Deciding how to pivot.
 ///
@@ -53,7 +54,7 @@ impl PivotRule for FirstProfitable {
         IM: InverseMaintenance<OF, OFZ>,
         K: Kind<OF, OFZ>,
     {
-        // TODO(ENHANCEMENT): For artificial tableau's it's a waste to start at 0
+        // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
         (0..tableau.nr_columns())
             .filter(|column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
@@ -88,10 +89,10 @@ impl PivotRule for FirstProfitableWithMemory {
             .find(|(_, cost)| cost < &OF::zero());
 
         let potential = if let Some(last) = self.last_selected {
-            // TODO(ENHANCEMENT): For artificial tableau's it's a waste to start at 0
+            // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
             find(last..tableau.nr_columns()).or_else(|| find(0..last))
         } else {
-            // TODO(ENHANCEMENT): For artificial tableau's it's a waste to start at 0
+            // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
             find(0..tableau.nr_columns())
         };
 
@@ -119,7 +120,7 @@ impl PivotRule for SteepestDescent {
             K: Kind<OF, OFZ>,
     {
         let mut smallest = None;
-        // TODO(ENHANCEMENT): For artificial tableau's it's a waste to start at 0
+        // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
         for (j, cost) in (0..tableau.nr_columns())
             .filter(|column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))

@@ -37,7 +37,7 @@ use crate::data::number_types::traits::{Field, FieldRef};
 pub struct CarryMatrix<F: SparseElement<F> + SparseComparator, FZ: SparseElementZero<F>> {
     /// Negative of the objective function value.
     ///
-    /// Is non-negative (objective value is non-positive) for artificial tableau's.
+    /// Is non-negative (objective value is non-positive) for artificial tableaus.
     minus_objective: F,
     /// Used to compute updated versions of relative cost of columns.
     minus_pi: DenseVector<F>,
