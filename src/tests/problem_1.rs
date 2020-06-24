@@ -12,7 +12,8 @@ use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Vari
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
-use crate::algorithm::two_phase::tableau::kind::{Artificial, NonArtificial};
+use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
+use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
@@ -63,11 +64,11 @@ fn conversion_pipeline() {
     assert_eq!(matrix_data_form_computed, matrix_data_form(&constraints, &b));
 
     // Artificial tableau form
-    let artificial_tableau_form_computed = Tableau::<_, _, _, Artificial<_, _, _>>::new_with_partial_basis(&matrix_data_form_computed);
+    let artificial_tableau_form_computed = Tableau::<_, _, _, Partially<_, _, _>>::new(&matrix_data_form_computed);
     assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form(&constraints, &b)));
 
     // Get to a basic feasible solution
-    let feasibility_result = artificial_primal::<_, _, _, _, FirstProfitable>(artificial_tableau_form_computed);
+    let feasibility_result = artificial_primal::<_, _, _, _, MatrixData<_, _>, FirstProfitable>(artificial_tableau_form_computed);
     let mut tableau_form_computed = match feasibility_result {
         RankedFeasibilityResult::Feasible {
             rank,
@@ -471,7 +472,7 @@ pub fn matrix_data_form<'a>(
 
 pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
     provider: &MP,
-) -> Tableau<T, T, CarryMatrix<T, T>, Artificial<T, T, MP>> {
+) -> Tableau<T, T, CarryMatrix<T, T>, Partially<T, T, MP>> {
     let m = 5;
     let carry = {
         let minus_objective = R32!(-2);
@@ -487,7 +488,7 @@ pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
     basis_indices.extend(vec![2 + 4, 2 + 5, 2 + 6]);
     let basis_columns = basis_indices.iter().copied().collect();
 
-    Tableau::<_, _, _, Artificial<_, _, _>>::new_with_basis(
+    Tableau::<_, _, _, Partially<_, _, _>>::new_with_basis(
         provider,
         carry,
         basis_indices,

@@ -1,6 +1,6 @@
 //! # Data structures for Simplex
 //!
-//! Contains the simplex tableau and logic for elementary operations which can be perfomed upon it.
+//! Contains the simplex tableau and logic for elementary operations which can be performed upon it.
 //! The tableau is extended with supplementary data structures for efficiency.
 use std::borrow::Borrow;
 use std::collections::HashSet;
@@ -50,7 +50,7 @@ where
 
     /// Whether this tableau has artificial variables (and is in the first phase of the two-phase
     /// algorithm) or not. See the `Kind` trait for more information.
-    pub kind: K,
+    kind: K,
 
     phantom: PhantomData<(F, FZ)>,
 }
@@ -421,7 +421,7 @@ mod test {
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
-    use crate::algorithm::two_phase::tableau::kind::NonArtificial;
+    use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
     use crate::algorithm::two_phase::tableau::Tableau;
     use crate::data::linear_algebra::traits::SparseElementZero;
     use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};

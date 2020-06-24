@@ -12,7 +12,10 @@ use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRu
 use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
-use crate::algorithm::two_phase::tableau::kind::{Artificial, NonArtificial};
+use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
+use crate::algorithm::two_phase::tableau::kind::artificial::fully::Fully as FullyArtificial;
+use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially as PartiallyArtificial;
+use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::number_types::traits::{Field, FieldRef, OrderedField, OrderedFieldRef};
 
@@ -101,8 +104,8 @@ impl<MP> FeasibilityComputeTrait for MP {
         //  dynamically
         type PivotRule = FirstProfitable;
 
-        let artificial_tableau = Tableau::<_, _, _, Artificial<_, _, _>>::new(self);
-        artificial_primal::<_, _, _, _, PivotRule>(artificial_tableau)
+        let artificial_tableau = Tableau::<_, _, _, FullyArtificial<_, _, _>>::new(self);
+        artificial_primal::<_, _, _, _, MP, PivotRule>(artificial_tableau)
     }
 }
 
@@ -141,8 +144,8 @@ impl<MP: PartialInitialBasis> FeasibilityComputeTrait for MP {
         //  dynamically
         type PivotRule = FirstProfitable;
 
-        let artificial_tableau = Tableau::<_, _, _, Artificial<_, _, _>>::new_with_partial_basis(self);
-        artificial_primal::<_, _, _, _, PivotRule>(artificial_tableau)
+        let artificial_tableau = Tableau::<_, _, _, PartiallyArtificial<_, _, _>>::new(self);
+        artificial_primal::<_, _, _, _, MP, PivotRule>(artificial_tableau)
     }
 }
 
@@ -160,12 +163,12 @@ pub trait FullInitialBasis: PartialInitialBasis {
 ///
 /// TODO(ARCHITECTURE): If this is true, it's ot really two-phase, now is it? Should this solution
 ///  be provided elsewhere, or the module be renamed?
-impl<OF, OFZ, MP> SolveRelaxation<OF, OFZ> for MP
+impl<OF, OFZ, MP: FullInitialBasis> SolveRelaxation<OF, OFZ> for MP
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
     OFZ: SparseElementZero<OF>,
-    MP: MatrixProvider<OF, OFZ> + FullInitialBasis,
+    MP: MatrixProvider<OF, OFZ>,
 {
     fn solve_relaxation(&self) -> OptimizationResult<OF, OFZ> {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
@@ -198,14 +201,15 @@ where
 /// # Return value
 ///
 /// Whether the tableau might allow a basic feasible solution without artificial variables.
-pub(crate) fn artificial_primal<'provider, OF, OFZ, IM, MP, PR>(
-    mut tableau: Tableau<OF, OFZ, IM, Artificial<'provider, OF, OFZ, MP>>,
+pub(crate) fn artificial_primal<'provider, OF, OFZ, IM, K, MP, PR>(
+    mut tableau: Tableau<OF, OFZ, IM, K>,
 ) -> RankedFeasibilityResult<IM>
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
     OFZ: SparseElementZero<OF>,
     IM: InverseMaintenance<OF, OFZ>,
+    K: Artificial<OF, OFZ>,
     MP: MatrixProvider<OF, OFZ> + 'provider,
     PR: PivotRule,
 {
@@ -298,15 +302,15 @@ pub enum Rank {
 /// instead of constraints. All bounds are linearly independent among each other, and with respect
 /// to all constraints. As such, they should never be among the redundant rows returned by this
 /// method.
-fn remove_artificial_basis_variables<F, FZ, IM, MP>(
-    tableau: &mut Tableau<F, FZ, IM, Artificial<F, FZ, MP>>,
+fn remove_artificial_basis_variables<F, FZ, IM, K>(
+    tableau: &mut Tableau<F, FZ, IM, K>,
 ) -> Vec<usize>
 where
     F: Field,
     for<'r> &'r F: FieldRef<F>,
     FZ: SparseElementZero<F>,
     IM: InverseMaintenance<F, FZ>,
-    MP: MatrixProvider<F, FZ>,
+    K: Artificial<F, FZ>,
 {
     let mut artificial_variable_indices = tableau.artificial_basis_columns().into_iter().collect::<Vec<_>>();
     artificial_variable_indices.sort();
@@ -388,7 +392,7 @@ mod test {
     use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
     use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
-    use crate::algorithm::two_phase::tableau::kind::Artificial;
+    use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
     use crate::algorithm::two_phase::tableau::Tableau;
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
     use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
@@ -411,9 +415,9 @@ mod test {
     fn finding_bfs() {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
-        let tableau = Tableau::<_, _, CarryMatrix<_, _>, Artificial<_, _, _>>::new(&matrix_data_form);
+        let tableau = Tableau::<_, _, CarryMatrix<_, _>, Partially<_, _, _>>::new(&matrix_data_form);
         assert!(matches!(
-            artificial_primal::<_, _, _, _, FirstProfitable>(tableau),
+            artificial_primal::<_, _, _, _, MatrixData<_, _>, FirstProfitable>(tableau),
             RankedFeasibilityResult::Feasible { rank: Rank::Full, .. }
         ));
     }

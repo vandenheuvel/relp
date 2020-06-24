@@ -9,7 +9,8 @@ use crate::algorithm::two_phase::{artificial_primal, primal, Rank, RankedFeasibi
 use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
-use crate::algorithm::two_phase::tableau::kind::{Artificial, NonArtificial};
+use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
+use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::traits::SparseElementZero;
@@ -26,11 +27,11 @@ fn conversion_pipeline() {
     let matrix_data_form = matrix_data_form(&constraints, &b);
 
     // Artificial tableau form
-    let artificial_tableau_form_computed = Tableau::<_, _, _, Artificial<_, _, _>>::new(&matrix_data_form);
+    let artificial_tableau_form_computed = Tableau::<_, _, _, Partially<_, _, _>>::new(&matrix_data_form);
     assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form));
 
     // Get to a basic feasible solution
-    let feasibility_result = artificial_primal::<_, _, _, _, FirstProfitable>(artificial_tableau_form_computed);
+    let feasibility_result = artificial_primal::<_, _, _, _, MatrixData<_, _>, FirstProfitable>(artificial_tableau_form_computed);
     let mut tableau_form_computed = match feasibility_result {
         RankedFeasibilityResult::Feasible {
             rank,
@@ -104,7 +105,7 @@ pub fn matrix_data_form<'a>(
 
 pub fn artificial_tableau_form<'a, F, FZ>(
     data: &'a MatrixData<'a, F, FZ>,
-) -> Tableau<F, FZ, CarryMatrix<F, FZ>, Artificial<F, FZ, MatrixData<'a, F, FZ>>>
+) -> Tableau<F, FZ, CarryMatrix<F, FZ>, Partially<F, FZ, MatrixData<'a, F, FZ>>>
 where
     F: Field + FromPrimitive,
     for<'r> &'r F: FieldRef<F>,
@@ -124,7 +125,7 @@ where
     let basis_indices = artificials.clone();
     let basis_columns = basis_indices.iter().copied().collect();
 
-    Tableau::<_, _, _, Artificial<_, _, _>>::new_with_basis(
+    Tableau::<_, _, _, Partially<_, _, _>>::new_with_basis(
         data,
         carry,
         basis_indices,

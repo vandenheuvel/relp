@@ -7,6 +7,7 @@ use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
+use std::ops::Range;
 
 /// Deciding how to pivot.
 ///
@@ -52,7 +53,8 @@ impl PivotRule for FirstProfitable {
         IM: InverseMaintenance<OF, OFZ>,
         K: Kind<OF, OFZ>,
     {
-        (tableau.kind.nr_artificial_variables()..tableau.nr_columns())
+        // TODO(ENHANCEMENT): For artificial tableau's it's a waste to start at 0
+        (0..tableau.nr_columns())
             .filter(|column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
             .find(|(_, cost)| cost < &OF::zero())
@@ -80,17 +82,18 @@ impl PivotRule for FirstProfitableWithMemory {
             IM: InverseMaintenance<OF, OFZ>,
             K: Kind<OF, OFZ>,
     {
-        let to_consider = if let Some(last) = self.last_selected {
-            (last..tableau.nr_columns())
-                .chain(tableau.kind.nr_artificial_variables()..last)
-        } else {
-            (tableau.kind.nr_artificial_variables()..tableau.nr_columns()).chain(0..0)
-        };
-
-        let potential = to_consider
+        let find = |to_consider: Range<usize>| to_consider
             .filter(|column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
             .find(|(_, cost)| cost < &OF::zero());
+
+        let potential = if let Some(last) = self.last_selected {
+            // TODO(ENHANCEMENT): For artificial tableau's it's a waste to start at 0
+            find(last..tableau.nr_columns()).or_else(|| find(0..last))
+        } else {
+            // TODO(ENHANCEMENT): For artificial tableau's it's a waste to start at 0
+            find(0..tableau.nr_columns())
+        };
 
         self.last_selected = potential.clone().map(|(i, _)| i);
         potential
@@ -116,7 +119,8 @@ impl PivotRule for SteepestDescent {
             K: Kind<OF, OFZ>,
     {
         let mut smallest = None;
-        for (j, cost) in (tableau.kind.nr_artificial_variables()..tableau.nr_columns())
+        // TODO(ENHANCEMENT): For artificial tableau's it's a waste to start at 0
+        for (j, cost) in (0..tableau.nr_columns())
             .filter(|column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
             .filter(|(_, cost)| cost < &OF::zero()) {

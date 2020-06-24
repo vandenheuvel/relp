@@ -4,7 +4,7 @@
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse as SparseMatrix};
 use crate::data::linear_algebra::SparseTupleVec;
 use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector, Vector};
+use crate::data::linear_algebra::vector::{Dense as DenseVector, Vector};
 use crate::data::number_types::traits::Field;
 
 #[derive(Debug, Clone, PartialEq)]

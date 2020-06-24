@@ -5,7 +5,6 @@ use num::rational::Ratio;
 
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use rust_lp::BR;
 use rust_lp::data::linear_algebra::traits::SparseElementZero;
 use rust_lp::data::linear_program::general_form::GeneralForm;

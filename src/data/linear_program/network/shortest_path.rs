@@ -85,8 +85,9 @@ where
         b
     }
 
-    fn bound_row_index(&self, j: usize, bound_type: BoundDirection) -> Option<usize> {
-        debug_assert!(j < self.nr_edges());
+    #[allow(clippy::used_underscore_binding)]
+    fn bound_row_index(&self, _j: usize, _bound_type: BoundDirection) -> Option<usize> {
+        debug_assert!(_j < self.nr_edges());
 
         None
     }
