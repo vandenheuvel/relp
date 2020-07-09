@@ -43,8 +43,8 @@ use lp::algorithm::simplex::solve_relaxation;
 use lp::io::import;
 use lp::algorithm::simplex::logic::OptimizationResult;
 
-use num::rational::Ratio;
-use num::BigInt;
+use num_traits::rational::Ratio;
+use num_traits::BigInt;
 use lp::data::linear_program::general_form::GeneralForm;
 use std::convert::TryInto;
 use lp::algorithm::simplex::matrix_provider::MatrixProvider;
@@ -55,7 +55,7 @@ use lp::algorithm::simplex::strategy::pivot_rule::{FirstProfitable, FirstProfita
 
 ```rust
 fn main() {
-    type T = Ratio<BigInt>;
+    type T = RationalBig;
 
     let name = env::args().nth(1).unwrap();
     let pathname = format!("./test_files/{}.mps", name);

@@ -1,30 +1,28 @@
 use std::convert::TryInto;
 
-use num::{BigInt, FromPrimitive};
-use num::rational::Ratio;
+use num::FromPrimitive;
 
-use rust_lp::{BR, R128};
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use rust_lp::data::linear_program::general_form::GeneralForm;
 use rust_lp::data::linear_program::solution::Solution;
-use rust_lp::data::number_types::traits::{OrderedField, OrderedFieldRef};
+use rust_lp::data::number_types::rational::{Rational64, RationalBig};
+use rust_lp::data::number_types::traits::Abs;
 use rust_lp::io::import;
+use rust_lp::RB;
 
 use super::get_test_file_path;
 
-fn solve<T: 'static + OrderedField + FromPrimitive>(
-    file_name: &str,
-) -> Solution<T>
-where
-    for<'r> &'r T: OrderedFieldRef<T>,
-{
-    let path = get_test_file_path(file_name);
-    let mps = import::<T>(&path).unwrap();
+type T = RationalBig;
 
-    let mut general = mps.try_into().ok().unwrap();
+fn solve(file_name: &str) -> Solution<T> {
+    let path = get_test_file_path(file_name);
+    let mps = import(&path).unwrap();
+
+    let mut general: GeneralForm<Rational64> = mps.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
+    let result = data.solve_relaxation::<Carry<T>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -38,26 +36,20 @@ where
 #[test]
 #[ignore = "Has a row name consisting of only numbers, the parser doesn't support that."]
 fn test_25FV47() {
-    type T = Ratio<i128>;
-
-    let result = solve::<T>("25FV47");
-    assert_eq!(result.objective_value, R128!(5.5018459e+03)); // Gurobi
+    let result = solve("25FV47");
+    assert!((result.objective_value - RB!(5.5018459e+03)).abs() < RB!(1e-5)); // Gurobi
 }
 
 #[test]
 #[ignore = "Too computationally intensive"]
 fn test_80BAU3B() {
-    type T = Ratio<BigInt>;
-
-    let result = solve::<T>("80BAU3B");
-    assert_eq!(result.objective_value, BR!(9.872241924e+05)); // Gurobi
+    let result = solve("80BAU3B");
+    assert!((result.objective_value - RB!(9.872241924e+05)).abs() < RB!(1e-5)); // Gurobi
 }
 
 #[test]
 #[ignore = "Too computationally expensive."]
 fn test_ADLITTLE() {
-    type T = Ratio<BigInt>;
-
-    let result = solve::<T>("ADLITTLE");
-    assert_eq!(result.objective_value, BR!(2.254949632e+05)); // Gurobi
+    let result = solve("ADLITTLE");
+    assert!((result.objective_value - RB!(2.254949632e+05)).abs() < RB!(1e-5)); // Gurobi
 }

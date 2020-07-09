@@ -9,7 +9,7 @@
 //! 
 //! * The first is the type that is stored many times in the data structure
 //! * The second is a type that can be zero (and is not a reference), ideally is small (Copy) and 
-//! not stored behind a reference (like Ratio<BigInt>).
+//! not stored behind a reference (like RationalBig).
 //! * The third is the type that both can be dereferenced to, and that can do equality equality 
 //! comparisons
 //! 

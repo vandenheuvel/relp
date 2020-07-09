@@ -1,9 +1,9 @@
-use crate::algorithm::two_phase::tableau::{Tableau, is_in_basic_feasible_solution_state};
-use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
-use crate::algorithm::two_phase::matrix_provider::{MatrixProvider, Column};
-use crate::algorithm::two_phase::strategy::pivot_rule::PivotRule;
 use crate::algorithm::OptimizationResult;
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::strategy::pivot_rule::PivotRule;
+use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
+use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 
 /// Reduces the cost of the basic feasible solution to the minimum.
 ///

@@ -397,8 +397,8 @@ mod test {
     use std::collections::HashSet;
 
     use num::FromPrimitive;
-    use num::rational::Ratio;
 
+    use crate::{F, R32};
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
@@ -406,8 +406,8 @@ mod test {
     use crate::algorithm::two_phase::tableau::Tableau;
     use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
     use crate::data::linear_algebra::vector::test::TestVector;
+    use crate::data::number_types::rational::Rational32;
     use crate::data::number_types::traits::{Field, FieldRef};
-    use crate::F;
     use crate::tests::problem_2::{artificial_tableau_form, create_matrix_data_data, matrix_data_form};
 
     fn tableau<'a, F: 'static>(
@@ -447,10 +447,10 @@ mod test {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
         let artificial_tableau = artificial_tableau_form(&matrix_data_form);
-        assert_eq!(artificial_tableau.objective_function_value(), Ratio::from_i32(8).unwrap());
+        assert_eq!(artificial_tableau.objective_function_value(), R32!(8));
 
         let tableau = tableau(&matrix_data_form);
-        assert_eq!(tableau.objective_function_value(), Ratio::from_i32(6).unwrap());
+        assert_eq!(tableau.objective_function_value(), R32!(6));
     }
 
     #[test]
@@ -458,17 +458,17 @@ mod test {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
         let artificial_tableau = artificial_tableau_form(&matrix_data_form);
-        assert_eq!(artificial_tableau.relative_cost(0), Ratio::from_i32(0).unwrap());
+        assert_eq!(artificial_tableau.relative_cost(0), R32!(0));
 
         assert_eq!(
             artificial_tableau.relative_cost(artificial_tableau.nr_artificial_variables() + 0),
-            Ratio::from_i32(-10).unwrap(),
+            R32!(-10),
         );
 
         let tableau = tableau(&matrix_data_form);
-        assert_eq!(tableau.relative_cost(0), Ratio::from_i32(-3).unwrap());
-        assert_eq!(tableau.relative_cost(1), Ratio::from_i32(-3).unwrap());
-        assert_eq!(tableau.relative_cost(2), Ratio::from_i32(0).unwrap());
+        assert_eq!(tableau.relative_cost(0), R32!(-3));
+        assert_eq!(tableau.relative_cost(1), R32!(-3));
+        assert_eq!(tableau.relative_cost(2), R32!(0));
     }
 
     #[test]
@@ -482,7 +482,7 @@ mod test {
         let expected = SparseVector::from_test_data(vec![3, 5, 2]);
         assert_eq!(column, expected);
         let result = artificial_tableau.relative_cost(index_to_test);
-        assert_eq!(result, Ratio::<i32>::from_i32(-10).unwrap());
+        assert_eq!(result, R32!(-10));
 
         let tableau = tableau(&matrix_data_form);
         let index_to_test = 0;
@@ -490,7 +490,7 @@ mod test {
         let expected = SparseVector::from_test_data(vec![3, 2, -1]);
         assert_eq!(column, expected);
         let result = tableau.relative_cost(index_to_test);
-        assert_eq!(result, Ratio::<i32>::from_i32(-3).unwrap());
+        assert_eq!(result, R32!(-3));
     }
 
     #[test]
@@ -506,7 +506,7 @@ mod test {
 
         assert!(artificial_tableau.is_in_basis(&column));
         assert!(!artificial_tableau.is_in_basis(&0));
-        assert_eq!(artificial_tableau.objective_function_value(), Ratio::<i32>::new(14, 3));
+        assert_eq!(artificial_tableau.objective_function_value(), R32!(14, 3));
 
         let mut tableau = tableau(&matrix_data_form);
         let column = 1;
@@ -516,7 +516,7 @@ mod test {
         tableau.bring_into_basis(column, row, &column_data, cost);
 
         assert!(tableau.is_in_basis(&column));
-        assert_eq!(tableau.objective_function_value(), Ratio::<i32>::new(9, 2));
+        assert_eq!(tableau.objective_function_value(), R32!(9, 2));
     }
 
     fn bfs_tableau<'a, F: 'static>(
@@ -554,8 +554,6 @@ mod test {
 
     #[test]
     fn create_tableau() {
-        type T = Ratio<i32>;
-
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
         let bfs_tableau = bfs_tableau(&matrix_data_form);

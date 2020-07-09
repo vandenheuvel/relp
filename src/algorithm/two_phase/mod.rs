@@ -7,12 +7,12 @@ use crate::algorithm::{OptimizationResult, SolveRelaxation};
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
 use crate::algorithm::two_phase::phase_one::{FeasibilityComputeTrait, FullInitialBasis, Rank, RankedFeasibilityResult};
-use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable};
-use crate::algorithm::two_phase::tableau::{Tableau};
+use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
+use crate::algorithm::two_phase::tableau::Tableau;
 
 pub(crate) mod phase_one;
 pub(crate) mod phase_two;
@@ -104,10 +104,9 @@ where
 #[cfg(test)]
 mod test {
     use num::FromPrimitive;
-    use num::rational::Ratio;
 
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
-    use crate::algorithm::two_phase::{Rank, RankedFeasibilityResult, phase_one, phase_two};
+    use crate::algorithm::two_phase::{phase_one, phase_two, Rank, RankedFeasibilityResult};
     use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
     use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
@@ -117,6 +116,7 @@ mod test {
     use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::VariableType;
+    use crate::data::number_types::rational::Rational32;
     use crate::R32;
     use crate::tests::problem_2::{create_matrix_data_data, matrix_data_form, tableau_form};
 
@@ -132,7 +132,7 @@ mod test {
 
     #[test]
     fn finding_bfs() {
-        type T = Ratio<i32>;
+        type T = Rational32;
         // TODO(ENHANCEMENT): Decouple these two types
         type S = T;
 
@@ -147,7 +147,7 @@ mod test {
 
     #[test]
     fn solve_matrix() {
-        type T = Ratio<i32>;
+        type T = Rational32;
         // TODO(ENHANCEMENT): Decouple these two types
         type S = T;
 
@@ -165,7 +165,7 @@ mod test {
 
     #[test]
     fn solve_relaxation_1() {
-        type T = Ratio<i32>;
+        type T = Rational32;
         // TODO(ENHANCEMENT): Decouple these two types
         type S = T;
 

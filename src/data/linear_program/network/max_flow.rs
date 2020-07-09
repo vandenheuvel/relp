@@ -2,13 +2,13 @@
 use std::ops::Range;
 
 use crate::algorithm::two_phase::matrix_provider::{matrix_data, MatrixProvider};
+use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::network::representation::ArcIncidenceMatrix;
 use crate::data::number_types::traits::{Field, FieldRef};
-use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 
 /// Maximum flow problem.
 ///
@@ -132,7 +132,7 @@ where
         self.nr_edges() + self.nr_edges()
     }
 
-    fn reconstruct_solution(&self, column_values: SparseVector<F, F>) -> SparseVector<F, F> {
+    fn reconstruct_solution<G>(&self, column_values: SparseVector<G, G>) -> SparseVector<G, G> {
         unimplemented!()
     }
 }
@@ -153,18 +153,17 @@ where
 
 #[cfg(test)]
 mod test {
-    use num::rational::Ratio;
-
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
     use crate::data::linear_algebra::vector::Sparse as SparseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::network::max_flow::Primal;
+    use crate::data::number_types::rational::Rational32;
 
     #[test]
     fn test_1() {
-        type T = Ratio<i32>;
+        type T = Rational32;
         // TODO(ENHANCEMENT): Decouple these two types
         type S = T;
 

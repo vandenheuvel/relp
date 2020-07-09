@@ -242,8 +242,8 @@ pub trait InternalOps =
 pub trait InternalOpsHR =
 where
     for<'r> &'r Self: Neg<Output = Self>,
-    for<'r, 's> &'r Self: Mul<&'s Self, Output = Self>,
-    for<'r, 's> &'r Self: Div<&'s Self, Output = Self>,
+    for<'r> &'r Self: Mul<&'r Self, Output = Self>,
+    for<'r> &'r Self: Div<&'r Self, Output = Self>,
 ;
 
 /// Operations done with the values in the inverse maintenance algorithm while interacting with
@@ -268,5 +268,5 @@ pub trait ExternalOps<Rhs> =
     Debug +
     Display +
 where
-    for<'r, 's> &'r Self: Mul<&'s Rhs, Output = Self>,
+    for<'r> &'r Self: Mul<&'r Rhs, Output = Self>,
 ;

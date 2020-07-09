@@ -17,6 +17,7 @@ use crate::algorithm::two_phase::matrix_provider::filter::{Filtered, ToFiltered}
 use crate::algorithm::two_phase::matrix_provider::variable::FeasibilityLogic;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 use crate::algorithm::utilities::remove_sparse_indices;
+use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::BoundDirection;
 
@@ -271,10 +272,7 @@ where
         self.provider.nr_columns()
     }
 
-    fn reconstruct_solution(
-        &self,
-        column_values: SparseVector<<Self::Column as Column>::F, <Self::Column as Column>::F>,
-    ) -> SparseVector<<Self::Column as Column>::F, <Self::Column as Column>::F> {
+    fn reconstruct_solution<G: Element>(&self, column_values: SparseVector<G, G>) -> SparseVector<G, G> {
         self.provider.reconstruct_solution(column_values)
     }
 }
@@ -345,14 +343,13 @@ where
 
 #[cfg(test)]
 mod test {
-    use num::rational::Ratio;
-
     use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::RemoveRows;
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
+    use crate::data::number_types::rational::Rational32;
 
     #[test]
     fn get_underlying_index() {
-        type T = Ratio<i32>;
+        type T = Rational32;
 
         for (deleted, size) in vec![
             (vec![2, 5, 7, 9, 12, 15, 16, 19, 20, 21], 25),

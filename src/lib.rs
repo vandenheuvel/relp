@@ -13,6 +13,7 @@
 #![feature(associated_type_bounds)]
 #![feature(trait_alias)]
 #![feature(generic_associated_types)]
+#![feature(const_generics)]
 
 extern crate daggy;
 extern crate num;

@@ -6,8 +6,8 @@ use std::ops::Range;
 use num::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::Column;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::ExternalOps;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::SparseTuple;

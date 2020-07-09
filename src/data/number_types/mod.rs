@@ -4,7 +4,7 @@
 //! module defines those spaces and provides implementations.
 //!
 //! A benefit of this approach is that the algorithms can be tested well for correctness using
-//! fractional numbers, while the same code is used without adaptation with floating point numbers.
+//! fractional numbers.
 //! A downside is that the algorithm doesn't have access to the finite representations of e.g.
 //! floats, which is potentially limiting.
 pub mod traits;

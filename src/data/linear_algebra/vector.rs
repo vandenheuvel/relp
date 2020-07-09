@@ -41,7 +41,7 @@ pub trait Vector<F>: PartialEq + Display + Debug {
     fn sparse_inner_product<'a, G: 'a, V: Iterator<Item=&'a SparseTuple<G>>>(&self, column: V) -> F
     where
         F: Zero + AddAssign<F> + Sum,
-        for<'r, 's> &'r F: Mul<&'s G, Output = F>,
+        for<'r> &'r F: Mul<&'r G, Output = F>,
     ;
     /// Make a vector longer by one, by adding an extra value at the end of this vector.
     fn push_value(&mut self, value: F) where F: Zero;
@@ -140,7 +140,7 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     fn sparse_inner_product<'a, G: 'a, V: Iterator<Item=&'a SparseTuple<G>>>(&self, column: V) -> F
     where
         F: Sum,
-        for<'r, 's> &'r F: Mul<&'s G, Output = F>,
+        for<'r> &'r F: Mul<&'r G, Output = F>,
     {
         column.map(|(i, v)| &self.data[*i] * v).sum()
     }
@@ -273,7 +273,7 @@ where
     fn sparse_inner_product<'a, G: 'a, I: Iterator<Item=&'a SparseTuple<G>>>(&self, column: I) -> F
     where
         F: Zero + AddAssign<F>,
-        for<'r, 's> &'r F: Mul<&'s G, Output = F>,
+        for<'r> &'r F: Mul<&'r G, Output = F>,
     {
         let mut total = F::zero();
 
@@ -385,7 +385,7 @@ where
     pub fn add_multiple_of_row(&mut self, multiple: F, other: &Sparse<F, C>)
     where
         F: Zero,
-        for<'r, 's> &'r F: Mul<&'s F, Output = F>,
+        for<'r> &'r F: Mul<&'r F, Output = F>,
     {
         debug_assert_eq!(other.len(), self.len());
 
@@ -443,22 +443,22 @@ where
     /// be shifted.
     /// * `value`: Value to be taken at index `i`. Should not be very close to zero to avoid
     /// memory usage and numerical error build-up.
-    pub fn shift_value(&mut self, i: usize, value: &F)
+    pub fn shift_value<G>(&mut self, i: usize, value: G)
     where
-        for<'r> F: AddAssign<&'r F>,
-        for<'r> &'r F: Neg<Output = F>,
+        F: PartialEq<G> + AddAssign<G> + From<G>,
+        for<'r> &'r G: Neg<Output=G>,
     {
         debug_assert!(i < self.len);
 
         match self.get_data_index(i) {
             Ok(index) => {
-                if self.data[index].1 == -value {
+                if self.data[index].1 == -&value {
                     self.set_zero(i);
                 } else {
                     self.data[index].1 += value;
                 }
             },
-            Err(index) => self.data.insert(index, (i, value.clone())),
+            Err(index) => self.data.insert(index, (i, From::from(value))),
         }
     }
 
@@ -721,16 +721,16 @@ pub mod test {
 
     #[cfg(test)]
     mod dense_vector {
-        use num::rational::Ratio;
         use num::traits::FromPrimitive;
         use num::Zero;
 
         use crate::{F, R32};
         use crate::data::linear_algebra::vector::{Dense, Vector};
         use crate::data::linear_algebra::vector::test::{get_set, get_test_vector, len, out_of_bounds_get, out_of_bounds_set, push_value, TestVector};
+        use crate::data::number_types::rational::{Rational32, Rational64};
         use crate::data::number_types::traits::Field;
 
-        type T = Ratio<i32>;
+        type T = Rational32;
 
         fn new<F: Field + FromPrimitive>() {
             let d = vec![0, 5, 6].into_iter().map(|v| F!(v)).collect::<Vec<_>>();
@@ -742,8 +742,8 @@ pub mod test {
 
         #[test]
         fn test_new() {
-            new::<Ratio<i32>>();
-            new::<Ratio<i64>>();
+            new::<Rational32>();
+            new::<Rational64>();
         }
 
         #[test]
@@ -813,13 +813,13 @@ pub mod test {
     #[cfg(test)]
     mod sparse_vector {
         use num::FromPrimitive;
-        use num::rational::Ratio;
 
         use crate::data::linear_algebra::vector::{Sparse as SparseVector, Vector};
         use crate::data::linear_algebra::vector::test::{get_set, get_test_vector, len, out_of_bounds_get, out_of_bounds_set, push_value, TestVector};
+        use crate::data::number_types::rational::Rational32;
         use crate::R32;
 
-        type T = Ratio<i32>;
+        type T = Rational32;
 
         #[test]
         fn new() {

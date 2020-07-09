@@ -14,7 +14,7 @@ use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
 use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::SparseElement;
+use crate::data::linear_algebra::traits::{Element, SparseElement};
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::{BoundDirection, VariableType};
 use crate::data::number_types::traits::{Field, FieldRef};
@@ -303,7 +303,7 @@ where
             + self.nr_bounds()
     }
 
-    fn reconstruct_solution(&self, mut column_values: SparseVector<F, F>) -> SparseVector<F, F> {
+    fn reconstruct_solution<G: Element>(&self, mut column_values: SparseVector<G, G>) -> SparseVector<G, G> {
         debug_assert_eq!(column_values.len(), self.nr_columns());
 
         column_values.remove_indices(&(self.nr_normal_variables()..self.nr_columns()).collect::<Vec<_>>());
@@ -559,7 +559,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use num::rational::Ratio;
     use num::traits::FromPrimitive;
 
     use crate::algorithm::two_phase::matrix_provider::matrix_data::Column;
@@ -567,7 +566,8 @@ mod test {
     use crate::data::linear_algebra::vector::Dense;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::BoundDirection;
-    use crate::R32;
+    use crate::data::number_types::rational::Rational64;
+    use crate::R64;
     use crate::tests::problem_1;
 
     #[test]
@@ -581,46 +581,46 @@ mod test {
         assert_eq!(
             matrix_data.column(0),
             Column::Sparse {
-                constraint_values: vec![(1, R32!(1))],
-                slack: Some((2, R32!(1))),
+                constraint_values: vec![(1, R64!(1))],
+                slack: Some((2, R64!(1))),
             },
         );
         // Variable column without bound constant
         assert_eq!(
             matrix_data.column(2),
             Column::Sparse {
-                constraint_values: vec![(0,  R32!(1)), (1, R32!(1))],
-                slack: Some((4, R32!(1))),
+                constraint_values: vec![(0,  R64!(1)), (1, R64!(1))],
+                slack: Some((4, R64!(1))),
             },
         );
         // Lower bounded inequality slack
         assert_eq!(
             matrix_data.column(3),
-            Column::Slack((1, R32!(-1)), []),
+            Column::Slack((1, R64!(-1)), []),
         );
         // Upper bounded inequality slack
         assert_eq!(
             matrix_data.column(4),
-            Column::Slack((2, R32!(1)), []),
+            Column::Slack((2, R64!(1)), []),
         );
         // Variable upper bound slack
         assert_eq!(
             matrix_data.column(5),
-            Column::Slack((3, R32!(1)), []),
+            Column::Slack((3, R64!(1)), []),
         );
         assert_eq!(
             matrix_data.column(6),
-            Column::Slack((4, R32!(1)), []),
+            Column::Slack((4, R64!(1)), []),
         );
 
         // Variable cost
-        assert_eq!(matrix_data.cost_value(0),  &R32!(1));
+        assert_eq!(matrix_data.cost_value(0),  &R64!(1));
         // Upper bounded inequality slack variable cost
-        assert_eq!(matrix_data.cost_value(3), &R32!(0));
+        assert_eq!(matrix_data.cost_value(3), &R64!(0));
         // Lower bounded inequality slack variable cost
-        assert_eq!(matrix_data.cost_value(4), &R32!(0));
+        assert_eq!(matrix_data.cost_value(4), &R64!(0));
         // Bound slack variable cost
-        assert_eq!(matrix_data.cost_value(5), &R32!(0));
+        assert_eq!(matrix_data.cost_value(5), &R64!(0));
 
         assert_eq!(
             matrix_data.constraint_values(),

@@ -4,6 +4,7 @@
 //! practice, we store in a matrix that describes the current basis together with the original
 //! (also sparse) matrix data. This module contains structures that can provide a matrix.
 use crate::data::linear_algebra::SparseTuple;
+use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::number_types::traits::Field;
@@ -119,10 +120,10 @@ pub trait MatrixProvider {
     /// # Return value
     ///
     /// A solution that might be smaller than the number of variables in this problem.
-    fn reconstruct_solution(
+    fn reconstruct_solution<G: Element>(
         &self,
-        column_values: SparseVector<<Self::Column as Column>::F, <Self::Column as Column>::F>,
-    ) -> SparseVector<<Self::Column as Column>::F, <Self::Column as Column>::F>;
+        column_values: SparseVector<G, G>,
+    ) -> SparseVector<G, G>;
 }
 
 /// Columns represent part of a (virtual) data matrix.

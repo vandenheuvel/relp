@@ -372,13 +372,13 @@ where
         direction: BoundDirection,
         activity_bound: &OF,
     ) -> (BoundDirection, Option<Option<OF>>) {
-        let bound_direction = !direction.bitxor(Index::<_>::direction_from_sign(coefficient));
-        let bound_value = self.variable_bound(variable, bound_direction).unwrap();
+        let bound_direction = direction.bitxor(Index::<_>::direction_from_sign(coefficient));
+        let bound_value = self.variable_bound(variable, !bound_direction).unwrap();
         let bound = activity_bound - coefficient * bound_value;
 
         let variable_bound = (self.b(constraint) - bound) / coefficient;
-        let change = self.update_bound(variable, !bound_direction, &variable_bound);
-        (!bound_direction, change)
+        let change = self.update_bound(variable, bound_direction, &variable_bound);
+        (bound_direction, change)
     }
 
     /// Sets variables that can be optimized independently of all others to their optimal values.
@@ -458,6 +458,14 @@ where
             self.constraints_marked_removed,
         )
     }
+
+    pub fn nr_variables_remaining(&self) -> usize {
+        self.general_form.nr_active_variables() - self.removed_variables.len()
+    }
+
+    pub fn nr_constraints_remaining(&self) -> usize {
+        self.general_form.nr_active_constraints() - self.constraints_marked_removed.len()
+    }
 }
 
 pub struct Counters<'a, F: Field> {
@@ -467,7 +475,7 @@ pub struct Counters<'a, F: Field> {
     variable: Vec<usize>,
     /// The elements should at least be reconsidered when the counter drops below 2.
     constraint: Vec<usize>,
-    /// bound that are missing before the activity bound can be computed.
+    /// Number of bounds that are missing before the activity bound can be computed.
     ///
     /// If only one bound is missing, a variable bound can be computed. If none are missing, the
     /// entire variable bound can be computed.
@@ -633,21 +641,24 @@ where
     ///
     /// # Return value
     ///
-    /// If the program is determined to be infeasible, an `Err` type.
-    pub(super) fn presolve_step(&mut self) -> Result<(), LinearProgramType<OF>> {
+    /// `Ok` indicating whether a row or column was removed from the problem. This is used to avoid
+    /// never-ending "improvements" of bounds that don't make the problem easier (but numerically
+    /// harder, unless the problem is rescaled). If the program is determined to be infeasible, an
+    /// `Err` type.
+    pub(super) fn presolve_step(&mut self) -> Result<bool, LinearProgramType<OF>> {
         // Actions that are guaranteed to make the problem smaller
         // Remove a row
         if let Some(&row) = self.queues.empty_row.iter().next() {
-            return self.presolve_empty_constraint(row);
+            return self.presolve_empty_constraint(row).map(|_| true);
         }
         // Remove a column
         if let Some(&variable) = self.queues.substitution.iter().next() {
             self.presolve_fixed_variable(variable);
-            return Ok(());
+            return Ok(true);
         }
         // Remove a bound
         if let Some(&constraint) = self.queues.bound.iter().next() {
-            return self.presolve_simple_bound_constraint(constraint);
+            return self.presolve_simple_bound_constraint(constraint).map(|_| true);
         }
 
         // Actions not guaranteed to make the problem smaller
@@ -660,7 +671,7 @@ where
             return self.presolve_constraint_by_domain_propagation(constraint, direction);
         }
 
-        Ok(())
+        Ok(false)
     }
 
     /// Whether an empty constraint indicates infeasibility.
@@ -792,7 +803,7 @@ where
     fn presolve_constraint_if_slack_with_suitable_bounds(
         &mut self,
         variable_index: usize,
-    ) -> Result<(), LinearProgramType<OF>> {
+    ) -> Result<bool, LinearProgramType<OF>> {
         debug_assert_eq!(self.counters.variable[variable_index], 1);
         debug_assert_eq!(self.counters.iter_active_column(variable_index).count(), 1);
         debug_assert_eq!(self.general_form.variables[variable_index].cost, OF::zero());
@@ -842,10 +853,10 @@ where
             }
 
             self.remove_variable(variable_index, removed);
-            self.update_or_remove_bound(constraint, &coefficient, new_situation)
+            self.update_or_remove_bound(constraint, &coefficient, new_situation).map(|_| true)
         } else {
             self.queues.slack.remove(&variable_index);
-            Ok(())
+            Ok(false)
         }
     }
 
@@ -941,9 +952,9 @@ where
         &mut self,
         constraint: usize,
         direction: BoundDirection,
-    ) -> Result<(), LinearProgramType<OF>> {
-        // We remove from the activity queue here, but the below calls might readd this constraint
-        // to the `self.queues.activity` again.
+    ) -> Result<bool, LinearProgramType<OF>> {
+        // We remove from the activity queue here, but the below calls might add this constraint to
+        // the `self.queues.activity` again.
         self.queues.activity.remove(&(constraint, direction));
         let counter = match direction {
             BoundDirection::Lower => self.counters.activity[constraint].0,
@@ -953,7 +964,7 @@ where
             0 => self.for_entire_constraint(constraint, direction),
             1 => {
                 self.create_variable_bound(constraint, direction);
-                Ok(())
+                Ok(false)
             },
             _ => panic!(),
         }
@@ -973,7 +984,7 @@ where
         &mut self,
         constraint: usize,
         direction: BoundDirection, // Activity bound that can be calculated
-    ) -> Result<(), LinearProgramType<OF>> {
+    ) -> Result<bool, LinearProgramType<OF>> {
         debug_assert_eq!(
             match direction {
                 BoundDirection::Lower => self.counters.activity[constraint].0,
@@ -992,12 +1003,15 @@ where
         if self.is_constraint_removable(constraint, &bound, direction) {
             self.remove_constraint_values(constraint)?;
             self.remove_constraint(constraint);
-            return Ok(());
+            return Ok(true);
         }
 
-        match (direction, self.updates.constraint_types(constraint)) {
-            (BoundDirection::Lower, ConstraintType::Less | ConstraintType::Equal)
-        | (BoundDirection::Upper, ConstraintType::Greater | ConstraintType::Equal) => {
+        if matches!(
+            (direction, self.updates.constraint_types(constraint)),
+            (_, ConstraintType::Equal)
+            | (BoundDirection::Lower, ConstraintType::Less)
+            | (BoundDirection::Upper, ConstraintType::Greater)
+        ) {
             let targets = self.counters.iter_active_row(constraint)
                 .map(|(i, v)| (i, v.clone())) // TODO: Avoid this clone
                 .collect::<Vec<_>>();
@@ -1009,11 +1023,9 @@ where
                     self.after_bound_change(variable, direction, change);
                 }
             }
-        },
-        _ => (),
-    }
+        }
 
-        Ok(())
+        Ok(false)
     }
 
     /// Apply domain propagation through activation bounds for a constraint where all but one of the
@@ -1370,7 +1382,6 @@ impl Queues {
 
 #[cfg(test)]
 mod test {
-    use num::rational::Ratio;
     use num::traits::FromPrimitive;
 
     use crate::data::linear_algebra::matrix::ColumnMajor;
@@ -1381,9 +1392,10 @@ mod test {
     use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable, Variable};
     use crate::data::linear_program::general_form::presolve::Index;
     use crate::data::linear_program::solution::Solution;
+    use crate::data::number_types::rational::Rational32;
     use crate::R32;
 
-    type T = Ratio<i32>;
+    type T = Rational32;
 
     #[test]
     fn presolve_empty_constraint() {

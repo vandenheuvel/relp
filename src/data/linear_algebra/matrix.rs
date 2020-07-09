@@ -31,6 +31,10 @@ pub struct Sparse<F, C, O: Order> {
 
 /// The backend of a `SparseMatrix` can either be column or row major.
 pub trait Order: Sized {
+    /// Create a new matrix with this ordering, using specified data.
+    ///
+    /// Note that the dimensions specified should match the "dimensions" of the data given, and that
+    /// there can be no duplicate indices in the same collection of values in the given data.
     fn new<F, C>(
         data: Vec<SparseTupleVec<F>>,
         nr_rows: usize,
@@ -40,6 +44,11 @@ pub trait Order: Sized {
         F: SparseElement<C>,
         C: SparseComparator,
     ;
+
+    /// Utility method that creates a sparse matrix of this ordering for tests.
+    ///
+    /// Note that the numerics might not be exact due to intermediate casting to floats, for
+    /// convenience in other places of the code base.
     fn from_test_data<F: FromPrimitive, C, IT: ToPrimitive + Zero>(
         rows: &Vec<Vec<IT>>,
         nr_columns: usize,
@@ -49,6 +58,7 @@ pub trait Order: Sized {
         C: SparseComparator,
     ;
 
+    /// Identity matrix of specified field type with this ordering.
     fn identity<F, C>(n: usize) -> Sparse<F, C, Self>
     where
         F: Field + Borrow<C>,
@@ -173,24 +183,37 @@ where
     F: SparseElement<C>,
     C: SparseComparator,
 {
+    /// Concatenate two row oriented matrices.
+    ///
+    /// The new matrix will have as many rows as the two previous matrices had combined. This is a
+    /// cheap operation.
     pub fn concatenate_vertically(self, other: Self) -> Self {
         debug_assert_eq!(self.nr_columns(), other.nr_columns());
 
         self.concatenate_major_indices(other)
     }
 
+    /// Remove rows from this row oriented matrix.
+    ///
+    /// In contrast to removing columns, this is a very cheap operation.
     pub fn remove_rows(&mut self, indices: &[usize]) {
         self.remove_major_indices(indices);
     }
 
+    /// Remove columns from this row oriented matrix.
+    ///
+    /// This is an expensive computation that should be avoided almost always, hence the awkward
+    /// name.
     pub fn remove_columns_although_this_matrix_is_row_ordered(&mut self, indices: &[usize]) {
         self.remove_minor_indices(indices)
     }
 
+    /// Iterate over all rows by reference.
     pub fn iter_rows(&self) -> impl Iterator<Item = &SparseTupleVec<F>> {
         self.data.iter()
     }
 
+    /// Iterate over a row by reference.
     pub fn iter_row(&self, i: usize) -> impl Iterator<Item = &SparseTuple<F>> {
         debug_assert!(i < self.major_dimension_size);
 
@@ -212,10 +235,12 @@ where
         self.inner_set_value(row, column, value)
     }
 
+    /// The number of rows (major dimension size).
     pub fn nr_rows(&self) -> usize {
         self.major_dimension_size
     }
 
+    /// The number of columns (minor dimension size).
     pub fn nr_columns(&self) -> usize {
         self.minor_dimension_size
     }
@@ -326,10 +351,12 @@ impl<F: SparseElement<C>, C: SparseComparator> Sparse<F, C, ColumnMajor> {
         self.inner_set_value(column, row, value)
     }
 
+    /// The number of rows (minor dimension size).
     pub fn nr_rows(&self) -> usize {
         self.minor_dimension_size
     }
 
+    /// The number of columns (major dimension size).
     pub fn nr_columns(&self) -> usize {
         self.major_dimension_size
     }
@@ -516,14 +543,14 @@ where
 #[cfg(test)]
 pub mod test {
     use num::FromPrimitive;
-    use num::rational::Ratio;
 
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
     use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
+    use crate::data::number_types::rational::Rational32;
     use crate::data::number_types::traits::Field;
     use crate::R32;
 
-    type T = Ratio<i32>;
+    type T = Rational32;
 
     fn get_test_matrix<F, C>() -> Sparse<F, C, ColumnMajor>
     where

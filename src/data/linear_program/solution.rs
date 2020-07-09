@@ -3,10 +3,7 @@
 //! Once a linear program is fully solved, a solution is derived. This solution should contain also
 //! any variables that were eliminated as part of a presolve process (constant variables, slack
 //! variables, variables that don't interact with the rest of the problem, etc.).
-
 use std::collections::HashMap;
-
-use crate::data::number_types::traits::Field;
 
 /// Represents a full (including presolved variables, constants, etc.) solution to a linear program.
 ///
@@ -21,7 +18,7 @@ pub struct Solution<F> {
     pub solution_values: Vec<(String, F)>,
 }
 
-impl<F: Field> Solution<F> {
+impl<F: PartialEq + Clone> Solution<F> {
     /// Create a new `Solution` instance.
     ///
     /// A plain constructor.

@@ -6,20 +6,19 @@
 //!
 //! TODO:
 //!     * Support all `BoundType` variants
-use std::convert::{TryFrom, TryInto};
+use std::fmt::{Display, Formatter};
+use std::fmt;
 
-use num::{FromPrimitive, One};
-
-use crate::data::linear_algebra::SparseTuple;
+use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 use crate::data::linear_program::elements::ConstraintType;
 use crate::data::linear_program::elements::VariableType;
+use crate::data::number_types::rational::Rational64;
 use crate::io::error::Import;
-use crate::io::mps::parsing::into_atom_lines;
-use crate::io::mps::parsing::UnstructuredMPS;
-use crate::io::mps::structuring::MPS;
+use crate::io::mps::parse::free;
 
-pub mod parsing;
-pub mod structuring;
+mod convert;
+pub mod number;
+pub mod parse;
 mod token;
 
 /// Parse an MPS program, in string form, to a MPS.
@@ -31,36 +30,116 @@ mod token;
 /// # Return value
 ///
 /// A `Result<MPS, ImportError>` instance.
-pub fn import<F: FromPrimitive + One + PartialEq + Clone>(
+///
+/// # Errors
+///
+/// An Import error, wrapping either a parse error indicating that the file was syntactically
+/// incorrect, or an Inconsistency error indicating that the file is "logically" incorrect.
+pub fn parse(
     program: &impl AsRef<str>,
-) -> Result<MPS<F>, Import> {
-    let atom_lines = into_atom_lines(program);
-    let unstructured_mps = UnstructuredMPS::try_from(atom_lines)
-        .map_err(|e| Import::Parse(e))?;
-    unstructured_mps.try_into()
-        .map_err(|e| Import::LinearProgram(e))
+) -> Result<MPS<Rational64>, Import> {
+    free::parse(program.as_ref())
 }
 
+/// Represents the contents of a MPS file in a structured manner.
+///
+/// `usize` variables in contained structs refer to the index of the cost and row names.
+#[derive(Debug, PartialEq)]
+pub struct MPS<F> {
+    /// Name of the linear program.
+    name: String,
 
+    /// Name of the cost row.
+    cost_row_name: String,
+    /// Variable index and value tuples, describing how the variables appear in the objective
+    /// function.
+    ///
+    /// Column (by index) and coefficient combinations for the objective function.
+    cost_values: SparseTupleVec<F>,
+
+    /// All named constraint types (see the ConstraintType enum).
+    ///
+    /// Ordering corresponds to the row_names field.
+    rows: Vec<Row>,
+    /// Constraint name and variable name combinations.
+    ///
+    /// Ordering in each variable corresponds to the row_names field.
+    columns: Vec<Column<F>>,
+    /// Right-hand side constraint values.
+    ///
+    /// Ordering in each right hand side corresponds to the row_names field.
+    rhss: Vec<Rhs<F>>,
+    /// Limiting constraint activations two-sidedly.
+    ranges: Vec<Range<F>>,
+    /// Bounds on variables.
+    bounds: Vec<Bound<F>>,
+}
+
+#[allow(clippy::too_many_arguments)]
+impl<F> MPS<F> {
+    /// Simple constructor without any logic.
+    pub fn new(
+        name: String,
+        cost_row_name: String,
+        cost_values: SparseTupleVec<F>,
+        rows: Vec<Row>,
+        columns: Vec<Column<F>>,
+        rhss: Vec<Rhs<F>>,
+        ranges: Vec<Range<F>>,
+        bounds: Vec<Bound<F>>,
+    ) -> Self {
+        Self {
+            name,
+            cost_row_name,
+            cost_values,
+            rows,
+            columns,
+            rhss,
+            ranges,
+            bounds,
+        }
+    }
+}
 
 /// MPS files are divided into sections.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-enum Section<'a> {
-    Name(&'a str),
+enum Section {
+    /// After the name, the first section.
     Rows,
-    Columns(VariableType),
+    /// Follows `Rows` section.
+    Columns,
+    /// Right-hand-sides, constraints, i.e. the b of Ax >=< b.
     Rhs,
+    /// Bounds on variables.
     Bounds,
-    /// This section is not used in the MIPLIB 2010 benchmark.
+    /// Bounds on rows.
+    ///
+    /// Note: This section is not used in the MIPLIB 2010 benchmark.
     Ranges,
     /// The `Endata` variant (notice the odd spelling) denotes the end of the file.
     Endata,
 }
 
+impl Display for Section {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Section::Rows => "ROWS",
+            Section::Columns => "COLUMNS",
+            Section::Rhs => "RHS",
+            Section::Bounds => "BOUNDS",
+            Section::Ranges => "RANGES",
+            Section::Endata => "ENDATA",
+        })
+    }
+}
+
 /// Every row is either a cost row or some constraint.
 #[derive(Debug, Eq, PartialEq)]
 enum RowType {
+    /// Typically, there is only one cost row per problem. Otherwise, it's a multi-objective problem
+    /// and it's not clear how they should be parsed.
     Cost,
+    /// Other rows are constraints.
     Constraint(ConstraintType),
 }
 
@@ -70,7 +149,7 @@ enum RowType {
 ///
 /// Not all `BoundType` variants are currently supported.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum BoundType<F> {
+pub enum BoundType<F> {
     /// b <- x (< +inf)
     LowerContinuous(F),
     /// (0 <=) x <= b
@@ -96,17 +175,24 @@ pub(crate) enum BoundType<F> {
 }
 
 /// Every `Row` has a name and a `RowType`.
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub(crate) struct Constraint {
-    pub name_index: usize,
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct Row {
+    /// Each row has a name. Is not really used after parsing, but is stored for writing.
+    pub name: String,
+    /// Direction of the constraint.
     pub constraint_type: ConstraintType,
 }
 
 /// Is either continuous or integer, and has for some rows a coefficient.
+///
+/// Note that all values should be non zero, as this is a sparse representation.
 #[derive(Debug, PartialEq)]
-pub(crate) struct Variable<F> {
-    pub name_index: usize,
+pub struct Column<F> {
+    /// Name of the variable. Used for outputting the solution.
+    pub name: String,
+    /// Whether the variable is integer or not.
     pub variable_type: VariableType,
+    /// Sparse representation of non-zero values in the column.
     pub values: Vec<SparseTuple<F>>,
 }
 
@@ -115,8 +201,12 @@ pub(crate) struct Variable<F> {
 /// A single linear program defined in MPS can have multiple right-hand sides. It relates a row name
 /// to a real constant.
 #[derive(Debug, PartialEq)]
-pub(crate) struct Rhs<F> {
+pub struct Rhs<F> {
+    /// Name of the right-hand side. Stored only for writing the problem to disk.
     pub name: String,
+    /// Sparse representation of the constraint values.
+    ///
+    /// Note that there could be multiple per index, although this is rather rare.
     pub values: Vec<SparseTuple<F>>,
 }
 
@@ -131,16 +221,22 @@ pub(crate) struct Rhs<F> {
 /// E        |     +     |    b    | b + |r|
 /// E        |     -     | b - |r| |   b
 #[derive(Debug, PartialEq)]
-pub(crate) struct Range<F> {
+pub struct Range<F> {  // Type parameter naming: can take all values, not just be nonzero
+    /// Name of the range. Stored only for writing the problem to disk.
     pub name: String,
     /// Sorted constraint indices and their 'r' value.
+    ///
+    /// Typically, only few rows would have a range.
     pub values: Vec<SparseTuple<F>>,
 }
 
 /// Specifies a bound on a variable. The variable can either be continuous or integer, while the
 /// bound can have any direction.
 #[derive(Debug, PartialEq)]
-pub(crate) struct Bound<F> {
+pub struct Bound<F> {
+    /// Name of the bound. Stored only for writing the problem to disk.
     pub name: String,
-    pub values: Vec<(BoundType<F>, usize)>,
+    /// Collection of at most one bound per row. Note that across different bounds, multiple values
+    /// per row may be specified.
+    pub values: Vec<SparseTuple<BoundType<F>>>,
 }

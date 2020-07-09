@@ -1,11 +1,12 @@
 use std::collections::HashSet;
 
 use num::FromPrimitive;
-use num::rational::Ratio;
 
 use crate::{F, R32};
 use crate::algorithm::OptimizationResult;
+use crate::algorithm::two_phase::{phase_one, phase_two};
 use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
+use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
@@ -15,11 +16,10 @@ use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::VariableType;
+use crate::data::number_types::rational::Rational32;
 use crate::data::number_types::traits::{Field, FieldRef};
-use crate::algorithm::two_phase::{phase_one, phase_two};
-use crate::algorithm::two_phase::phase_one::{RankedFeasibilityResult, Rank};
 
-type T = Ratio<i32>;
+type T = Rational32;
 
 #[test]
 fn conversion_pipeline() {

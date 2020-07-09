@@ -2,11 +2,14 @@
 //!
 //! Data structure for manipulation of linear programs.
 use std::collections::{HashMap, HashSet};
+use std::iter::Sum;
 use std::mem;
+use std::ops::{Add, AddAssign, Mul, Neg};
 
 use daggy::{Dag, WouldCycle};
 use daggy::petgraph::data::Element;
 use itertools::repeat_n;
+use num::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::matrix_data;
 use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
@@ -100,12 +103,7 @@ enum RemovedVariable<F> {
 ///
 /// This method might be expensive, use it in debugging only. It can be viewed as a piece of
 /// documentation on the requirements of a `GeneralForm` struct.
-fn is_consistent<OF: 'static + OrderedField>(
-    general_form: &GeneralForm<OF>,
-) -> bool
-where
-    for<'r> &'r OF: OrderedFieldRef<OF>,
-{
+fn is_consistent<F: LinearAlgebraElement>(general_form: &GeneralForm<F>) -> bool {
     // Reference values
     let nr_active_constraints = general_form.nr_active_constraints();
     let nr_active_variables = general_form.nr_active_variables();
@@ -113,7 +111,6 @@ where
     let b = general_form.b.len() == nr_active_constraints;
     let constraints = general_form.constraint_types.len() == nr_active_constraints;
     let rows = general_form.constraints.nr_rows() == nr_active_constraints;
-
 
     let variables = general_form.variables.len() == nr_active_variables;
     let columns = general_form.constraints.nr_columns() == nr_active_variables;
@@ -167,22 +164,18 @@ where
 }
 
 
-impl<OF: 'static> GeneralForm<OF>
-where
-    OF: OrderedField,
-    for<'r> &'r OF: OrderedFieldRef<OF>,
-{
+impl<F: LinearAlgebraElement> GeneralForm<F> {
     /// Create a new linear program in general form.
     ///
     /// Simple constructor except for two indices that get created.
     pub fn new(
         objective: Objective,
-        constraints: Sparse<OF, OF, ColumnMajor>,
+        constraints: Sparse<F, F, ColumnMajor>,
         constraint_types: Vec<ConstraintType>,
-        b: Dense<OF>,
-        variables: Vec<Variable<OF>>,
+        b: Dense<F>,
+        variables: Vec<Variable<F>>,
         variable_names: Vec<String>,
-        fixed_cost: OF,
+        fixed_cost: F,
     ) -> Self {
         let nr_active_variables = variables.len();
 
@@ -202,7 +195,13 @@ where
 
         general_form
     }
+}
 
+impl<OF: 'static> GeneralForm<OF>
+where
+    OF: OrderedField,
+    for<'r> &'r OF: OrderedFieldRef<OF>,
+{
     /// Modify this linear problem such that it is representable by a `MatrixData` structure.
     ///
     /// The problem gets transformed into standard form, which also includes a presolve operation.
@@ -337,8 +336,22 @@ where
     ), LinearProgramType<OF>> {
         let mut index = PresolveIndex::new(&self)?;
 
-        while !index.queues.are_empty() {
-            index.presolve_step()?;
+        let mut iterations_without_removal = 0;
+        while !index.queues.are_empty() && iterations_without_removal < {
+            // It can happen that a linear program is such that it can be recursively "tightened" by
+            // presolving, arbitrarily precise, with the process never terminating. As this happens,
+            // the numbers in the problem will have increasingly large representations.
+            //
+            // To make sure that doesn't happen, this heuristic rule decides when to stop.
+            // TODO(ENHANCEMENT): When should we stop presolving?
+            index.updates.nr_variables_remaining() + 2 * index.updates.nr_constraints_remaining()
+        }{
+            let did_removal = index.presolve_step()?;
+            if did_removal {
+                iterations_without_removal = 0;
+            } else {
+                iterations_without_removal += 1;
+            }
         }
 
         Ok(index.updates.get_updates())
@@ -690,11 +703,15 @@ where
     ///
     /// * `reduced_solution`: Solution values for all variables that are still marked as `Active` in
     /// the "original variables" of this problem.
-    pub fn reshift_solution(&self, reduced_solution: &mut SparseVector<OF, OF>) {
+    pub fn reshift_solution<G>(&self, reduced_solution: &mut SparseVector<G, G>)
+    where
+        G: LinearAlgebraElement + PartialEq<OF> + AddAssign<OF> + From<OF>,
+        for<'r> &'r OF: Neg<Output=OF>,
+    {
         debug_assert_eq!(reduced_solution.len(), self.variables.len());
 
         for (j, variable) in self.variables.iter().enumerate() {
-            reduced_solution.shift_value(j, &-&variable.shift);
+            reduced_solution.shift_value::<OF>(j, -&variable.shift);
         }
     }
 
@@ -711,24 +728,31 @@ where
     /// # Returns
     ///
     /// A complete solution.
-    pub fn compute_full_solution_with_reduced_solution(
+    pub fn compute_full_solution_with_reduced_solution<G>(
         self,
-        mut reduced_solution: SparseVector<OF, OF>,
-    ) -> Solution<OF> {
+        mut reduced_solution: SparseVector<G, G>,
+    ) -> Solution<G>
+    where
+        // TODO: Find a suitable trait alias to avoid this many trait bounds.
+        G: Sum + Neg<Output=G> + AddAssign<OF> + PartialEq<OF> + LinearAlgebraElement + From<OF> + Eq + Ord + Zero,
+        for<'r> G: Add<&'r OF, Output=G>,
+        for<'r> &'r G: Mul<&'r OF, Output=G> + Add<&'r OF, Output=G>,
+    {
         debug_assert_eq!(reduced_solution.len(), self.variables.len());
 
-        let cost = &self.fixed_cost + reduced_solution.iter_values()
+        let cost = reduced_solution.iter_values()
             .map(|(j, v)| {
                 let variable = &self.variables[*j];
-                v * &variable.cost * if variable.flipped { -OF::one() } else { OF::one() }
+                let value = v * &variable.cost;
+                if variable.flipped { -value } else { value }
             })
-            .sum::<OF>();
+            .sum::<G>() + &self.fixed_cost;
         self.reshift_solution(&mut reduced_solution);
 
         // To avoid recomputations, we store all computed intermediate values in this collection.
         let mut new_solutions = vec![None; self.original_variables.len()];
         for j in 0..self.original_variables.len() {
-            self.compute_solution_value_with_bfs(j, &mut new_solutions, &reduced_solution);
+            self.compute_solution_value_with_bfs::<G>(j, &mut new_solutions, &reduced_solution);
         }
         debug_assert!(new_solutions.iter().all(|v| v.is_some()));
 
@@ -757,12 +781,17 @@ where
     /// The solution value for that variable. Can always be determined if the general form is
     /// consistent (that is, there are no cycles in the original variables, see the
     /// `is_consistent` function).
-    fn compute_solution_value_with_bfs<'a>(
+    fn compute_solution_value_with_bfs<'a, G>(
         &self,
         variable: usize,
-        new_solutions: &'a mut Vec<Option<OF>>,
-        reduced_solution: &SparseVector<OF, OF>,
-    ) -> &'a OF {
+        new_solutions: &'a mut Vec<Option<G>>,
+        reduced_solution: &SparseVector<G, G>,
+    ) -> &'a G
+    where
+        G: LinearAlgebraElement + Zero + From<OF> + Sum + Neg<Output=G>,
+        for<'r> &'r G: Mul<&'r OF, Output=G> + Add<&'r OF, Output=G>,
+        for<'r> G: Add<&'r OF, Output=G>,
+    {
         debug_assert!(variable < new_solutions.len());
         debug_assert_eq!(new_solutions.len(), self.original_variables.len());
         debug_assert_eq!(reduced_solution.len(), self.variables.len());
@@ -774,15 +803,15 @@ where
         let new_solution = match &self.original_variables[variable].1 {
             &OriginalVariable::Active(j) => match reduced_solution.get(j) {
                 Some(value) => value.clone(),
-                None => OF::zero(),
+                None => G::zero(),
             },
-            &OriginalVariable::Removed(Solved(ref v)) => v.clone(),
+            &OriginalVariable::Removed(Solved(ref v)) => v.clone().into(),
             OriginalVariable::Removed(FunctionOfOthers { constant, coefficients }) => {
-                constant - coefficients.iter()
+                -coefficients.iter()
                     .map(|(j, coefficient)| {
-                        coefficient * self.compute_solution_value_with_bfs(*j, new_solutions, reduced_solution)
+                        self.compute_solution_value_with_bfs::<G>(*j, new_solutions, reduced_solution) * coefficient
                     })
-                    .sum::<OF>()
+                    .sum::<G>() + constant
             }
         };
 

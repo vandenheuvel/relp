@@ -10,7 +10,7 @@ use itertools::repeat_n;
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InternalOps, InternalOpsHR, ExternalOps};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOps, InternalOpsHR};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;

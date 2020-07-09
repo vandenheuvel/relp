@@ -105,7 +105,7 @@ where
         self.nr_edges()
     }
 
-    fn reconstruct_solution(&self, column_values: SparseVector<F, F>) -> SparseVector<F, F> {
+    fn reconstruct_solution<G>(&self, column_values: SparseVector<G, G>) -> SparseVector<G, G> {
         unimplemented!()
     }
 }
@@ -142,18 +142,17 @@ where
 
 #[cfg(test)]
 mod test {
-    use num::rational::Ratio;
-
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
     use crate::data::linear_algebra::vector::Sparse as SparseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::network::shortest_path::Primal;
+    use crate::data::number_types::rational::Rational32;
 
     #[test]
     fn test_1() {
-        type T = Ratio<i32>;
+        type T = Rational32;
         // TODO(ENHANCEMENT): Decouple these two types
         type S = T;
 
