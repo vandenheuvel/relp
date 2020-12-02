@@ -5,14 +5,18 @@
 //!
 //! The `Tableau` type and algorithm logic in the parent modules is independent or whether a tableau
 //! contains artificial variables, or not. This module enables those abstractions.
-use crate::algorithm::two_phase::matrix_provider::Column;
+use crate::algorithm::two_phase::matrix_provider::{Column, OrderedColumn};
 
 pub mod artificial;
 pub mod non_artificial;
 
 /// The tableau type provides two different ways for the `Tableau` to function, depending on whether
 /// any virtual artificial variables should be included in the problem.
-pub trait Kind<F, FZ> {
+pub trait Kind<F: 'static, FZ> {
+    /// TODO(ENHANCEMENT): Drop the Ordered requirement once specialization on generic type
+    ///  type arguments of trait methods is possible.
+    type Column: Column<F> + OrderedColumn<F>;
+
     /// Coefficient of variable `j` in the objective function.
     ///
     /// # Arguments
@@ -28,7 +32,7 @@ pub trait Kind<F, FZ> {
     ///
     /// Depending on whether the tableau is artificial or not, this requires either an artificial
     /// basis column, or a column from the original problem.
-    fn original_column(&self, j: usize) -> Column<&F, FZ, F>;
+    fn original_column(&self, j: usize) -> Self::Column;
 
     /// Number of rows in the matrix and tableau.
     ///

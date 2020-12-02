@@ -11,7 +11,7 @@ use crate::algorithm::two_phase::{artificial_primal, primal, Rank, RankedFeasibi
 use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -472,7 +472,7 @@ pub fn matrix_data_form<'a>(
 
 pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
     provider: &MP,
-) -> Tableau<T, T, CarryMatrix<T, T>, Partially<T, T, MP>> {
+) -> Tableau<T, T, Carry<T, T>, Partially<T, T, MP>> {
     let m = 5;
     let carry = {
         let minus_objective = R32!(-2);
@@ -481,7 +481,7 @@ pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
         let basis_inverse_rows = (0..m)
             .map(|i| SparseVector::standard_basis_vector(i, m))
             .collect();
-        CarryMatrix::new(minus_objective, minus_pi, b, basis_inverse_rows)
+        Carry::new(minus_objective, minus_pi, b, basis_inverse_rows)
     };
     let artificials = vec![0, 1];
     let mut basis_indices = artificials.clone();
@@ -499,7 +499,7 @@ pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
 
 pub fn tableau_form<MP: MatrixProvider<T, T>>(
     provider: &MP,
-) -> Tableau<T, T, CarryMatrix<T, T>, NonArtificial<T, T, MP>> {
+) -> Tableau<T, T, Carry<T, T>, NonArtificial<T, T, MP>> {
     let carry = {
         let minus_objective = R32!(-2);
         let minus_pi = Dense::from_test_data(vec![-8, -1, 0, 0, 0]);
@@ -511,7 +511,7 @@ pub fn tableau_form<MP: MatrixProvider<T, T>>(
             SparseVector::from_test_data(vec![0, 0, 0, 1, 0]),
             SparseVector::from_test_data(vec![-1, 0, 0, 0, 1]),
         ];
-        CarryMatrix::new(minus_objective, minus_pi, b, basis_inverse_rows)
+        Carry::new(minus_objective, minus_pi, b, basis_inverse_rows)
     };
     let basis_indices = vec![2, 0, 4, 5, 6];
     let basis_columns = basis_indices.iter().copied().collect();

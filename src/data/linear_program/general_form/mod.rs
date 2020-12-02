@@ -100,7 +100,7 @@ enum RemovedVariable<F> {
 ///
 /// This method might be expensive, use it in debugging only. It can be viewed as a piece of
 /// documentation on the requirements of a `GeneralForm` struct.
-fn is_consistent<OF: OrderedField, OFZ: SparseElementZero<OF>>(
+fn is_consistent<OF: 'static + OrderedField, OFZ: SparseElementZero<OF>>(
     general_form: &GeneralForm<OF, OFZ>,
 ) -> bool
 where
@@ -167,9 +167,11 @@ where
 }
 
 
-impl<OF: OrderedField, OFZ: SparseElementZero<OF>> GeneralForm<OF, OFZ>
+impl<OF: 'static, OFZ> GeneralForm<OF, OFZ>
 where
+    OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
+    OFZ: SparseElementZero<OF>,
 {
     /// Create a new linear program in general form.
     ///

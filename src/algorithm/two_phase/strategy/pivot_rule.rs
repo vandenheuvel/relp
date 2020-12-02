@@ -21,7 +21,7 @@ pub trait PivotRule {
     /// Create a new instance.
     fn new() -> Self;
     /// Column selection rule for the primal Simplex method.
-    fn select_primal_pivot_column<OF, OFZ, IM, K>(
+    fn select_primal_pivot_column<OF: 'static, OFZ, IM, K>(
         &mut self,
         tableau: &Tableau<OF, OFZ, IM, K>,
     ) -> Option<SparseTuple<OF>>
@@ -43,7 +43,7 @@ impl PivotRule for FirstProfitable {
         Self
     }
 
-    fn select_primal_pivot_column<OF, OFZ, IM, K>(
+    fn select_primal_pivot_column<OF: 'static, OFZ, IM, K>(
         &mut self,
         tableau: &Tableau<OF, OFZ, IM, K>,
     ) -> Option<SparseTuple<OF>>
@@ -72,7 +72,7 @@ impl PivotRule for FirstProfitableWithMemory {
         Self { last_selected: None }
     }
 
-    fn select_primal_pivot_column<OF, OFZ, IM, K>(
+    fn select_primal_pivot_column<OF: 'static, OFZ, IM, K>(
         &mut self,
         tableau: &Tableau<OF, OFZ, IM, K>,
     ) -> Option<SparseTuple<OF>>
@@ -108,7 +108,7 @@ impl PivotRule for SteepestDescent {
         Self
     }
 
-    fn select_primal_pivot_column<OF, OFZ, IM, K>(
+    fn select_primal_pivot_column<OF: 'static, OFZ, IM, K>(
         &mut self,
         tableau: &Tableau<OF, OFZ, IM, K>,
     ) -> Option<SparseTuple<OF>>

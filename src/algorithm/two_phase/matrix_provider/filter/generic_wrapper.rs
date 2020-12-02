@@ -1,8 +1,11 @@
-//! # Removing rows from a matrix provider without modifying it
-//!
 //! When a matrix is represented with an unusual backend, like a network, it might be practical to
 //! remove rows from the matrix it represents without having to adapt the underlying implementation.
 //! This module provides a wrapper around any matrix provider that removes rows from it.
+//!
+//! Note that this implementation is there only as a fall-back option; really, implementors of the
+//! `MatrixProvider` trait should either ensure that the problem is full rank, or implement one of
+//! the traits in the parent module and write code that is efficiently converts their specific
+//! instance.
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fmt;
@@ -10,37 +13,107 @@ use std::marker::PhantomData;
 
 use itertools::repeat_n;
 
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::filter::{ToFiltered, Filtered};
 use crate::algorithm::two_phase::matrix_provider::variable::FeasibilityLogic;
 use crate::algorithm::two_phase::PartialInitialBasis;
 use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::BoundDirection;
-use crate::data::number_types::traits::Field;
+use crate::data::number_types::traits::{Field, OrderedFieldRef};
 
-/// Wraps a `MatrixProvider` deleting some of its constraint rows, variable bounds should not be
-/// deleted.
+/// Remove a set of rows from a column.
+///
+/// Note that only constraint rows should be removed.
+pub trait IntoFilteredColumn<F: 'static>: Column<F> {
+    /// The type used to represent the filtered version of the column.
+    ///
+    /// This will often be `Self`.
+    ///
+    /// This type has no lifetime attached to it, because it is likely better to filter once and
+    /// then iterate over references of the filtered object, rather than to filter repeatedly while
+    /// iterating.
+    type Filtered: Column<F> + OrderedColumn<F>;
+
+    /// Filter the column.
+    ///
+    /// # Arguments
+    ///
+    /// * `to_remove`: Indices of rows to remove.
+    fn into_filtered(self, to_remove: &[usize]) -> Self::Filtered;
+}
+
+/// Wraps a `MatrixProvider`, acting as if rows were removed from the inner matrix provider.
 ///
 /// Used for deleting duplicate constraints after finding primal feasibility.
+///
+/// Only constraint rows should be deleted, variable bounds should remain intact.
+/// TODO: Check the above property.
 #[derive(PartialEq, Debug)]
 pub struct RemoveRows<'a, F, FZ, MP> {
     provider: &'a MP,
     /// List of rows that this method removes.
     ///
     /// Sorted at all times.
-    pub rows_to_skip: Vec<usize>,
     // TODO(OPTIMIZATION): Consider using a `HashMap`.
+    pub rows_to_skip: Vec<usize>,
 
     phantom_number_type: PhantomData<F>,
     phantom_number_type_zero: PhantomData<FZ>,
 }
 
-impl<'a, F, FZ, MP> RemoveRows<'a, F, FZ, MP>
-    where
-        F: Field + 'a,
-        FZ: SparseElementZero<F>,
-        MP: MatrixProvider<F, FZ> + 'a,
+impl<'provider, F: 'static, FZ, MP> Filtered<F, FZ> for RemoveRows<'provider, F, FZ, MP>
+where
+    F: Field,
+    FZ: SparseElementZero<F>,
+    MP: MatrixProvider<F, FZ, Column: IntoFilteredColumn<F>>,
+{
+    fn filtered_rows(&self) -> &[usize] {
+        &self.rows_to_skip
+    }
+}
+
+impl<F: 'static, FZ, MP: 'static> ToFiltered<F, FZ> for MP
+where
+    F: Field,
+    for<'r> &'r F: OrderedFieldRef<F>,
+    FZ: SparseElementZero<F>,
+    MP: MatrixProvider<F, FZ, Column: IntoFilteredColumn<F>>,
+    <<MP as MatrixProvider<F, FZ>>::Column as IntoFilteredColumn<F>>::Filtered: OrderedColumn<F>,
+{
+    type Filtered<'provider> = RemoveRows<'provider, F, FZ, MP>;
+
+    /// Create a new `RemoveRows` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `provider`: Reference to an instance implementing the `MatrixProvider` trait. Rows from
+    /// this provider will be removed.
+    /// * `rows_to_skip`: A **sorted** list of rows that are skipped.
+    ///
+    /// # Return value
+    ///
+    /// A new `RemoveRows` instance.
+    default fn to_filtered(&self, rows_to_skip: Vec<usize>) -> Self::Filtered<'_> {
+        debug_assert!(rows_to_skip.is_sorted());
+        debug_assert_eq!(rows_to_skip.iter().collect::<HashSet<_>>().len(), rows_to_skip.len());
+
+        RemoveRows {
+            provider: self,
+            rows_to_skip,
+
+            phantom_number_type: PhantomData,
+            phantom_number_type_zero: PhantomData,
+        }
+    }
+}
+
+impl<'provider, F: 'static, FZ, MP> RemoveRows<'provider, F, FZ, MP>
+where
+    F: Field,
+    FZ: SparseElementZero<F>,
+    MP: MatrixProvider<F, FZ> + 'provider,
 {
     /// Create a new `RemoveRows` instance.
     ///
@@ -53,7 +126,7 @@ impl<'a, F, FZ, MP> RemoveRows<'a, F, FZ, MP>
     /// # Return value
     ///
     /// A new `RemoveRows` instance.
-    pub fn new(provider: &'a MP, rows_to_skip: Vec<usize>) -> Self {
+    pub fn new(provider: &'provider MP, rows_to_skip: Vec<usize>) -> Self {
         debug_assert!(rows_to_skip.is_sorted());
         debug_assert_eq!(rows_to_skip.iter().collect::<HashSet<_>>().len(), rows_to_skip.len());
 
@@ -104,14 +177,7 @@ impl<'a, F, FZ, MP> RemoveRows<'a, F, FZ, MP>
     pub fn nr_constraints_deleted(&self) -> usize {
         self.rows_to_skip.len()
     }
-}
 
-impl<'a, F: 'a, FZ, MP> RemoveRows<'a, F, FZ, MP>
-    where
-        F: Field,
-        FZ: SparseElementZero<F>,
-        MP: 'a + MatrixProvider<F, FZ>,
-{
     /// Method abstracting over the row and column getter methods.
     ///
     /// # Arguments
@@ -121,7 +187,7 @@ impl<'a, F: 'a, FZ, MP> RemoveRows<'a, F, FZ, MP>
     /// # Return value
     ///
     /// Index in the original problem.
-    fn get_underlying_index(skip_indices_array: &Vec<usize>, i: usize) -> usize {
+    fn get_underlying_index(skip_indices_array: &[usize], i: usize) -> usize {
         if skip_indices_array.len() == 0 {
             // If no indices have been deleted, it's just the original value
             i
@@ -172,34 +238,23 @@ impl<'a, F: 'a, FZ, MP> RemoveRows<'a, F, FZ, MP>
     }
 }
 
-
-impl<'a, F, FZ, MP> MatrixProvider<F, FZ> for RemoveRows<'a, F, FZ, MP>
-    where
-        F: Field + 'a,
-        FZ: SparseElementZero<F>,
-        MP: MatrixProvider<F, FZ>,
+impl<'provider, F: 'static, FZ, MP> MatrixProvider<F, FZ> for RemoveRows<'provider, F, FZ, MP>
+where
+    F: Field,
+    FZ: SparseElementZero<F>,
+    MP: MatrixProvider<F, FZ, Column: IntoFilteredColumn<F>>,
 {
-    fn column(&self, j: usize) -> Column<&F, FZ, F> {
-        match self.provider.column(j) {
-            Column::Sparse(mut vector) => {
-                vector.remove_indices(&self.rows_to_skip);
-                Column::Sparse(vector)
-            },
-            Column::Slack(index, value) => {
-                match self.rows_to_skip.binary_search(&index) {
-                    Ok(_) => {
-                        let new_length = self.provider.nr_rows() - self.rows_to_skip.len();
-                        Column::Sparse(SparseVector::new(Vec::with_capacity(0), new_length))
-                    },
-                    Err(skipped_before) => {
-                        Column::Slack(index - skipped_before, value)
-                    },
-                }
-            },
-        }
+    type Column = <MP::Column as IntoFilteredColumn<F>>::Filtered;
+
+    fn column(&self, j: usize) -> Self::Column {
+        debug_assert!(j < self.nr_columns());
+
+        self.provider.column(j).into_filtered(&self.rows_to_skip)
     }
 
     fn cost_value(&self, j: usize) -> &F {
+        debug_assert!(j < self.nr_columns());
+
         self.provider.cost_value(j)
     }
 
@@ -210,14 +265,11 @@ impl<'a, F, FZ, MP> MatrixProvider<F, FZ> for RemoveRows<'a, F, FZ, MP>
     }
 
     fn bound_row_index(&self, j: usize, bound_type: BoundDirection) -> Option<usize> {
+        debug_assert!(j < self.nr_columns());
         debug_assert!(self.rows_to_skip.iter().all(|&i| i < self.provider.nr_constraints()));
 
         // Only constraint rows are deleted,
         self.provider.bound_row_index(j, bound_type).map(|nr| nr - self.nr_constraints_deleted())
-    }
-
-    fn bounds(&self, j: usize) -> (&F, Option<&F>) {
-        self.provider.bounds(j)
     }
 
     /// This implementation assumes that only constraint rows are removed from the `MatrixProvider`.
@@ -248,7 +300,7 @@ impl<'a, F, FZ, MP> MatrixProvider<F, FZ> for RemoveRows<'a, F, FZ, MP>
     }
 }
 
-impl<'a, F, FZ, MP> PartialInitialBasis for RemoveRows<'a, F, FZ, MP>
+impl<'provider, F: 'static, FZ, MP> PartialInitialBasis for RemoveRows<'provider, F, FZ, MP>
 where
     MP: MatrixProvider<F, FZ> + PartialInitialBasis,
 {
@@ -261,30 +313,35 @@ where
     fn nr_initial_elements(&self) -> usize {
         // Requires introduction of a counter, but this code should never be run anyways (this is
         // never part of a first phase search for a feasible value, when this is relevant).
-        unimplemented!();
+        panic!("This code path should not be part of the first phase.");
     }
 }
 
-impl<'a, F, FZ, MP> FeasibilityLogic<'a, F, FZ> for RemoveRows<'a, F, FZ, MP>
-    where
-        F: Field + 'a,
-        FZ: SparseElementZero<F>,
-        MP: MatrixProvider<F, FZ> + FeasibilityLogic<'a, F, FZ>,
+impl<'provider, F: 'static, FZ, MP> FeasibilityLogic<F, FZ> for RemoveRows<'provider, F, FZ, MP>
+where
+    F: Field + 'provider,
+    FZ: SparseElementZero<F>,
+    MP: MatrixProvider<F, FZ, Column: IntoFilteredColumn<F>> + FeasibilityLogic<F, FZ>,
 {
     fn is_feasible(&self, j: usize, value: F) -> bool {
+        debug_assert!(j < self.nr_columns());
+
         self.provider.is_feasible(j, value)
     }
 
     fn closest_feasible(&self, j: usize, value: F) -> (Option<F>, Option<F>) {
+        debug_assert!(j < self.nr_columns());
+
         self.provider.closest_feasible(j, value)
     }
 }
 
-impl<'a, F, FZ, MP> Display for RemoveRows<'a, F, FZ, MP>
-    where
-        F: Field + 'a,
-        FZ: SparseElementZero<F>,
-        MP: MatrixProvider<F, FZ>,
+impl<'provider, F: 'static, FZ, MP> Display for RemoveRows<'provider, F, FZ, MP>
+where
+    F: Field + 'provider,
+    FZ: SparseElementZero<F>,
+    MP: MatrixProvider<F, FZ, Column: IntoFilteredColumn<F>>,
+    <<MP as MatrixProvider<F, FZ>>::Column as IntoFilteredColumn<F>>::Filtered: OrderedColumn<F>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 8;
@@ -298,17 +355,8 @@ impl<'a, F, FZ, MP> Display for RemoveRows<'a, F, FZ, MP>
 
         for row in 0..self.nr_rows() {
             write!(f, "{:>width$}", format!("{} |", row), width = width)?;
-            for column in 0..self.nr_columns() {
-                let x = self.column(column);
-                let value = format!("{}", match &x {
-                    Column::Sparse(ref vector) => vector[row].clone(),
-                    &Column::Slack(index, direction) => if index == row {
-                        direction.into()
-                    } else {
-                        F::zero()
-                    },
-                });
-                write!(f, "{:^width$}", value, width = width)?;
+            for j in 0..self.nr_columns() {
+                 write!(f, "{:^width$}", self.column(j).index_to_string(row), width = width)?;
             }
             writeln!(f)?;
         }
@@ -321,7 +369,7 @@ mod test {
     use num::rational::Ratio;
 
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
-    use crate::algorithm::two_phase::matrix_provider::remove_rows::RemoveRows;
+    use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::RemoveRows;
 
     #[test]
     fn get_underlying_index() {

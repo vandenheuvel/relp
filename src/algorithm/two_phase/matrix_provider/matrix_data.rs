@@ -6,9 +6,14 @@ use std::fmt;
 
 use itertools::repeat_n;
 
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::{Column as ColumnTrait, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use crate::algorithm::two_phase::PartialInitialBasis;
+use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
+use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
+use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseElement, SparseElementZero};
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::{BoundDirection, VariableType};
@@ -35,7 +40,7 @@ use crate::data::number_types::traits::{Field, FieldRef};
 ///                             ||                                  |                       |  +/- 1               |
 /// Bound constraints           ||    constants (one 1 per row)     |           0           |         +/- 1        |
 ///                             ||                                  |                       |                +/- 1 |
-/// ---------------------------------------------------------------------------------------------------------------
+/// ----------------------------------------------------------------------------------------------------------------
 #[allow(non_snake_case)]
 #[derive(Debug, PartialEq)]
 pub struct MatrixData<'a, F, FZ> {
@@ -85,7 +90,7 @@ enum ColumnType {
     BoundSlack(usize),
 }
 
-impl<'a, F, FZ> MatrixData<'a, F, FZ>
+impl<'a, F: 'static, FZ> MatrixData<'a, F, FZ>
 where
     F: SparseElement<F> + Field,
     FZ: SparseElementZero<F>,
@@ -151,6 +156,7 @@ where
         let separating_indices = self.get_variable_separating_indices();
         debug_assert_eq!(separating_indices[3], self.nr_columns());
 
+        // TODO(OPTIMIZATION): Consider binary search here
         if j < separating_indices[0] {
             ColumnType::Normal(j)
         } else if j < separating_indices[1] {
@@ -205,36 +211,40 @@ where
     }
 }
 
-impl<'a, F, FZ> MatrixProvider<F, FZ> for MatrixData<'a, F, FZ>
+impl<'data, F: 'static, FZ> MatrixProvider<F, FZ> for MatrixData<'data, F, FZ>
 where
     F: Field,
     for<'r> &'r F: FieldRef<F>,
     FZ: SparseElementZero<F>,
 {
-    fn column(&self, j: usize) -> Column<&F, FZ, F> {
+    type Column = Column<F>;
+
+    fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
 
+        // TODO(ARCHITECTURE): Can the +/- F::one() constants be avoided? They might be large and
+        //  require an allocation.
         match self.column_type(j) {
             ColumnType::Normal(j) => {
-                // TODO: Avoid cloning, allocating (need existential type on matrix provider?)
-                let mut tuples = self.constraints.iter_column(j)
-                    .map(|(i, v)| (*i, v)).collect::<Vec<_>>();
-                if let Some(bound_row_index) = self.bound_row_index(j, BoundDirection::Upper) {
-                    tuples.push((bound_row_index, &self.ONE)); // It's always an upper bound, so `1f64`
+                Column::Sparse {
+                    // TODO(ENHANCEMENT): Avoid this cloning by using references (needs the GAT
+                    //  feature to be more mature).
+                    constraint_values: self.constraints.iter_column(j).cloned().collect(),
+                    slack: self.bound_row_index(j, BoundDirection::Upper)
+                        .map(|i| (i, F::one())),
                 }
-                Column::Sparse(SparseVector::new(tuples, self.nr_rows()))
             },
             ColumnType::UpperInequalitySlack(j) => {
                 let row_index = self.nr_equality_constraints + j;
-                Column::Slack(row_index, BoundDirection::Upper)
+                Column::Slack((row_index, F::one()), [])
             },
             ColumnType::LowerInequalitySlack(j) => {
                 let row_index = self.nr_equality_constraints + self.nr_upper_bounded_constraints + j;
-                Column::Slack(row_index, BoundDirection::Lower)
+                Column::Slack((row_index, -F::one()), [])
             },
             ColumnType::BoundSlack(j) => {
                 let row_index = self.nr_constraints() + j;
-                Column::Slack(row_index, BoundDirection::Upper)
+                Column::Slack((row_index, F::one()), [])
             },
         }
     }
@@ -250,8 +260,11 @@ where
 
     fn constraint_values(&self) -> Dense<F> {
         let mut constraint_coefficients = self.b.clone();
-        constraint_coefficients.extend_with_values(self.bound_index_to_non_slack_variable_index.iter()
-            .map(|&j| self.variables[j].upper_bound.clone().unwrap()).collect());
+        constraint_coefficients.extend_with_values(
+            self.bound_index_to_non_slack_variable_index.iter()
+                .map(|&j| self.variables[j].upper_bound.clone().unwrap())
+                .collect()
+        );
         constraint_coefficients
     }
 
@@ -273,15 +286,6 @@ where
                 _ => None,
             }
         }
-    }
-
-    fn bounds(&self, j: usize) -> (&F, Option<&F>) {
-        debug_assert!(j < self.nr_columns());
-
-        (&self.ZERO, match self.column_type(j) {
-            ColumnType::Normal(j) => self.variables[j].upper_bound.as_ref(),
-            _ => None,
-        })
     }
 
     fn nr_constraints(&self) -> usize {
@@ -306,12 +310,12 @@ where
     ) -> SparseVector<F, FZ2, F> {
         debug_assert_eq!(column_values.len(), self.nr_columns());
 
-        column_values.remove_indices(&(self.nr_normal_variables()..self.nr_columns()).collect());
+        column_values.remove_indices(&(self.nr_normal_variables()..self.nr_columns()).collect::<Vec<_>>());
         column_values
     }
 }
 
-impl<'a, F, FZ> PartialInitialBasis for MatrixData<'a, F, FZ>
+impl<'a, F: 'static, FZ> PartialInitialBasis for MatrixData<'a, F, FZ>
 where
     F: SparseElement<F> + Field,
     FZ: SparseElementZero<F>,
@@ -339,7 +343,176 @@ where
     }
 }
 
-impl<'a, F, FZ> Display for MatrixData<'a, F, FZ>
+/// Describes a column from a `MatrixData` struct.
+///
+/// Either a vector with (probably several) elements, or a slack column. They are always sparsely
+/// represented.
+///
+/// TODO(ARCHITECTURE): Can this type be simplified?
+#[derive(Eq, PartialEq, Debug)]
+pub enum Column<F> {
+    /// The case where there is at least one constraint value and possibly a slack.
+    Sparse {
+        /// Values belonging to constraints (and not variable bounds).
+        // TODO(ARCHITECTURE): This cloning can be avoided if we can use GATs to store a type
+        //  referencing the data instead.
+        constraint_values: Vec<SparseTuple<F>>,
+        /// Positive slack for a variable bound.
+        ///
+        /// Note that this slack value is always positive, because the matrix data should be in
+        /// canonical form. As such, the value in this tuple is always the same: `1`.
+        ///
+        /// The values are grouped in a tuple, such that the `ColumnIntoIter` can yield a reference
+        /// to it directly.
+        ///
+        /// TODO(ARCHITECTURE): Can this value be eliminated?
+        slack: Option<(usize, F)>, // Is always a positive slack: `1`.
+    },
+    /// The case where there is only a variable bound being represented.
+    ///
+    /// Note that the constant value is always +/- 1, because these bound columns are normalized.
+    ///
+    /// TODO(ENHANCEMENT): Consider relaxing the requirement that bound columns are normalized.
+    // TODO(ARCHITECTURE): F is always 1 or -1, can we optimize that? Changing it's type to
+    //  BoundDirection can be bit tricky because you can't convert it to a reference while
+    //  iterating, and we're currently iterating over references.
+    // TODO(PERFORMANCE): Can we eliminate the zero sized array? It's currently there to avoid
+    //  wrapping the `ColumnIntoIter::parent_iter_cloned` field in an `Option`, but that might be
+    //  equivalent after optimizations.
+    Slack((usize, F), [(usize, F); 0]),
+}
+
+impl<F: 'static> IdentityColumn<F> for Column<F>
+where
+    F: Field,
+{
+    fn identity(i: usize, len: usize) -> Self {
+        assert!(i < len);
+
+        Self::Slack((i, F::one()), [])
+    }
+}
+
+#[allow(clippy::type_repetition_in_bounds)]
+impl<F> ColumnTrait<F> for Column<F>
+where
+    // TODO: Once GATs are more developed, it could be possible to replace this bound with a where
+    //  clause on the method. Then, the 'static bound doesn't propagate through the entire codebase.
+    //  Once this is done, remove the `clippy::type_repetition_in_bounds` annotation.
+    F: 'static,
+    F: Field,
+{
+    type Iter<'a> = ColumnIter<'a, F, impl Iterator<Item = &'a SparseTuple<F>> + Clone>;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        ColumnIter {
+            constraints: match self {
+                Column::Sparse { constraint_values, .. } => constraint_values.iter(),
+                Column::Slack(_, mock_array) => mock_array.iter(),
+            },
+            slack: match self {
+                Column::Sparse { slack, .. } => slack.as_ref(),
+                Column::Slack(pair, _) => Some(pair),
+            },
+        }
+    }
+
+    fn index_to_string(&self, i: usize) -> String {
+        match &self {
+            Column::Sparse { constraint_values, slack } => {
+                let value = constraint_values.iter()
+                    .find(|&&(index, _)| index == i);
+                match value {
+                    None => match slack {
+                        Some((index, v)) if *index == i => v.to_string(),
+                        _ => "0".to_string(),
+                    }
+                    Some((_, v)) => v.to_string(),
+                }
+            }
+            Column::Slack((index, value), ..) => {
+                if *index == i {
+                    value.to_string()
+                } else {
+                    "0".to_string()
+                }
+            }
+        }
+    }
+}
+
+/// Mark this column implementation as ordered.
+impl<F: 'static> OrderedColumn<F> for Column<F>
+where
+    F: Field,
+{
+}
+
+/// Describes how to iterate over a matrix data column.
+///
+/// Stores only references to the column struct.
+#[derive(Clone)]
+pub struct ColumnIter<'a, F, I> {
+    /// Iterates over the nonzero constraint values (i.e. not a variable bound).
+    constraints: I,
+
+    /// Slack value always comes after the elements in `parent_iter_cloned`.
+    slack: Option<&'a (usize, F)>,
+}
+
+impl<'a, F: 'static, I> Iterator for ColumnIter<'a, F, I>
+where
+    I: Iterator<Item = &'a SparseTuple<F>> + Clone,
+    F: Field,
+{
+    type Item = &'a SparseTuple<F>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.constraints.next().or_else(|| self.slack.take())
+    }
+}
+
+impl<F: 'static> IntoFilteredColumn<F> for Column<F>
+where
+    F: Field,
+{
+    type Filtered = Column<F>;
+
+    fn into_filtered(self, to_filter: &[usize]) -> Self::Filtered {
+        debug_assert!(to_filter.is_sorted());
+
+        match self {
+            Column::Sparse { mut constraint_values, slack, .. } => {
+                remove_sparse_indices(&mut constraint_values, to_filter);
+
+                let new_row_index = slack
+                    .map(|(row_index, value)| ({
+                        to_filter
+                            .binary_search(&row_index)
+                            .map_err(|data_index| row_index - data_index)
+                    }, value));
+                let slack = if let Some((Err(row_index), value)) = new_row_index {
+                    Some((row_index, value))
+                } else { None };
+
+                Column::Sparse { constraint_values, slack, }
+            },
+            Column::Slack((row_index, direction), ..) => {
+                // Reasonable applications of row filtering would not create empty columns
+                debug_assert!(!to_filter.contains(&row_index));
+
+                match to_filter.binary_search(&row_index) {
+                    Ok(_) => unreachable!("Deleting this row would have created an empty column"),
+                    Err(skipped_before) => {
+                        Column::Slack((row_index - skipped_before, direction), [])
+                    },
+                }
+            }
+        }
+    }
+}
+
+impl<'a, F: 'static, FZ> Display for MatrixData<'a, F, FZ>
 where
     F: Field + 'a,
     for<'r> &'r F: FieldRef<F>,
@@ -377,14 +550,10 @@ where
                 if self.get_variable_separating_indices().contains(&column) {
                     write!(f, "|")?;
                 }
-                let value = match self.column(column) {
-                    Column::Sparse(vector) => vector[row].clone(),
-                    Column::Slack(index, direction) => if row == index {
-                        direction.into()
-                    } else {
-                        F::zero()
-                    },
-                };
+                let value = &self.column(column).iter()
+                    .find(|&&(index, _)| index == row)
+                    .map(|(_, value)| value.to_string())
+                    .unwrap_or("0".to_string());
                 write!(f, "{:^width$}", format!("{}", value), width = width)?;
             }
             writeln!(f)?;
@@ -398,9 +567,9 @@ mod test {
     use num::rational::Ratio;
     use num::traits::FromPrimitive;
 
-    use crate::algorithm::two_phase::matrix_provider::Column;
+    use crate::algorithm::two_phase::matrix_provider::matrix_data::Column;
     use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
-    use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
+    use crate::data::linear_algebra::vector::Dense;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::BoundDirection;
     use crate::R32;
@@ -413,42 +582,40 @@ mod test {
 
         assert_eq!(matrix_data.nr_normal_variables(), 3);
 
-        // // Variables with bound
-        assert_eq!(matrix_data.bounds(0), (&R32!(0), Some(&R32!(2))));
-        assert_eq!(matrix_data.bounds(1), (&R32!(0), Some(&R32!(2))));
-        // Variable without bound
-        assert_eq!(matrix_data.bounds(2), (&R32!(0), Some(&R32!(2))));
-        // Slack variable, as such without bound
-        assert_eq!(matrix_data.bounds(3), (&R32!(0), None));
-
         // Variable column with bound constant
         assert_eq!(
             matrix_data.column(0),
-            Column::Sparse(SparseVector::new(vec![(1, &R32!(1)), (2,  &R32!(1))], 5)),
+            Column::Sparse {
+                constraint_values: vec![(1, R32!(1))],
+                slack: Some((2, R32!(1))),
+            },
         );
         // Variable column without bound constant
         assert_eq!(
             matrix_data.column(2),
-            Column::Sparse(SparseVector::new(vec![(0,  &R32!(1)), (1, &R32!(1)), (4, &R32!(1))], 5)),
-        );
-        // Upper bounded inequality slack
-        assert_eq!(
-            matrix_data.column(3),
-            Column::Slack(1, BoundDirection::Lower),
+            Column::Sparse {
+                constraint_values: vec![(0,  R32!(1)), (1, R32!(1))],
+                slack: Some((4, R32!(1))),
+            },
         );
         // Lower bounded inequality slack
         assert_eq!(
+            matrix_data.column(3),
+            Column::Slack((1, R32!(-1)), []),
+        );
+        // Upper bounded inequality slack
+        assert_eq!(
             matrix_data.column(4),
-            Column::Slack(2, BoundDirection::Upper),
+            Column::Slack((2, R32!(1)), []),
         );
         // Variable upper bound slack
         assert_eq!(
             matrix_data.column(5),
-            Column::Slack(3, BoundDirection::Upper),
+            Column::Slack((3, R32!(1)), []),
         );
         assert_eq!(
             matrix_data.column(6),
-            Column::Slack(4, BoundDirection::Upper),
+            Column::Slack((4, R32!(1)), []),
         );
 
         // Variable cost
@@ -474,12 +641,6 @@ mod test {
         assert_eq!(matrix_data.bound_row_index(3, BoundDirection::Lower), None);
         assert_eq!(matrix_data.bound_row_index(4, BoundDirection::Lower), None);
         assert_eq!(matrix_data.bound_row_index(5, BoundDirection::Lower), None);
-
-        assert_eq!(matrix_data.bounds(0), (&R32!(0), Some(&R32!(2))));
-        assert_eq!(matrix_data.bounds(2), (&R32!(0), Some(&R32!(2))));
-        assert_eq!(matrix_data.bounds(3), (&R32!(0), None));
-        assert_eq!(matrix_data.bounds(4), (&R32!(0), None));
-        assert_eq!(matrix_data.bounds(5), (&R32!(0), None));
 
         assert_eq!(matrix_data.nr_constraints(), 2);
         assert_eq!(matrix_data.nr_bounds(), 3);

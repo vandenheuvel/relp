@@ -162,9 +162,11 @@ pub(super) struct Updates<'a, F: Field, FZ: SparseElementZero<F>> {
     /// Original problem being solved. Included as an attribute to allow nicer code, see above.
     general_form: &'a GeneralForm<F, FZ>,
 }
-impl<'a, OF: OrderedField, OFZ: SparseElementZero<OF>> Updates<'a, OF, OFZ>
-    where
-            for<'r> &'r OF: OrderedFieldRef<OF>,
+impl<'a, OF: 'static, OFZ> Updates<'a, OF, OFZ>
+where
+    OF: OrderedField,
+    for<'r> &'r OF: OrderedFieldRef<OF>,
+    OFZ: SparseElementZero<OF>,
 {
     /// Create a new instance.
     ///
@@ -479,11 +481,11 @@ pub struct Counters<'a, F: Field, FZ: SparseElementZero<F>> {
     rows: Sparse<&'a F, FZ, F, RowMajor>,
     general_form: &'a GeneralForm<F, FZ>,
 }
-impl<'a, OF, OFZ> Counters<'a, OF, OFZ>
-    where
-        OF: OrderedField,
-        OFZ: SparseElementZero<OF>,
-        for<'r> &'r OF: OrderedFieldRef<OF>,
+impl<'a, OF: 'static, OFZ> Counters<'a, OF, OFZ>
+where
+    OF: OrderedField,
+    OFZ: SparseElementZero<OF>,
+    for<'r> &'r OF: OrderedFieldRef<OF>,
 {
     /// Create a new instance.
     ///
@@ -585,11 +587,11 @@ impl<'a, OF, OFZ> Counters<'a, OF, OFZ>
     }
 }
 
-impl<'a, OF, OFZ> Index<'a, OF, OFZ>
-    where
-        OF: OrderedField,
-        for<'r> &'r OF: OrderedFieldRef<OF>,
-        OFZ: SparseElementZero<OF>,
+impl<'a, OF: 'static, OFZ> Index<'a, OF, OFZ>
+where
+    OF: OrderedField,
+    for<'r> &'r OF: OrderedFieldRef<OF>,
+    OFZ: SparseElementZero<OF>,
 {
     /// Create a new instance.
     ///

@@ -4,17 +4,16 @@
 //! partially artificial tableau kind.
 use std::marker::PhantomData;
 
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
-use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
+use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::linear_algebra::vector::{Sparse as SparseVector, Vector};
 use crate::data::number_types::traits::{Field, FieldRef};
 
 /// All variables are artificial.
-pub struct Fully<'a, F: Field, FZ: SparseElementZero<F>, MP: MatrixProvider<F, FZ>> {
+pub struct Fully<'a, F, FZ, MP> {
     /// Values that can be referred to when unsized constants need to be returned.
     ///
     /// TODO(ARCHITECTURE): Replace with values that are Copy, or an enum?
@@ -29,12 +28,14 @@ pub struct Fully<'a, F: Field, FZ: SparseElementZero<F>, MP: MatrixProvider<F, F
     provider: &'a MP,
     phantom_zero: PhantomData<FZ>,
 }
-impl<'a, F, FZ, MP> Kind<F, FZ> for Fully<'a, F, FZ, MP>
+impl<'a, F: 'static, FZ, MP> Kind<F, FZ> for Fully<'a, F, FZ, MP>
 where
     F: Field,
     FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ>,
+    MP: MatrixProvider<F, FZ, Column: IdentityColumn<F>>,
 {
+    type Column = MP::Column;
+
     fn initial_cost_value(&self, j: usize) -> &F {
         if j < self.nr_rows() {
             &self.ONE
@@ -43,9 +44,11 @@ where
         }
     }
 
-    fn original_column(&self, j: usize) -> Column<&F, FZ, F> {
+    fn original_column(&self, j: usize) -> Self::Column {
         if j < self.nr_rows() {
-            Column::Sparse(SparseVector::new(vec![(j, &self.ONE)], self.nr_rows()))
+            // TODO(ENHANCEMENT): Would it be possible to specialize the code where this identity
+            //  column is used?
+            <Self::Column as IdentityColumn<F>>::identity(j, self.nr_rows())
         } else {
             self.provider.column(j - self.nr_rows())
         }
@@ -60,12 +63,12 @@ where
     }
 }
 
-impl<'provider, F, FZ, MP> Artificial<F, FZ> for Fully<'provider, F, FZ, MP>
+impl<'provider, F: 'static, FZ, MP> Artificial<F, FZ> for Fully<'provider, F, FZ, MP>
 where
     F: Field + 'provider,
     for<'r> &'r F: FieldRef<F>,
     FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ>,
+    MP: MatrixProvider<F, FZ, Column: IdentityColumn<F>>,
 {
     fn nr_artificial_variables(&self) -> usize {
         self.nr_rows()
@@ -78,7 +81,7 @@ where
     }
 }
 
-impl<'provider, F, FZ, IM, MP> Tableau<F, FZ, IM, Fully<'provider, F, FZ, MP>>
+impl<'provider, F: 'static, FZ, IM, MP> Tableau<F, FZ, IM, Fully<'provider, F, FZ, MP>>
 where
     F: Field + 'provider,
     for<'r> &'r F: FieldRef<F>,

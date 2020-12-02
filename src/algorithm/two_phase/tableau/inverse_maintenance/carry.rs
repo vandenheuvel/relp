@@ -2,20 +2,20 @@
 //!
 //! A sparse row major basis inverse with a dense representation of the latest b and -pi (see
 //! Papadimitriou's Combinatorial Optimization).
-use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fmt;
 
 use itertools::repeat_n;
 
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
-use crate::algorithm::two_phase::matrix_provider::remove_rows::RemoveRows;
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::utilities::remove_indices;
-use crate::data::linear_algebra::traits::{SparseComparator, SparseElement, SparseElementZero};
+use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector, Sparse, Vector};
 use crate::data::number_types::traits::{Field, FieldRef};
+use crate::data::linear_algebra::SparseTuple;
 
 /// The carry matrix looks like:
 ///
@@ -34,7 +34,7 @@ use crate::data::number_types::traits::{Field, FieldRef};
 ///
 /// TODO: Write better docstring
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct CarryMatrix<F: SparseElement<F> + SparseComparator, FZ: SparseElementZero<F>> {
+pub struct Carry<F, FZ> {
     /// Negative of the objective function value.
     ///
     /// Is non-negative (objective value is non-positive) for artificial tableaus.
@@ -49,13 +49,13 @@ pub struct CarryMatrix<F: SparseElement<F> + SparseComparator, FZ: SparseElement
     basis_inverse_rows: Vec<SparseVector<F, FZ, F>>,
 }
 
-impl<F, FZ> CarryMatrix<F, FZ>
+impl<F: 'static, FZ> Carry<F, FZ>
 where
     F: Field,
     for <'r> &'r F: FieldRef<F>,
     FZ: SparseElementZero<F>,
 {
-    /// Create a `CarryMatrix` for a tableau with a known basis inverse.
+    /// Create a `Carry` for a tableau with a known basis inverse.
     ///
     /// # Arguments
     ///
@@ -65,7 +65,7 @@ where
     ///
     /// # Return value
     ///
-    /// `CarryMatrix` with the provided values and a `minus_pi` zero vector.
+    /// `Carry` with the provided values and a `minus_pi` zero vector.
     pub fn new(
         minus_objective: F,
         minus_pi: DenseVector<F>,
@@ -77,39 +77,13 @@ where
         debug_assert_eq!(b.len(), m);
         debug_assert!(basis_inverse_rows.iter().all(|r| r.len() == m));
 
-        CarryMatrix {
+        Carry {
             minus_objective,
             minus_pi,
             b,
             basis_inverse_rows,
         }
     }
-
-
-    /// Create a `CarryMatrix` from a carry matrix with an artificial cost row.
-    ///
-    /// # Arguments
-    ///
-    /// * `artificial_carry_matrix`: A `CarryMatrix` which has an artificial cost row.
-    /// * `provider`: Provider of the problem, used for original cost in `minus_pi` restoration.
-    /// * `basis`: Vector with, ordered by pivot row, the basis indices of the new basis.
-    ///
-    /// # Return value
-    ///
-    /// `CarryMatrix` with a restored `minus_pi` vector and objective value
-
-    /// Create a `CarryMatrix` from a carry matrix with an artificial cost row while removing
-    /// several row and column indices.
-    ///
-    /// # Arguments
-    ///
-    /// * `artificial_carry_matrix`: A `CarryMatrix` which has an artificial cost row.
-    /// * `provider`: Provider of the reduced problem.
-    /// * `basis`: Vector with, ordered by pivot row, the basis indices of the new basis.
-    ///
-    /// # Return value
-    ///
-    /// `CarryMatrix` of reduced dimension with a restored `minus_pi` vector and objective value.
 
     /// Create the `minus_pi` field from an existing basis.
     ///
@@ -121,7 +95,7 @@ where
     fn create_minus_pi_from_artificial(
         basis_inverse_rows: &Vec<SparseVector<F, FZ, F>>,
         provider: &impl MatrixProvider<F, FZ>,
-        basis: &Vec<usize>,
+        basis: &[usize],
     ) -> DenseVector<F> {
         let m = basis_inverse_rows.len();
         debug_assert_eq!(provider.nr_rows(), m);
@@ -149,7 +123,7 @@ where
     /// * `b`: Constraint values with respect to this basis.
     fn create_minus_obj_from_artificial<MP: MatrixProvider<F, FZ>>(
         provider: &MP,
-        basis: &Vec<usize>,
+        basis: &[usize],
         b: &DenseVector<F>,
     ) -> F {
         let mut objective = F::zero();
@@ -239,20 +213,20 @@ where
 
     /// A property of the dimensions of this matrix.
     ///
-    /// A `CarryMatrix` is always square matrix of size `m + 1` times `m + 1`. Here, `m` is the
+    /// A `Carry` is always square matrix of size `m + 1` times `m + 1`. Here, `m` is the
     /// length of the constraint column vector and the width of the `minus_pi` row vector. Also, the
     /// basis inverse submatrix B^-1 has dimension `m` times `m`.
     fn m(&self) -> usize {
-        self.b.len() // == self.minus_pi.len()
-        // == self.basis_inverse_rows.len()
-        // == ...
-        // == ...
-        // == ...
-        // == self.basis_inverse_rows[self.m() - 1].len()
+        self.b.len()
+        //           == self.minus_pi.len()
+        //           == self.basis_inverse_rows.len()
+        //           == self.basis_inverse_rows[0].len()
+        //           == ...
+        //           == self.basis_inverse_rows[self.m() - 1].len()
     }
 }
 
-impl<F, FZ> InverseMaintenance<F, FZ> for CarryMatrix<F, FZ>
+impl<F: 'static, FZ> InverseMaintenance<F, FZ> for Carry<F, FZ>
 where
     F: Field,
     for <'r> &'r F: FieldRef<F>,
@@ -280,7 +254,7 @@ where
     }
 
     fn create_for_partially_artificial(
-        artificial_rows: &Vec<usize>,
+        artificial_rows: &[usize],
         free_basis_values: &Vec<(usize, usize)>,
         b: DenseVector<F>,
     ) -> Self {
@@ -323,65 +297,70 @@ where
         }
     }
 
-    fn from_basis(basis: &Vec<usize>, provider: &impl MatrixProvider<F, FZ>) -> Self {
+    #[allow(unused_variables)]
+    fn from_basis(basis: &[usize], provider: &impl MatrixProvider<F, FZ>) -> Self {
         // TODO: Implement matrix inversion
-        unimplemented!("Would involve matrix inversion")
+        unimplemented!()
     }
 
-    fn from_basis_pivots(basis_columns: &Vec<(usize, usize)>, provider: &impl MatrixProvider<F, FZ>) -> Self {
+    #[allow(unused_variables)]
+    fn from_basis_pivots(
+        basis_columns: &Vec<(usize, usize)>,
+        provider: &impl MatrixProvider<F, FZ>,
+    ) -> Self {
         // TODO: Implement matrix inversion
-        unimplemented!("Would involve matrix inversion")
+        unimplemented!()
     }
 
     fn from_artificial<MP: MatrixProvider<F, FZ>>(
-        artificial_carry_matrix: Self,
+        artificial: Self,
         provider: &MP,
-        basis: &Vec<usize>,
+        basis: &[usize],
     ) -> Self {
-        let minus_pi = CarryMatrix::create_minus_pi_from_artificial(
-            &artificial_carry_matrix.basis_inverse_rows,
+        let minus_pi = Carry::create_minus_pi_from_artificial(
+            &artificial.basis_inverse_rows,
             provider,
             basis,
         );
-        let minus_obj = CarryMatrix::create_minus_obj_from_artificial(
+        let minus_obj = Carry::create_minus_obj_from_artificial(
             provider,
             basis,
-            &artificial_carry_matrix.b,
+            &artificial.b,
         );
 
         Self::new(
             minus_obj,
             minus_pi,
-            artificial_carry_matrix.b,
-            artificial_carry_matrix.basis_inverse_rows,
+            artificial.b,
+            artificial.basis_inverse_rows,
         )
     }
 
-    fn from_artificial_remove_rows<MP: MatrixProvider<F, FZ>>(
+    fn from_artificial_remove_rows(
         artificial: Self,
-        rows_removed: &RemoveRows<F, FZ, MP>,
-        basis_indices: &Vec<usize>,
+        rows_removed: &impl Filtered<F, FZ>,
+        basis_indices: &[usize],
     ) -> Self {
         debug_assert_eq!(basis_indices.len(), rows_removed.nr_rows());
 
         // Remove the rows
         let mut basis_inverse_rows = artificial.basis_inverse_rows;
-        remove_indices(&mut basis_inverse_rows, &rows_removed.rows_to_skip);
+        remove_indices(&mut basis_inverse_rows, rows_removed.filtered_rows());
         // Remove the columns
         for element in &mut basis_inverse_rows {
-            element.remove_indices(&rows_removed.rows_to_skip);
+            element.remove_indices(rows_removed.filtered_rows());
         }
 
-        let minus_pi = CarryMatrix::create_minus_pi_from_artificial(
+        let minus_pi = Carry::create_minus_pi_from_artificial(
             &basis_inverse_rows,
             rows_removed,
             basis_indices,
         );
 
         let mut b = artificial.b;
-        b.remove_indices(&rows_removed.rows_to_skip);
+        b.remove_indices(rows_removed.filtered_rows());
 
-        let minus_obj = CarryMatrix::create_minus_obj_from_artificial(
+        let minus_obj = Carry::create_minus_obj_from_artificial(
             rows_removed,
             basis_indices,
             &b,
@@ -405,61 +384,26 @@ where
         self.row_reduce_update_minus_pi_and_obj(pivot_row_index, cost);
     }
 
-    fn cost_difference(&self, original_column: Column<&F, FZ, F>) -> F {
-        match &original_column {
-            Column::Sparse(vector) => {
-                debug_assert_eq!(vector.len(), self.m());
-            },
-            Column::Slack(index, _) => debug_assert!(*index < self.m()),
-        }
-
-        match original_column {
-            Column::Sparse(vector) => {
-                vector.inner_product_with_dense(&self.minus_pi)
-            },
-            Column::Slack(index, direction) => {
-                &self.minus_pi[index] * direction.into::<F>()
-            },
-        }
+    fn cost_difference<C: Column<F> + OrderedColumn<F>>(&self, original_column: &C) -> F {
+        self.minus_pi.sparse_inner_product(original_column.iter())
     }
 
-    fn generate_column(&self, original_column: Column<&F, FZ, F>) -> Sparse<F, FZ, F> {
-        if let Column::Sparse(vector) = &original_column {
-            debug_assert_eq!(vector.len(), self.m());
-        }
+    fn generate_column<C: Column<F> + OrderedColumn<F>>(&self, original_column: C) -> SparseVector<F, FZ, F> {
+        let column_iter = original_column.iter();
 
         let tuples = (0..self.m())
-            .map(|i| {
-                match original_column {
-                    Column::Sparse(ref vector) => {
-                        self.basis_inverse_rows[i].inner_product(vector)
-                    },
-                    Column::Slack(index, direction) => {
-                        &self.basis_inverse_rows[i][index] * direction.into::<F>()
-                    },
-                }
-            })
+            .map(|i| self.generate_element(i, column_iter.clone()))
             .enumerate()
-            .filter(|(_, v)| v.borrow() != FZ::zero().borrow())
+            .filter(|(_, v)| !v.is_zero())
             .collect();
 
         SparseVector::new(tuples, self.m())
     }
 
-    fn generate_element(&self, i: usize, original_column: Column<&F, FZ, F>) -> F {
+    fn generate_element<'a, I: Iterator<Item=&'a SparseTuple<F>>>(&self, i: usize, original_column: I) -> F {
         debug_assert!(i < self.m());
-        if let Column::Sparse(vector) = &original_column {
-            debug_assert_eq!(vector.len(), self.m());
-        }
 
-        match original_column {
-            Column::Sparse(vector) => {
-                self.basis_inverse_rows[i].inner_product(&vector)
-            },
-            Column::Slack(index, direction) => {
-                &self.basis_inverse_rows[i][index] * direction.into::<F>()
-            },
-        }
+        self.basis_inverse_rows[i].sparse_inner_product(original_column)
     }
 
     fn b(&self) -> Dense<F> {
@@ -476,13 +420,14 @@ where
     }
 }
 
-impl<F, G: SparseElementZero<F>> Display for CarryMatrix<F, G>
-    where
-        F: Field,
-        for<'r> &'r F: FieldRef<F>,
+impl<F: 'static, FZ> Display for Carry<F, FZ>
+where
+    F: Field,
+    for <'r> &'r F: FieldRef<F>,
+    FZ: SparseElementZero<F>,
 {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "CarryMatrix:\n============")?;
+        writeln!(f, "Carry:\n============")?;
         writeln!(f, "Objective function value: {}", self.get_objective_function_value())?;
         writeln!(f, "Minus PI:")?;
         <DenseVector<F> as Display>::fmt(&self.minus_pi, f)?;

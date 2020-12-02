@@ -5,6 +5,7 @@
 //! artificial variables out of the basis.
 use std::collections::HashSet;
 
+use crate::algorithm::two_phase::matrix_provider::Column;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -18,7 +19,7 @@ pub mod partially;
 ///
 /// There are currently two implementations; either all variables are artificial, or not necessarily
 /// all variables are. See the two submodules.
-pub trait Artificial<F, FZ>: Kind<F, FZ> {
+pub trait Artificial<F: 'static, FZ>: Kind<F, FZ, Column: IdentityColumn<F>> {
     /// How many artificial variables are in the tableau.
     ///
     /// This number varies, because slack variables might have been recognized as practical
@@ -43,11 +44,25 @@ pub trait Artificial<F, FZ>: Kind<F, FZ> {
     fn pivot_row_from_artificial(&self, artificial_index: usize) -> usize;
 }
 
+/// Identity columns are needed for artificial matrices.
+///
+/// When a matrix provider is to be used in the first phase, it should be possible to represent
+/// identity columns.
+pub trait IdentityColumn<F: 'static>: Column<F> {
+    /// Create an identity column, placing a "1" at a certain index and "0"'s otherwise.
+    ///
+    /// # Arguments
+    ///
+    /// * `i`: Index at which the "1" should be placed.
+    /// * `len`: Length of the column. Might not be used in an actual implementation.
+    fn identity(i: usize, len: usize) -> Self;
+}
+
 /// Functionality needed only, and for all, artificial tableaus.
 ///
 /// Most of these functions get called in the artificial simplex method, or the method that removes
 /// artificial variables from the problem at zero level.
-impl<'provider, F, FZ, IM, A> Tableau<F, FZ, IM, A>
+impl<'provider, F: 'static, FZ, IM, A> Tableau<F, FZ, IM, A>
 where
     F: Field + 'provider,
     for<'r> &'r F: FieldRef<F>,
@@ -100,7 +115,7 @@ where
     /// the lowest indices), and a tuple of which the first element maps rows of the problem (before
     /// any rows were removed, if necessary) to the columns holding the pivots from the current
     /// basis, as well as a set copy of those columns.
-    pub fn export_basis_representation(self) -> (IM, usize, (Vec<usize>, HashSet<usize>)) {
+    pub fn into_basis(self) -> (IM, usize, (Vec<usize>, HashSet<usize>)) {
         let nr_artificial = self.nr_artificial_variables();
         (self.inverse_maintainer, nr_artificial, (self.basis_indices, self.basis_columns))
     }

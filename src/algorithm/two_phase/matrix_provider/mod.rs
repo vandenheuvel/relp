@@ -3,21 +3,20 @@
 //! The Simplex method algorithms work on a tableau. Because this tableau is very sparse in
 //! practice, we store in a matrix that describes the current basis together with the original
 //! (also sparse) matrix data. This module contains structures that can provide a matrix.
-use std::fmt::Debug;
-
+use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
 
 pub mod matrix_data;
-pub mod remove_rows;
+pub mod filter;
 pub mod variable;
 
 /// Abstract interface for a matrix and constraint vector.
 ///
 /// This is the data of the "problem relative to the initial basis"; that is, nothing in
 /// data structures implementing this trait determines a basis. The implementors of this trait
-/// should be primarily read-only, with basis changes, the `CarryMatrix` fields of the `Tableau`
+/// should be primarily read-only, with basis changes, the `Carry` fields of the `Tableau`
 /// should change instead.
 ///
 /// Note that a this trait doesn't have to be implemented by a (sparse) matrix data structure per
@@ -33,10 +32,16 @@ pub mod variable;
 /// Bound constraints ||    constants (one 1 per row)     |           0           |       +/- 1      |
 ///                   ||                                  |                       |            +/- 1 |
 /// --------------------------------------------------------------------------------------------------
-///
-/// TODO: Use existential types to avoid allocations, for example by using `impl Iterator` as the
-///  return type of the `column` method.
-pub trait MatrixProvider<F, FZ> {
+pub trait MatrixProvider<F: 'static, FZ> {
+    /// Type used to represent a column of the matrix.
+    ///
+    /// TODO(ARCHITECTURE): When GATs are working, cloning can be avoided in some implementations,
+    ///  such as the ones that explicitly store the column data, by giving this associated type a
+    ///  lifetime parameter. Keep an eye on https://github.com/rust-lang/rust/issues/44265.
+    /// TODO(ARCHITECTURE): When specializing on the generic arguments of trait methods is possible,
+    ///  the columns no longer need to be ordered necessarily and the bound can be removed here.
+    type Column: Column<F> + OrderedColumn<F>;
+
     /// Column of the problem.
     ///
     /// # Arguments
@@ -46,7 +51,7 @@ pub trait MatrixProvider<F, FZ> {
     /// # Return value
     ///
     /// A sparse vector.
-    fn column(&self, j: usize) -> Column<&F, FZ, F>;
+    fn column(&self, j: usize) -> Self::Column;
 
     /// Cost of a variable.
     ///
@@ -63,6 +68,8 @@ pub trait MatrixProvider<F, FZ> {
     ///
     /// Note: constraint values of both the constraints and bounds. Lengths should be
     /// `self.nr_rows()`.
+    ///
+    /// TODO(OPTIMIZATION): Can this clone be avoided?
     ///
     /// # Return value
     ///
@@ -83,17 +90,6 @@ pub trait MatrixProvider<F, FZ> {
     ///
     /// The index of the row in which the bound is virtually represented, if the bound exists.
     fn bound_row_index(&self, j: usize, bound_type: BoundDirection) -> Option<usize>;
-
-    /// The lower and upper bound for a variable.
-    ///
-    /// # Arguments
-    ///
-    /// * `j`: Variable index for the bounds, if any exist.
-    ///
-    /// # Return value
-    ///
-    /// A tuple for the (lower, upper) bounds.
-    fn bounds(&self, j: usize) -> (&F, Option<&F>);
 
     /// The number of constraints in the problem. This excludes simple variable bounds.
     fn nr_constraints(&self) -> usize;
@@ -129,13 +125,48 @@ pub trait MatrixProvider<F, FZ> {
     ) -> SparseVector<F, FZ2, F>;
 }
 
-/// Either a vector with (probably several) elements, or a slack column.
+/// Columns represent part of a (virtual) data matrix.
 ///
-/// Introduced for the interface of
-#[derive(Eq, PartialEq, Debug)]
-pub enum Column<F, FZ, C> {
-    /// A (probably non-slack) column.
-    Sparse(SparseVector<F, FZ, C>),
-    /// A slack column.
-    Slack(usize, BoundDirection),
+/// This column is sparse.
+///
+/// A column might be expensive to compute. It can store computed values and once GATs work
+/// (better), also references to items stored in the matrix provider that yields instances of this
+/// trait.
+///
+/// It can't necessarily be iterated over directly. That needs to happen many times, for example
+/// when computing many inner products with a data matrix. The trait has an associated type to be
+/// used for iteration, that should be cheaply cloneable and probably not store any values itself.
+/// Rather, it should describe how this column should be iterated over.
+// TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
+pub trait Column<F: 'static> {
+    /// Type of struct to iterate over this column.
+    ///
+    /// It should be somewhat cheaply cloneable and as such not be too large.
+    ///
+    /// Note that we use a Generic Associated Type (GAT) here, and that these are (currently) part
+    /// of an unfinished feature. Keep an eye on https://github.com/rust-lang/rust/issues/44265 for
+    /// stabilization and possible bugs.
+    type Iter<'a>: Iterator<Item = &'a SparseTuple<F>> + Clone;
+
+    /// Derive the iterator object.
+    ///
+    /// Because this column might need to be iterated over many times, it doesn't consume the
+    /// column but instead produces a struct that might keep references to this column.
+    fn iter(&self) -> Self::Iter<'_>;
+
+    /// Format an index of the column.
+    ///
+    /// Note that this index might not be explicitly stored due to the column being sparse.
+    fn index_to_string(&self, i: usize) -> String;
 }
+
+/// Column that can be iterated over in-order.
+///
+/// This trait is simply a marker trait to be used in specialization.
+///
+/// TODO(ENHANCEMENT): At the time of writing, it is not possible to specialize the generic
+///  arguments of trait methods. That is why this trait and the standard `Column` trait are
+///  currently both needed.
+///
+// TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
+pub trait OrderedColumn<F: 'static>: Column<F> {}

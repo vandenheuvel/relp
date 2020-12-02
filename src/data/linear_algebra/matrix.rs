@@ -18,7 +18,7 @@ use crate::data::number_types::traits::Field;
 /// Indices start at `0`.
 /// TODO(OPTIMIZATION): What data structure is best suited to back this struct? How are allocations
 ///  avoided (e.g. flattening) avoided?
-#[allow(non_snake_case)]
+#[allow(non_snake_case, missing_docs)]
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct Sparse<F, FZ, C, O: Order> {
     pub data: Vec<SparseTupleVec<F>>,
@@ -170,9 +170,9 @@ impl Order for ColumnMajor {
 }
 
 impl<F, FZ> Sparse<F, FZ, F, RowMajor>
-    where
-        F: SparseElement<F>,
-        FZ: SparseElementZero<F>,
+where
+    F: SparseElement<F>,
+    FZ: SparseElementZero<F>,
 {
     /// A copy in a different ordering by reference.
     pub fn from_column_major_ordered_matrix_although_this_is_expensive(
@@ -194,11 +194,11 @@ where
         self.concatenate_major_indices(other)
     }
 
-    pub fn remove_rows(&mut self, indices: &Vec<usize>) {
+    pub fn remove_rows(&mut self, indices: &[usize]) {
         self.remove_major_indices(indices);
     }
 
-    pub fn remove_columns_although_this_matrix_is_row_ordered(&mut self, indices: &Vec<usize>) {
+    pub fn remove_columns_although_this_matrix_is_row_ordered(&mut self, indices: &[usize]) {
         self.remove_minor_indices(indices)
     }
 
@@ -291,7 +291,7 @@ impl<F: SparseElement<C>, FZ: SparseElementZero<C>, C: SparseComparator> Sparse<
     /// # Arguments
     ///
     /// * `indices`: Columns to be removed, is assumed sorted.
-    pub fn remove_columns(&mut self, indices: &Vec<usize>) {
+    pub fn remove_columns(&mut self, indices: &[usize]) {
         debug_assert!(indices.len() <= self.data.len());
         debug_assert!(indices.is_sorted());
         // All values are unique
@@ -306,7 +306,7 @@ impl<F: SparseElement<C>, FZ: SparseElementZero<C>, C: SparseComparator> Sparse<
     /// # Arguments
     ///
     /// * `indices`: Rows to be removed, is assumed sorted.
-    pub fn remove_rows_although_this_matrix_is_column_major(&mut self, indices: &Vec<usize>) {
+    pub fn remove_rows_although_this_matrix_is_column_major(&mut self, indices: &[usize]) {
         debug_assert!(indices.is_sorted());
 
         self.remove_minor_indices(indices)
@@ -473,7 +473,7 @@ where
     /// # Arguments
     ///
     /// * `indices`: Columns to be removed, is assumed sorted.
-    fn remove_major_indices(&mut self, indices: &Vec<usize>) {
+    fn remove_major_indices(&mut self, indices: &[usize]) {
         debug_assert!(indices.len() <= self.major_dimension_size);
         debug_assert!(indices.is_sorted());
         // All values are unique
@@ -489,7 +489,7 @@ where
     /// # Arguments
     ///
     /// * `indices`: Rows to be removed, is assumed sorted.
-    fn remove_minor_indices(&mut self, indices: &Vec<usize>) {
+    fn remove_minor_indices(&mut self, indices: &[usize]) {
         debug_assert!(indices.len() <= self.minor_dimension_size);
         debug_assert!(indices.is_sorted());
         // All values are unique
@@ -545,11 +545,11 @@ where
 }
 
 impl<F: Field, FZ, C, MO> Sparse<F, FZ, C, MO>
-    where
-        F: SparseElement<C>,
-        FZ: SparseElementZero<C>,
-        C: SparseComparator,
-        MO: Order,
+where
+    F: SparseElement<C>,
+    FZ: SparseElementZero<C>,
+    C: SparseComparator,
+    MO: Order,
 {
     /// Create a dense square identity matrix of size `len`.
     fn identity(len: usize) -> Self {

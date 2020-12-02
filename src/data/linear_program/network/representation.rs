@@ -1,11 +1,17 @@
 //! # Representation
 //!
 //! Representing network data.
+use std::slice::Iter;
+
+use crate::algorithm::two_phase::matrix_provider::{Column, OrderedColumn};
+use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse as SparseMatrix};
-use crate::data::linear_algebra::SparseTupleVec;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Vector};
 use crate::data::number_types::traits::Field;
+use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
+use crate::algorithm::utilities::remove_sparse_indices;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArcIncidenceMatrix<F, FZ> {
@@ -77,10 +83,11 @@ where
         )
     }
 
-    pub fn column(&self, j: usize) -> SparseTupleVec<&F> {
+    pub fn column(&self, j: usize) -> Vec<SparseTuple<F>> {
         debug_assert!(j < self.nr_edges());
 
-        self.data.iter_column(j).map(|(i, v)| (*i, v)).collect()
+        // TODO(ENHANCEMENT): Use improved GATs to avoid this clone.
+        self.data.iter_column(j).cloned().collect()
     }
 
     pub fn nr_vertices(&self) -> usize {
@@ -89,5 +96,57 @@ where
 
     pub fn nr_edges(&self) -> usize {
         self.data.nr_columns()
+    }
+}
+
+#[derive(Debug)]
+pub struct ArcIncidenceColumn<F>(pub Vec<SparseTuple<F>>);
+impl<F: 'static> Column<F> for ArcIncidenceColumn<F>
+where
+    F: Field,
+{
+    type Iter<'a> = ArcIncidenceColumnIter<'a, F>;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        ArcIncidenceColumnIter(self.0.iter())
+    }
+
+    fn index_to_string(&self, i: usize) -> String {
+        self.0.iter()
+            .find(|&&(index, _)| index == i)
+            .map_or_else(|| "0".to_string(), |(_, v)| v.to_string())
+    }
+}
+impl<F: 'static> IdentityColumn<F> for ArcIncidenceColumn<F>
+where
+    F: Field,
+{
+    fn identity(i: usize, len: usize) -> Self {
+        Self(vec![(i, F::one())])
+    }
+}
+impl<F: 'static> IntoFilteredColumn<F> for ArcIncidenceColumn<F>
+where
+    F: Field,
+{
+    type Filtered = Self;
+
+    fn into_filtered(mut self, to_remove: &[usize]) -> Self::Filtered {
+        remove_sparse_indices(&mut self.0, to_remove);
+        self
+    }
+}
+impl<F: 'static> OrderedColumn<F> for ArcIncidenceColumn<F>
+where
+    F: Field,
+{
+}
+#[derive(Debug, Clone)]
+pub struct ArcIncidenceColumnIter<'a, F>(Iter<'a, SparseTuple<F>>);
+impl<'a, F: 'static> Iterator for ArcIncidenceColumnIter<'a, F> {
+    type Item = &'a SparseTuple<F>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
     }
 }

@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
-use crate::algorithm::two_phase::matrix_provider::remove_rows::RemoveRows;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -14,7 +14,7 @@ use crate::data::number_types::traits::{Field, FieldRef};
 ///
 /// This `Tableau` variant should only be constructed with a known feasible basis.
 #[derive(Eq, PartialEq, Debug)]
-pub struct NonArtificial<'a, F: Field, FZ: SparseElementZero<F>, MP: MatrixProvider<F, FZ>> {
+pub struct NonArtificial<'a, F: 'static, FZ, MP> {
     /// Supplies data about the problem.
     ///
     /// This data doesn't change throughout the lifetime of this `Tableau`, and it is independent of
@@ -23,18 +23,20 @@ pub struct NonArtificial<'a, F: Field, FZ: SparseElementZero<F>, MP: MatrixProvi
 
     phantom: PhantomData<(F, FZ)>,
 }
-impl<'a, F, FZ, MP> Kind<F, FZ> for NonArtificial<'a, F, FZ, MP>
+impl<'a, F: 'static, FZ, MP> Kind<F, FZ> for NonArtificial<'a, F, FZ, MP>
 where
     F: Field,
     FZ: SparseElementZero<F>,
     MP: MatrixProvider<F, FZ>,
 {
+    type Column = MP::Column;
+
     /// Coefficient of variable `j` in the objective function.
     ///
     /// # Arguments
     ///
     /// * `tableau`: Tableau to retrieve the cost value from.
-    /// * `j`: Column index of the variable, in range 0 until self.nr_columns().
+    /// * `j`: Column index of the variable, in range 0 until `self.nr_columns()`.
     ///
     /// # Return value
     ///
@@ -55,7 +57,7 @@ where
     /// # Return value
     ///
     /// The generated column, relative to the basis represented in the `Tableau`.
-    fn original_column(&self, j: usize) -> Column<&F, FZ, F> {
+    fn original_column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.provider.nr_columns());
 
         self.provider.column(j)
@@ -70,7 +72,7 @@ where
     }
 }
 
-impl<'provider, F, FZ, IM, MP> Tableau<F, FZ, IM, NonArtificial<'provider, F, FZ, MP>>
+impl<'provider, F: 'static, FZ, IM, MP> Tableau<F, FZ, IM, NonArtificial<'provider, F, FZ, MP>>
 where
     F: Field,
     for<'r> &'r F: FieldRef<F>,
@@ -85,7 +87,7 @@ where
     /// # Arguments
     ///
     /// * `provider`: Provides the original problem for which the other arguments describe a basis.
-    /// * `carry`: `CarryMatrix` with the basis transformation. Corresponds to `basis_indices`.
+    /// * `carry`: `Carry` with the basis transformation. Corresponds to `basis_indices`.
     /// * `basis_indices`: Maps each row to a column, describing a basis. Corresponds to `carry`.
     ///
     /// # Return value
@@ -117,7 +119,7 @@ where
     /// # Arguments
     ///
     /// * `provider`: Provides the original problem for which the other arguments describe a basis.
-    /// * `carry`: `CarryMatrix` with the basis transformation. Corresponds to `basis_indices`.
+    /// * `carry`: `Carry` with the basis transformation. Corresponds to `basis_indices`.
     /// * `basis_indices`: Maps each row to a column, describing a basis. Corresponds to `carry`.
     ///
     /// # Return value
@@ -203,7 +205,10 @@ where
         nr_artificial: usize,
         basis: (Vec<usize>, HashSet<usize>),
         rows_removed: &'b RemoveRows<'provider, F, FZ, MP>,
-    ) -> Tableau<F, FZ, IM, NonArtificial<'b, F, FZ, RemoveRows<'provider, F, FZ, MP>>> {
+    ) -> Tableau<F, FZ, IM, NonArtificial<'b, F, FZ, RemoveRows<'provider, F, FZ, MP>>>
+    where
+        MP::Column: IntoFilteredColumn<F>,
+    {
         debug_assert!(basis.0.iter().all(|&v| v >= nr_artificial || rows_removed.rows_to_skip.contains(&v)));
 
         let (mut basis_indices, mut basis_columns) = basis;

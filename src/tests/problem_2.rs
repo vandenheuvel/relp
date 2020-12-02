@@ -8,7 +8,7 @@ use crate::algorithm::OptimizationResult;
 use crate::algorithm::two_phase::{artificial_primal, primal, Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -103,9 +103,9 @@ pub fn matrix_data_form<'a>(
     )
 }
 
-pub fn artificial_tableau_form<'a, F, FZ>(
+pub fn artificial_tableau_form<'a, F: 'static, FZ>(
     data: &'a MatrixData<'a, F, FZ>,
-) -> Tableau<F, FZ, CarryMatrix<F, FZ>, Partially<F, FZ, MatrixData<'a, F, FZ>>>
+) -> Tableau<F, FZ, Carry<F, FZ>, Partially<F, FZ, MatrixData<'a, F, FZ>>>
 where
     F: Field + FromPrimitive,
     for<'r> &'r F: FieldRef<F>,
@@ -119,7 +119,7 @@ where
         let basis_inverse_rows = (0..m)
             .map(|i| SparseVector::standard_basis_vector(i, m))
             .collect();
-        CarryMatrix::new(minus_objective, minus_pi, b, basis_inverse_rows)
+        Carry::new(minus_objective, minus_pi, b, basis_inverse_rows)
     };
     let artificials = (0..3).collect::<Vec<_>>();
     let basis_indices = artificials.clone();
@@ -136,11 +136,11 @@ where
 
 pub fn tableau_form<'a, F, FZ>(
     data: &'a MatrixData<'a, F, FZ>
-) -> Tableau<F, FZ, CarryMatrix<F, FZ>, NonArtificial<F, FZ, MatrixData<'a, F, FZ>>>
-    where
-        F: Field + FromPrimitive + 'a,
-        for<'r> &'r F: FieldRef<F>,
-        FZ: SparseElementZero<F>,
+) -> Tableau<F, FZ, Carry<F, FZ>, NonArtificial<F, FZ, MatrixData<'a, F, FZ>>>
+where
+    F: Field + FromPrimitive + 'a,
+    for<'r> &'r F: FieldRef<F>,
+    FZ: SparseElementZero<F>,
 {
     let carry = {
         let minus_objective = F!(-9f64 / 2f64);
@@ -156,7 +156,7 @@ pub fn tableau_form<'a, F, FZ>(
             SparseVector::from_test_data(vec![-2.5f64, 0f64, 1f64]),
         ];
 
-        CarryMatrix::new(minus_objective, minus_pi, b, basis_inverse_rows)
+        Carry::new(minus_objective, minus_pi, b, basis_inverse_rows)
     };
     let basis_indices = vec![1, 3, 4];
     let basis_columns = {

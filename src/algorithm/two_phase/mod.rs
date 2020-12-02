@@ -6,13 +6,13 @@
 use std::collections::HashSet;
 
 use crate::algorithm::{OptimizationResult, SolveRelaxation};
+use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
-use crate::algorithm::two_phase::matrix_provider::remove_rows::RemoveRows;
 use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
 use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
-use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
+use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::artificial::fully::Fully as FullyArtificial;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially as PartiallyArtificial;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
@@ -23,12 +23,12 @@ pub mod tableau;
 pub mod matrix_provider;
 pub mod strategy;
 
-impl<OF, OFZ, MP> SolveRelaxation<OF, OFZ> for MP
+impl<OF: 'static, OFZ, MP> SolveRelaxation<OF, OFZ> for MP
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
     OFZ: SparseElementZero<OF>,
-    Self: MatrixProvider<OF, OFZ>,
+    MP: MatrixProvider<OF, OFZ, Column: IdentityColumn<OF> + IntoFilteredColumn<OF>>,
 {
     default fn solve_relaxation(&self) -> OptimizationResult<OF, OFZ> {
         // Default choice
@@ -46,7 +46,7 @@ where
             } => match rank {
                 Rank::Deficient(rows_to_remove) if !rows_to_remove.is_empty() => {
                     let rows_removed = RemoveRows::new(self, rows_to_remove);
-                    let mut non_artificial = Tableau::<_, _, CarryMatrix<_, _>, NonArtificial<_, _, _>>::from_artificial_removing_rows(
+                    let mut non_artificial = Tableau::<_, _, Carry<_, _>, NonArtificial<_, _, _>>::from_artificial_removing_rows(
                         inverse_maintainer,
                         nr_artificial_variables,
                         basis,
@@ -80,25 +80,26 @@ pub trait FeasibilityComputeTrait {
     /// # Returns
     ///
     /// A value representing the basic feasible solution, or an indicator that there is none.
-    fn compute_bfs_giving_im<OF, OFZ, IM>(&self) -> RankedFeasibilityResult<IM>
+    fn compute_bfs_giving_im<OF: 'static, OFZ, IM>(&self) -> RankedFeasibilityResult<IM>
     where
         OF: OrderedField,
         for<'r> &'r OF: OrderedFieldRef<OF>,
         OFZ: SparseElementZero<OF>,
         IM: InverseMaintenance<OF, OFZ>,
-        Self: MatrixProvider<OF, OFZ>,
+        // TODO: Can this bound be moved to the trait? Aren't OF and OFZ already inherent to Self?
+        Self: MatrixProvider<OF, OFZ, Column: IdentityColumn<OF>>,
     ;
 }
 
 /// Most generic implementation: finding a basic feasible solution using the Simplex method.
 impl<MP> FeasibilityComputeTrait for MP {
-    default fn compute_bfs_giving_im<OF, OFZ, IM>(&self) -> RankedFeasibilityResult<IM>
+    default fn compute_bfs_giving_im<OF: 'static, OFZ, IM>(&self) -> RankedFeasibilityResult<IM>
     where
         OF: OrderedField,
         for<'r> &'r OF: OrderedFieldRef<OF>,
         OFZ: SparseElementZero<OF>,
         IM: InverseMaintenance<OF, OFZ>,
-        MP: MatrixProvider<OF, OFZ>,
+        MP: MatrixProvider<OF, OFZ, Column: IdentityColumn<OF>>,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -132,13 +133,13 @@ pub trait PartialInitialBasis {
 }
 
 impl<MP: PartialInitialBasis> FeasibilityComputeTrait for MP {
-    fn compute_bfs_giving_im<OF, OFZ, IM>(&self) -> RankedFeasibilityResult<IM>
-        where
-            OF: OrderedField,
-            for<'r> &'r OF: OrderedFieldRef<OF>,
-            OFZ: SparseElementZero<OF>,
-            IM: InverseMaintenance<OF, OFZ>,
-            Self: MatrixProvider<OF, OFZ>,
+    fn compute_bfs_giving_im<OF: 'static, OFZ, IM>(&self) -> RankedFeasibilityResult<IM>
+    where
+        OF: OrderedField,
+        for<'r> &'r OF: OrderedFieldRef<OF>,
+        OFZ: SparseElementZero<OF>,
+        IM: InverseMaintenance<OF, OFZ>,
+        Self: MatrixProvider<OF, OFZ, Column: IdentityColumn<OF>>,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -163,12 +164,16 @@ pub trait FullInitialBasis: PartialInitialBasis {
 ///
 /// TODO(ARCHITECTURE): If this is true, it's ot really two-phase, now is it? Should this solution
 ///  be provided elsewhere, or the module be renamed?
-impl<OF, OFZ, MP: FullInitialBasis> SolveRelaxation<OF, OFZ> for MP
+impl<OF: 'static, OFZ, MP: FullInitialBasis> SolveRelaxation<OF, OFZ> for MP
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
     OFZ: SparseElementZero<OF>,
-    MP: MatrixProvider<OF, OFZ>,
+    // TODO: The MP::Column trait bound might not be needed if no rows need to be removed for the
+    //  initial basis.
+    // TODO: The <MP as MatrixProvider<OF, OFZ>>::Column: IdentityColumn bound is needed because of
+    //  limitations of the specialization feature.
+    MP: MatrixProvider<OF, OFZ, Column: IdentityColumn<OF> + IntoFilteredColumn<OF>>,
 {
     fn solve_relaxation(&self) -> OptimizationResult<OF, OFZ> {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
@@ -178,7 +183,7 @@ where
 
         let basis_indices = self.pivot_element_indices();
         // Sorting of identity matrix columns
-        let inverse_maintainer = CarryMatrix::from_basis_pivots(&basis_indices, self);
+        let inverse_maintainer = Carry::from_basis_pivots(&basis_indices, self);
 
         let basis_indices: Vec<usize> = basis_indices.into_iter().map(|(_row, column)| column).collect();
         let basis_columns = basis_indices.iter().copied().collect();
@@ -201,7 +206,7 @@ where
 /// # Return value
 ///
 /// Whether the tableau might allow a basic feasible solution without artificial variables.
-pub(crate) fn artificial_primal<'provider, OF, OFZ, IM, K, MP, PR>(
+pub(crate) fn artificial_primal<'provider, OF: 'static, OFZ, IM, K, MP, PR>(
     mut tableau: Tableau<OF, OFZ, IM, K>,
 ) -> RankedFeasibilityResult<IM>
 where
@@ -237,7 +242,7 @@ where
                     Rank::Full
                 };
 
-                let (im, nr_a, basis) = tableau.export_basis_representation();
+                let (im, nr_a, basis) = tableau.into_basis();
                 RankedFeasibilityResult::Feasible {
                     rank,
                     nr_artificial_variables: nr_a,
@@ -302,7 +307,7 @@ pub enum Rank {
 /// instead of constraints. All bounds are linearly independent among each other, and with respect
 /// to all constraints. As such, they should never be among the redundant rows returned by this
 /// method.
-fn remove_artificial_basis_variables<F, FZ, IM, K>(
+fn remove_artificial_basis_variables<F: 'static, FZ, IM, K>(
     tableau: &mut Tableau<F, FZ, IM, K>,
 ) -> Vec<usize>
 where
@@ -349,7 +354,7 @@ where
 ///
 /// An `OptimizationResult` indicating whether or not the problem has a finite optimum. It cannot be
 /// infeasible, as a feasible solution is needed to start using this method.
-pub(crate) fn primal<'provider, OF, OFZ, IM, MP, PR>(
+pub(crate) fn primal<'provider, OF: 'static, OFZ, IM, MP, PR>(
     tableau: &mut Tableau<OF, OFZ, IM, NonArtificial<'provider, OF, OFZ, MP>>,
 ) -> OptimizationResult<OF, OFZ>
 where
@@ -391,7 +396,7 @@ mod test {
     use crate::algorithm::two_phase::{artificial_primal, primal, Rank, RankedFeasibilityResult};
     use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
     use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
     use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
     use crate::algorithm::two_phase::tableau::Tableau;
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
@@ -415,7 +420,7 @@ mod test {
     fn finding_bfs() {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
-        let tableau = Tableau::<_, _, CarryMatrix<_, _>, Partially<_, _, _>>::new(&matrix_data_form);
+        let tableau = Tableau::<_, _, Carry<_, _>, Partially<_, _, _>>::new(&matrix_data_form);
         assert!(matches!(
             artificial_primal::<_, _, _, _, MatrixData<_, _>, FirstProfitable>(tableau),
             RankedFeasibilityResult::Feasible { rank: Rank::Full, .. }
@@ -426,7 +431,8 @@ mod test {
     fn solve_matrix() {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
-        let result = matrix_data_form.solve_relaxation();
+
+        let result = SolveRelaxation::solve_relaxation(&matrix_data_form);
         //  Optimal value: R64!(4.5)
         assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
             (1, 0.5f64),

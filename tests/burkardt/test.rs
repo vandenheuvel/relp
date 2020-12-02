@@ -14,7 +14,7 @@ use rust_lp::io::import;
 
 use super::get_test_file_path;
 
-fn to_general_form<T: OrderedField + FromPrimitive, TZ: SparseElementZero<T>>(
+fn to_general_form<T: 'static + OrderedField + FromPrimitive, TZ: SparseElementZero<T>>(
     file_name: &str,
 ) -> GeneralForm<T, TZ>
 where

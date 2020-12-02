@@ -1,13 +1,13 @@
 //! # Maximum Flow Problem
 use std::ops::Range;
 
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::{Column, matrix_data, MatrixProvider};
 use crate::algorithm::two_phase::PartialInitialBasis;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement, SparseElementZero};
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::BoundDirection;
-use crate::data::linear_program::network::representation::ArcIncidenceMatrix;
+use crate::data::linear_program::network::representation::{ArcIncidenceColumn, ArcIncidenceMatrix};
 use crate::data::number_types::traits::{Field, FieldRef};
 
 /// Maximum flow problem.
@@ -70,23 +70,25 @@ where
     }
 }
 
-impl<F, FZ> MatrixProvider<F, FZ> for Primal<F, FZ>
+impl<F: 'static, FZ> MatrixProvider<F, FZ> for Primal<F, FZ>
 where
     F: Field + SparseElement<F> + SparseComparator,
     for <'r> &'r F: FieldRef<F>,
     FZ: SparseElementZero<F>,
 {
-    fn column(&self, j: usize) -> Column<&F, FZ, F> {
+    type Column = matrix_data::Column<F>;
+
+    fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
 
         if j < self.nr_edges() {
-            Column::Sparse({
-                let mut tuples = self.arc_incidence_matrix.column(j);
-                tuples.push((self.nr_constraints() + j, &self.ONE));
-                SparseVector::new(tuples, self.nr_rows())
-            })
+            Self::Column::Sparse {
+                constraint_values: self.arc_incidence_matrix.column(j),
+                // TODO(ENHANCEMENT): Avoid this `F::one()` constant.
+                slack: Some((self.nr_constraints() + j, F::one())),
+            }
         } else {
-            Column::Slack(self.nr_constraints() + j - self.nr_edges(), BoundDirection::Upper)
+            Self::Column::Slack((self.nr_constraints() + j - self.nr_edges(), F::one()), [])
         }
     }
 
@@ -119,12 +121,6 @@ where
         }
     }
 
-    fn bounds(&self, j: usize) -> (&F, Option<&F>) {
-        debug_assert!(j < self.nr_columns());
-
-        (&self.ZERO, Some(&self.capacity[j]))
-    }
-
     fn nr_constraints(&self) -> usize {
         self.nr_vertices() - 2
     }
@@ -146,7 +142,7 @@ where
     }
 }
 
-impl<F, FZ> PartialInitialBasis for Primal<F, FZ>
+impl<F: 'static, FZ> PartialInitialBasis for Primal<F, FZ>
 where
     F: Field,
     for<'r> &'r F: FieldRef<F>,

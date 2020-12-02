@@ -13,7 +13,7 @@ use rust_lp::R32;
 
 use super::get_test_file_path;
 
-fn solve<T: OrderedField + FromPrimitive, TZ: SparseElementZero<T>>(
+fn solve<T: 'static + OrderedField + FromPrimitive, TZ: SparseElementZero<T>>(
     file_name: &str,
 ) -> Solution<T>
 where

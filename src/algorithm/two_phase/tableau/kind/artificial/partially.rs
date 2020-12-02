@@ -5,19 +5,18 @@
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::PartialInitialBasis;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
-use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
+use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::linear_program::elements::BoundDirection;
 use crate::data::number_types::traits::{Field, FieldRef};
 
 /// The `TableauType` in case the `Tableau` contains artificial variables.
 #[derive(Eq, PartialEq, Debug)]
-pub struct Partially<'a, F: Field, FZ: SparseElementZero<F>, MP: MatrixProvider<F, FZ>> {
+pub struct Partially<'a, F, FZ, MP> {
     /// For the `i`th artificial variable was originally a simple basis vector with the coefficient
     /// at index `column_to_row[i]`.
     column_to_row: Vec<usize>,
@@ -36,7 +35,7 @@ pub struct Partially<'a, F: Field, FZ: SparseElementZero<F>, MP: MatrixProvider<
     provider: &'a MP,
     phantom_zero: PhantomData<FZ>,
 }
-impl<'a, F, FZ, MP> Partially<'a, F, FZ, MP>
+impl<'a, F: 'static, FZ, MP> Partially<'a, F, FZ, MP>
 where
     F: Field,
     FZ: SparseElementZero<F>,
@@ -46,12 +45,14 @@ where
         self.column_to_row.len()
     }
 }
-impl<'a, F, FZ, MP> Kind<F, FZ> for Partially<'a, F, FZ, MP>
+impl<'a, F: 'static, FZ, MP> Kind<F, FZ> for Partially<'a, F, FZ, MP>
 where
     F: Field,
     FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ>,
+    MP: MatrixProvider<F, FZ, Column: IdentityColumn<F>>,
 {
+    type Column = MP::Column;
+
     /// Coefficient of variable `j` in the objective function.
     ///
     /// # Arguments
@@ -81,11 +82,11 @@ where
     /// # Return value
     ///
     /// The generated column, relative to the basis represented in the `Tableau`.
-    fn original_column(&self, j: usize) -> Column<&F, FZ, F> {
+    fn original_column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
 
         if j < self.nr_artificial_variables() {
-            Column::Slack(self.column_to_row[j], BoundDirection::Upper)
+            <Self::Column as IdentityColumn<F>>::identity(self.column_to_row[j], self.nr_rows())
         } else {
             self.provider.column(j - self.nr_artificial_variables())
         }
@@ -99,12 +100,12 @@ where
         self.nr_artificial_variables() + self.provider.nr_columns()
     }
 }
-impl<'provider, F, FZ, MP> Artificial<F, FZ> for Partially<'provider, F, FZ, MP>
+impl<'provider, F: 'static, FZ, MP> Artificial<F, FZ> for Partially<'provider, F, FZ, MP>
 where
     F: Field + 'provider,
     for<'r> &'r F: FieldRef<F>,
     FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ>,
+    MP: MatrixProvider<F, FZ, Column: IdentityColumn<F>>,
 {
     fn nr_artificial_variables(&self) -> usize {
         self.column_to_row.len()
@@ -117,7 +118,7 @@ where
     }
 }
 
-impl<'provider, F, FZ, IM, MP> Tableau<F, FZ, IM, Partially<'provider, F, FZ, MP>>
+impl<'provider, F: 'static, FZ, IM, MP> Tableau<F, FZ, IM, Partially<'provider, F, FZ, MP>>
 where
     F: Field + 'provider,
     for<'r> &'r F: FieldRef<F>,
@@ -232,7 +233,7 @@ where
     /// # Arguments
     ///
     /// * `provider`: Provides the original problem for which the other arguments describe a basis.
-    /// * `carry`: `CarryMatrix` with the basis transformation. Corresponds to `basis_indices`.
+    /// * `carry`: `Carry` with the basis transformation. Corresponds to `basis_indices`.
     /// * `basis_indices`: Maps each row to a column, describing a basis. Corresponds to `carry`.
     ///
     /// # Return value

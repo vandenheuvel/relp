@@ -15,6 +15,7 @@ use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Sparse as SparseVector, Vector};
 use crate::data::number_types::traits::{Field, FieldRef, OrderedField};
+use crate::algorithm::two_phase::matrix_provider::Column;
 
 pub mod inverse_maintenance;
 pub mod kind;
@@ -25,12 +26,7 @@ pub mod kind;
 /// that describe the current solution basis.
 #[allow(non_snake_case)]
 #[derive(Eq, PartialEq, Debug)]
-pub struct Tableau<F, FZ, IM, K>
-where
-    F: Field,
-    FZ: SparseElementZero<F>,
-    K: Kind<F, FZ>,
-{
+pub struct Tableau<F, FZ, IM, K> {
     /// Represents a matrix of size (m + 1) x (m + 1) (includes -pi, objective value, constraints).
     ///
     /// This attribute changes with a basis change.
@@ -55,7 +51,7 @@ where
     phantom: PhantomData<(F, FZ)>,
 }
 
-impl<'a, F, FZ, IM, K> Tableau<F, FZ, IM, K>
+impl<'a, F: 'static, FZ, IM, K> Tableau<F, FZ, IM, K>
 where
     F: Field + 'a,
     for <'r> &'r F: FieldRef<F>,
@@ -118,7 +114,7 @@ where
     pub fn relative_cost(&self, j: usize) -> F {
         debug_assert!(j < self.nr_columns());
 
-        self.inverse_maintainer.cost_difference(self.kind.original_column(j)) + self.kind.initial_cost_value(j)
+        self.inverse_maintainer.cost_difference(&self.kind.original_column(j)) + self.kind.initial_cost_value(j)
     }
 
     /// Column of original problem with respect to the current basis.
@@ -144,7 +140,7 @@ where
         debug_assert!(i < self.nr_rows());
         debug_assert!(j < self.nr_columns());
 
-        self.inverse_maintainer.generate_element(i, self.kind.original_column(j))
+        self.inverse_maintainer.generate_element(i, self.kind.original_column(j).iter())
     }
 
     /// Whether a column is in the basis.
@@ -217,7 +213,7 @@ where
     }
 }
 
-impl<'a, OF, OFZ, IM, K> Tableau<OF, OFZ, IM, K>
+impl<'a, OF: 'static, OFZ, IM, K> Tableau<OF, OFZ, IM, K>
 where
     OF: OrderedField + 'a,
     for<'r> &'r OF: FieldRef<OF>,
@@ -277,7 +273,7 @@ where
 ///
 /// Only used for debug purposes.
 #[allow(clippy::nonminimal_bool)]
-pub fn is_in_basic_feasible_solution_state<'a, OF, OFZ, IM, K>(
+pub fn is_in_basic_feasible_solution_state<'a, OF: 'static, OFZ, IM, K>(
     tableau: &Tableau<OF, OFZ, IM, K>,
 ) -> bool
 where
@@ -342,7 +338,7 @@ where
         && carry
 }
 
-impl<'a, F, FZ, IM, K> Display for Tableau<F, FZ, IM, K>
+impl<'a, F: 'static, FZ, IM, K> Display for Tableau<F, FZ, IM, K>
 where
     F: Field + 'a,
     for<'r> &'r F: FieldRef<F>,
@@ -420,7 +416,7 @@ mod test {
 
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::CarryMatrix;
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
     use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
     use crate::algorithm::two_phase::tableau::Tableau;
     use crate::data::linear_algebra::traits::SparseElementZero;
@@ -432,7 +428,7 @@ mod test {
 
     fn tableau<'a, F, FZ>(
         data: &'a MatrixData<'a, F, FZ>,
-    ) -> Tableau<F, FZ, CarryMatrix<F, FZ>, NonArtificial<'a, F, FZ, MatrixData<'a, F, FZ>>>
+    ) -> Tableau<F, FZ, Carry<F, FZ>, NonArtificial<'a, F, FZ, MatrixData<'a, F, FZ>>>
     where
         F: Field + FromPrimitive + 'a,
         for<'r> &'r F: FieldRef<F>,
@@ -447,7 +443,7 @@ mod test {
                 SparseVector::from_test_data(vec![-1, 1, 0]),
                 SparseVector::from_test_data(vec![-1, 0, 1]),
             ];
-            CarryMatrix::<F, FZ>::new(minus_objective, minus_pi, b, basis_inverse_rows)
+            Carry::<F, FZ>::new(minus_objective, minus_pi, b, basis_inverse_rows)
         };
         let basis_indices = vec![2, 3, 4];
         let mut basis_columns = HashSet::new();
@@ -542,7 +538,7 @@ mod test {
 
     fn bfs_tableau<'a, F, FZ>(
         data: &'a MatrixData<'a, F, FZ>,
-    ) -> Tableau<F, FZ, CarryMatrix<F, FZ>, NonArtificial<'a, F, FZ, MatrixData<'a, F, FZ>>>
+    ) -> Tableau<F, FZ, Carry<F, FZ>, NonArtificial<'a, F, FZ, MatrixData<'a, F, FZ>>>
     where
         F: Field + FromPrimitive,
         for<'r> &'r F: FieldRef<F>,
@@ -558,7 +554,7 @@ mod test {
                 SparseVector::from_test_data(vec![-1, 1, 0]),
                 SparseVector::from_test_data(vec![-1, 0, 1]),
             ];
-            CarryMatrix::<F, FZ>::new(minus_objective, minus_pi, b, basis_inverse_rows)
+            Carry::<F, FZ>::new(minus_objective, minus_pi, b, basis_inverse_rows)
         };
         let basis_indices = vec![m + 2, m + 3, m + 4];
         let mut basis_columns = HashSet::new();

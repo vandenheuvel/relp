@@ -536,9 +536,11 @@ impl<F> MPS<F> {
     }
 }
 
-impl<OF: OrderedField, OFZ: SparseElementZero<OF>> TryInto<GeneralForm<OF, OFZ>> for MPS<OF>
+impl<OF: 'static, OFZ> TryInto<GeneralForm<OF, OFZ>> for MPS<OF>
 where
+    OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
+    OFZ: SparseElementZero<OF>
 {
     type Error = Inconsistency;
 

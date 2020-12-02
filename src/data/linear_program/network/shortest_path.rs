@@ -4,8 +4,9 @@ use std::fmt::{Display, Formatter, Result as FormatResult};
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
 use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector, Vector};
+use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
+use crate::data::linear_program::network::representation::ArcIncidenceColumn;
 use crate::data::linear_program::network::representation::ArcIncidenceMatrix;
 use crate::data::number_types::traits::Field;
 
@@ -60,15 +61,17 @@ where
     }
 }
 
-impl<F, FZ> MatrixProvider<F, FZ> for Primal<F, FZ>
+impl<F: 'static, FZ> MatrixProvider<F, FZ> for Primal<F, FZ>
 where
     F: Field,
     FZ: SparseElementZero<F>,
 {
-    fn column(&self, j: usize) -> Column<&F, FZ, F> {
+    type Column = ArcIncidenceColumn<F>;
+
+    fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_edges());
 
-        Column::Sparse(SparseVector::new(self.arc_incidence_matrix.column(j), self.nr_rows()))
+        ArcIncidenceColumn(self.arc_incidence_matrix.column(j))
     }
 
     fn cost_value(&self, j: usize) -> &F {
@@ -92,10 +95,6 @@ where
         None
     }
 
-    fn bounds(&self, j: usize) -> (&F, Option<&F>) {
-        (&self.ZERO, None)
-    }
-
     fn nr_constraints(&self) -> usize {
         // This problem is overdetermined, the last row was removed
         self.nr_vertices() - 1
@@ -117,36 +116,30 @@ where
     }
 }
 
-impl<F, FZ> Display for Primal<F, FZ>
-    where
-        F: Field,
-        FZ: SparseElementZero<F>,
+impl<F: 'static, FZ> Display for Primal<F, FZ>
+where
+    F: Field,
+    FZ: SparseElementZero<F>,
 {
     fn fmt(&self, f: &mut Formatter) -> FormatResult {
         writeln!(f, "Shortest Path Network")?;
         writeln!(f, "Vertices: {}\tEdges: {}", self.nr_vertices(), self.nr_edges())?;
         writeln!(f, "Source: {}\tSink: {}", self.s, self.t)?;
 
-        let column_width = 10;
+        let width = 10;
         let counter_width = 5;
         // Column counter
         write!(f, "{0:width$}", "", width = counter_width)?;
         for column_index in 0..self.nr_columns() {
-            write!(f, "{0:>width$}", column_index, width = column_width)?;
+            write!(f, "{0:>width$}", column_index, width = width)?;
         }
         writeln!(f)?;
 
         // Row counter and row data
-        for row_index in 0..self.nr_rows() {
-            write!(f, "{0: <width$}", row_index, width = counter_width)?;
-            for column_index in 0..self.nr_columns() {
-                let value = match self.column(column_index) {
-                    Column::Sparse(vector) => format!("{}", vector[row_index]),
-                    Column::Slack(row, value) => {
-                        format!("{}", if row == row_index { value.into() } else { F::zero() })
-                    },
-                };
-                write!(f, "{0:>width$.5}", value, width = column_width)?;
+        for row in 0..self.nr_rows() {
+            write!(f, "{0: <width$}", row, width = counter_width)?;
+            for column in 0..self.nr_columns() {
+                write!(f, "{0:>width$.5}", self.column(column).index_to_string(row), width = width)?;
             }
             writeln!(f)?;
         }
@@ -159,6 +152,7 @@ mod test {
     use num::rational::Ratio;
 
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
+    use crate::algorithm::two_phase::FeasibilityComputeTrait;
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
     use crate::data::linear_algebra::vector::Sparse as SparseVector;
     use crate::data::linear_algebra::vector::test::TestVector;

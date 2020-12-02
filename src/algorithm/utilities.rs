@@ -11,7 +11,7 @@ use std::iter::IntoIterator;
 ///
 /// * `vector`: `Vec` to remove indices from.
 /// * `indices`: A set of indices to remove from the vector, assumed sorted.
-pub(crate) fn remove_indices<T>(vector: &mut Vec<T>, indices: &Vec<usize>) {
+pub(crate) fn remove_indices<T>(vector: &mut Vec<T>, indices: &[usize]) {
     debug_assert!(indices.len() <= vector.len());
     debug_assert!(indices.is_sorted());
     // All values are unique
@@ -46,7 +46,7 @@ pub(crate) fn remove_indices<T>(vector: &mut Vec<T>, indices: &Vec<usize>) {
 ///
 /// * `vector`: `Vec` to remove indices from.
 /// * `indices`: A set of indices to remove from the vector, assumed sorted.
-pub(crate) fn remove_sparse_indices<T>(vector: &mut Vec<(usize, T)>, indices: &Vec<usize>) {
+pub(crate) fn remove_sparse_indices<T>(vector: &mut Vec<(usize, T)>, indices: &[usize]) {
     debug_assert!(indices.is_sorted());
     // All values are unique
     debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());

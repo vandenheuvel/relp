@@ -38,6 +38,12 @@ pub trait Vector<F>: Index<usize> + PartialEq + Display + Debug {
     ///
     /// Input data wrapped inside a vector.
     fn new(data: Vec<Self::Inner>, len: usize) -> Self;
+    /// Compute the inner product with a column vector from a matrix.
+    fn sparse_inner_product<'a, V: Iterator<Item=&'a SparseTuple<F>>>(&self, column: V) -> F
+    where
+        F: Field + 'a,
+        for<'r> &'r F: FieldRef<F>,
+    ;
     /// Make a vector longer by one, by adding an extra value at the end of this vector.
     fn push_value(&mut self, value: F) where F: Zero;
     /// Set the value at an index.
@@ -46,7 +52,7 @@ pub trait Vector<F>: Index<usize> + PartialEq + Display + Debug {
     /// 's, the cost depends on the (lack of) sparsity.
     fn set_value(&mut self, index: usize, value: F) where F: Zero;
     /// Remove the items at the specified indices.
-    fn remove_indices(&mut self, indices: &Vec<usize>);
+    fn remove_indices(&mut self, indices: &[usize]);
     /// Iterate over the internal values.
     fn iter_values(&self) -> Iter<Self::Inner>;
     /// Number of items represented by the vector.
@@ -60,7 +66,10 @@ pub trait Vector<F>: Index<usize> + PartialEq + Display + Debug {
 /// Uses a Vec<f64> as underlying data a structure. Length is fixed at creation.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Dense<F> {
+    #[allow(missing_docs)]
     pub data: Vec<F>,
+    /// Length of the vector being represented. Equal to the length of the inner data.
+    /// TODO: Consider removing this field.
     len: usize,
 }
 
@@ -120,6 +129,14 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
         Self { data, len, }
     }
 
+    fn sparse_inner_product<'a, V: Iterator<Item=&'a SparseTuple<F>>>(&self, column: V) -> F
+    where
+        F: Field + 'a,
+        for<'r> &'r F: FieldRef<F>,
+    {
+        column.map(|(i, v)| v * &self.data[*i]).sum()
+    }
+
     /// Append a value to this vector.
     ///
     /// # Arguments
@@ -142,7 +159,7 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     /// # Arguments
     ///
     /// * `indices`: A set of indices to remove from the vector, assumed sorted.
-    fn remove_indices(&mut self, indices: &Vec<usize>) {
+    fn remove_indices(&mut self, indices: &[usize]) {
         debug_assert!(indices.len() <= self.len);
         debug_assert!(indices.is_sorted());
         // All values are unique
@@ -262,6 +279,32 @@ where
         }
     }
 
+    fn sparse_inner_product<'a, I: Iterator<Item=&'a SparseTuple<F>>>(&self, column: I) -> F
+    where
+        F: Field + 'a,
+        for<'r> &'r F: FieldRef<F>,
+    {
+        let mut total = F::zero();
+
+        let mut i = 0;
+        for (index, value) in column {
+            while i < self.data.len() && self.data[i].0 < *index {
+                i += 1;
+            }
+
+            if i < self.data.len() && self.data[i].0 == *index {
+                total += &self.data[i].1 * value;
+                i += 1;
+            }
+
+            if i == self.len {
+                break;
+            }
+        }
+
+        total
+    }
+
     /// Append a zero value.
     fn push_value(&mut self, value: F) {
         debug_assert_ne!(value.borrow(), FZ::zero().borrow());
@@ -296,7 +339,7 @@ where
     /// # Arguments
     ///
     /// * `indices` is assumed sorted.
-    fn remove_indices(&mut self, indices: &Vec<usize>) {
+    fn remove_indices(&mut self, indices: &[usize]) {
         debug_assert!(indices.is_sorted());
         // All values are unique
         debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
@@ -874,6 +917,53 @@ pub mod test {
             let v = SparseVector::<T, T, T>::from_test_data(vec![1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0]);
             let w = SparseVector::<T, T, T>::from_test_data(vec![-1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
             assert_eq!(v.inner_product(&w), R32!(0));
+        }
+
+        #[test]
+        fn sparse_inner_product() {
+            let v = get_test_vector::<T, SparseVector<T, T, T>>();
+            let w = vec![(1, R32!(5)), (2, R32!(6)), ];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(5 * 5 + 6 * 6));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![3]);
+            let w = vec![(0, R32!(5))];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(15));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0]);
+            let w = vec![(0, R32!(0))];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(0));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2]);
+            let w = vec![(1, R32!(3))];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(6));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![2, 0]);
+            let w = vec![(1, R32!(3))];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(0));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2]);
+            let w = vec![(0, R32!(3))];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(0));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2]);
+            let w = vec![(1, R32!(3))];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(6));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 0, 0]);
+            let w = vec![(1, R32!(3)), (2, R32!(7))];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(0));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2, 0]);
+            let w = vec![(0, R32!(5)), (1, R32!(7))];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(14));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![0, 2, 0]);
+            let w = vec![(0, R32!(5)), (2, R32!(7))];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(0));
+
+            let v = SparseVector::<T, T, T>::from_test_data(vec![1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0]);
+            let w = vec![(0, R32!(-1)), (1, R32!(1)), (2, R32!(1)), (12, R32!(1))];
+            assert_eq!(v.sparse_inner_product(w.iter()), R32!(0));
         }
 
         #[test]
