@@ -12,10 +12,10 @@ pub mod non_artificial;
 
 /// The tableau type provides two different ways for the `Tableau` to function, depending on whether
 /// any virtual artificial variables should be included in the problem.
-pub trait Kind<F: 'static, FZ> {
+pub trait Kind {
     /// TODO(ENHANCEMENT): Drop the Ordered requirement once specialization on generic type
     ///  type arguments of trait methods is possible.
-    type Column: Column<F> + OrderedColumn<F>;
+    type Column: Column + OrderedColumn;
 
     /// Coefficient of variable `j` in the objective function.
     ///
@@ -26,7 +26,7 @@ pub trait Kind<F: 'static, FZ> {
     /// # Return value
     ///
     /// The cost of variable `j`.
-    fn initial_cost_value(&self, j: usize) -> &F;
+    fn initial_cost_value(&self, j: usize) -> &<Self::Column as Column>::F;
 
     /// Get the column from the original problem.
     ///

@@ -10,7 +10,6 @@ use std::mem;
 
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order as MatrixOrder, Sparse};
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Vector};
 use crate::data::linear_program::elements::{ConstraintType, VariableType};
 use crate::data::linear_program::elements::Objective;
@@ -536,11 +535,10 @@ impl<F> MPS<F> {
     }
 }
 
-impl<OF: 'static, OFZ> TryInto<GeneralForm<OF, OFZ>> for MPS<OF>
+impl<OF: 'static> TryInto<GeneralForm<OF>> for MPS<OF>
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
-    OFZ: SparseElementZero<OF>
 {
     type Error = Inconsistency;
 
@@ -557,7 +555,7 @@ where
     /// # Errors
     /// 
     /// TODO: When can errors occur?
-    fn try_into(self) -> Result<GeneralForm<OF, OFZ>, Self::Error> {
+    fn try_into(self) -> Result<GeneralForm<OF>, Self::Error> {
         let (variable_info, variable_names) = compute_variable_info(
             &self.columns,
             self.column_names,
@@ -831,12 +829,12 @@ fn fill_in_default_lower_bounds<OF: OrderedField>(
 /// * `columns`: Variables containing the constraint coefficients.
 /// * `rows`: Direction of the constraint (name is not used).
 /// * `range`: Flexibility for constraints.
-fn compute_constraint_info<OF: OrderedField, OFZ: SparseElementZero<OF>>(
+fn compute_constraint_info<OF: OrderedField>(
     rows: Vec<Constraint>,
     rhss: Vec<Rhs<OF>>,
     columns: Vec<Variable<OF>>,
     ranges: Vec<Range<OF>>,
-) -> Result<(Sparse<OF, OFZ, OF, ColumnMajor>, Vec<ConstraintType>, DenseVector<OF>), Inconsistency> {
+) -> Result<(Sparse<OF, OF, ColumnMajor>, Vec<ConstraintType>, DenseVector<OF>), Inconsistency> {
     let original_nr_rows = rows.len();
 
     // Flatten, we don't care about the different range names
@@ -871,11 +869,11 @@ fn compute_constraint_info<OF: OrderedField, OFZ: SparseElementZero<OF>>(
 /// # Return value
 ///
 /// Column-major sparse matrix of constraint coefficients.
-fn compute_columns<F: Field, FZ: SparseElementZero<F>>(
+fn compute_columns<F: Field>(
     columns: Vec<Variable<F>>,
     original_nr_rows: usize,
     ranges: &Vec<SparseTuple<F>>,
-) -> Sparse<F, FZ, F, ColumnMajor> {
+) -> Sparse<F, F, ColumnMajor> {
     debug_assert!(ranges.is_sorted_by_key(|&(i, _)| i));
     debug_assert_eq!(ranges.iter().map(|&(i, _)| i).collect::<HashSet<_>>().len(), ranges.len());
     debug_assert!(columns.iter().all(|variable| {
@@ -1053,7 +1051,7 @@ mod test {
         }];
         let original_nr_rows = 0;
         let ranges = vec![];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        let columns = compute_columns::<T>(columns, original_nr_rows, &ranges);
         assert_eq!(columns, ColumnMajor::new(vec![vec![]], 0, 1));
 
         // No ranges, some values
@@ -1064,7 +1062,7 @@ mod test {
         }];
         let original_nr_rows = 2;
         let ranges = vec![];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        let columns = compute_columns::<T>(columns, original_nr_rows, &ranges);
         assert_eq!(columns, ColumnMajor::new(vec![vec![(0, R32!(123))]], 2, 1));
         let columns = vec![Variable {
             name_index: 0,
@@ -1073,7 +1071,7 @@ mod test {
         }];
         let original_nr_rows = 2;
         let ranges = vec![];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        let columns = compute_columns::<T>(columns, original_nr_rows, &ranges);
         assert_eq!(columns, ColumnMajor::new(vec![vec![(1, R32!(123))]], 2, 1));
 
         // One range, no values
@@ -1084,7 +1082,7 @@ mod test {
         }];
         let original_nr_rows = 1;
         let ranges = vec![(0, R32!(1))];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        let columns = compute_columns::<T>(columns, original_nr_rows, &ranges);
         assert_eq!(columns, ColumnMajor::new(vec![vec![]], 2, 1));
 
         // One range, some values
@@ -1095,7 +1093,7 @@ mod test {
         }];
         let original_nr_rows = 1;
         let ranges = vec![(0, R32!(1))];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        let columns = compute_columns::<T>(columns, original_nr_rows, &ranges);
         assert_eq!(columns, ColumnMajor::new(vec![vec![(0, R32!(1)), (1, R32!(1))]], 2, 1));
 
         // One range, value before range row
@@ -1106,7 +1104,7 @@ mod test {
         }];
         let original_nr_rows = 2;
         let ranges = vec![(1, R32!(1))];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        let columns = compute_columns::<T>(columns, original_nr_rows, &ranges);
         assert_eq!(columns, ColumnMajor::new(vec![vec![(0, R32!(1))]], 3, 1));
 
         // One range, value after range row
@@ -1117,7 +1115,7 @@ mod test {
         }];
         let original_nr_rows = 2;
         let ranges = vec![(0, R32!(1))];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
+        let columns = compute_columns::<T>(columns, original_nr_rows, &ranges);
         assert_eq!(columns, ColumnMajor::new(vec![vec![(2, R32!(1))]], 3, 1));
     }
 

@@ -8,7 +8,6 @@ use std::path::Path;
 
 use num::FromPrimitive;
 
-use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 use crate::io::error::Import;
@@ -27,9 +26,9 @@ pub mod mps;
 ///
 /// When a file extension is unknown, a file cannot be found or read, there is an inconsistency in
 /// the problem file, etc. an error type is returned.
-pub fn import<OF: OrderedField + FromPrimitive + 'static, OFZ: SparseElementZero<OF>>(
+pub fn import<OF: OrderedField + FromPrimitive + 'static>(
     file_path: &Path
-) -> Result<impl TryInto<GeneralForm<OF, OFZ>>, Import>
+) -> Result<impl TryInto<GeneralForm<OF>>, Import>
 where
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {

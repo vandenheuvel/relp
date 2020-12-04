@@ -11,15 +11,22 @@ use std::fmt::Display;
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
-use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
 use crate::data::linear_algebra::SparseTuple;
+use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
+use crate::data::number_types::traits::Field;
 
 pub mod carry;
 
 /// Maintain a basis inverse.
 ///
 /// Should facilitate quick solving of a linear system.
-pub trait InverseMaintenance<F: 'static, FZ>: Display {
+pub trait InverseMaintenance: Display {
+    /// Type used for computations inside the instance.
+    ///
+    /// Because the algorithm works with results from this object, many other parts of the code use
+    /// the same number type. Examples are the tableau and pivot rules.
+    type F: 'static + Field;
+
     /// Create a `Carry` for a tableau with only artificial variables.
     ///
     /// Only used if it is known in advance that there will be no positive slacks.
@@ -32,7 +39,7 @@ pub trait InverseMaintenance<F: 'static, FZ>: Display {
     /// # Return value
     ///
     /// `Carry` with a `minus_pi` equal to -1's and the standard basis.
-    fn create_for_fully_artificial(b: DenseVector<F>) -> Self;
+    fn create_for_fully_artificial(b: DenseVector<Self::F>) -> Self;
 
     /// Create a `Carry` for a tableau with some artificial variables.
     ///
@@ -51,7 +58,7 @@ pub trait InverseMaintenance<F: 'static, FZ>: Display {
     fn create_for_partially_artificial(
         artificial: &[usize],
         basis: &Vec<(usize, usize)>,
-        b: DenseVector<F>,
+        b: DenseVector<Self::F>,
     ) -> Self;
 
     /// Create a basis inverse when only the basis indices are known.
@@ -64,7 +71,7 @@ pub trait InverseMaintenance<F: 'static, FZ>: Display {
     /// * `basis`: Indices of columns that are to be in the basis. Should match the number of rows
     /// of the provider. Values should be unique, could have been a set.
     /// * `provider`: Problem representation.
-    fn from_basis(basis: &[usize], provider: &impl MatrixProvider<F, FZ>) -> Self;
+    fn from_basis(basis: &[usize], provider: &impl MatrixProvider) -> Self;
 
     /// Create a basis inverse when the basis indices and their pivot rows are known.
     ///
@@ -78,7 +85,7 @@ pub trait InverseMaintenance<F: 'static, FZ>: Display {
     /// * `provider`: Problem representation.
     fn from_basis_pivots(
         basis: &Vec<(usize, usize)>,
-        provider: &impl MatrixProvider<F, FZ>,
+        provider: &impl MatrixProvider,
     ) -> Self;
 
     /// When a previous basis inverse representation was used to find a basic feasible solution.
@@ -90,9 +97,10 @@ pub trait InverseMaintenance<F: 'static, FZ>: Display {
     /// * `artificial`: Indices of rows where an artificial variable is needed.
     /// * `provider`: Original problem representation.
     /// * `basis`: (row index, column index) tuples of given basis variables.
-    fn from_artificial<MP: MatrixProvider<F, FZ>>(
+    fn from_artificial(
         artificial: Self,
-        provider: &MP,
+        // TODO(ENHANCEMENT): Decouple these two `F` types
+        provider: &impl MatrixProvider<Column: Column<F=Self::F>>,
         basis: &[usize],
     ) -> Self;
 
@@ -107,7 +115,7 @@ pub trait InverseMaintenance<F: 'static, FZ>: Display {
     /// * `basis`: (row index, column index) tuples of given basis variables.
     fn from_artificial_remove_rows(
         artificial: Self,
-        rows_removed: &impl Filtered<F, FZ>,
+        rows_removed: &impl Filtered<Column: Column<F=Self::F>>,
         basis: &[usize],
     ) -> Self;
 
@@ -124,14 +132,14 @@ pub trait InverseMaintenance<F: 'static, FZ>: Display {
     /// * `column`: Column relative to the current basis to be entered into that basis.
     /// * `cost`: Relative cost of that column. The objective function value will change by this
     /// amount.
-    fn change_basis(&mut self, pivot_row_index: usize, column: &SparseVector<F, FZ, F>, cost: F);
+    fn change_basis(&mut self, pivot_row_index: usize, column: &SparseVector<Self::F, Self::F>, cost: Self::F);
 
     /// Calculates the cost difference `c_j`.
     ///
     /// This cost difference is the inner product of `minus_pi` and the column.
     // TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
     //  it.
-    fn cost_difference<C: Column<F> + OrderedColumn<F>>(&self, original_column: &C) -> F;
+    fn cost_difference<C: Column<F=Self::F> + OrderedColumn>(&self, original_column: &C) -> Self::F;
 
     /// Multiplies the submatrix consisting of `minus_pi` and B^-1 by a original_column.
     ///
@@ -144,7 +152,7 @@ pub trait InverseMaintenance<F: 'static, FZ>: Display {
     /// A `SparseVector<T>` of length `m`.
     /// TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
     ///  it.
-    fn generate_column<C: Column<F> + OrderedColumn<F>>(&self, original_column: C) -> SparseVector<F, FZ, F>;
+    fn generate_column<C: Column<F=Self::F> + OrderedColumn>(&self, original_column: C) -> SparseVector<Self::F, Self::F>;
 
     /// Generate a single element in the tableau with respect to the current basis.
     ///
@@ -154,19 +162,26 @@ pub trait InverseMaintenance<F: 'static, FZ>: Display {
     /// * `original_column`: Column with respect to the original basis.
     /// TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
     ///  it.
-    fn generate_element<'a, I: Iterator<Item=&'a SparseTuple<F>>>(&self, i: usize, original_column: I) -> F;
+    fn generate_element<'a, I: Iterator<Item=&'a SparseTuple<Self::F>>>(
+        &self,
+        i: usize,
+        original_column: I,
+    ) -> Self::F
+    where
+        Self::F: 'a,
+    ;
 
     /// Clone the latest constraint vector.
     ///
     /// TODO: Can this cloning be avoided?
-    fn b(&self) -> DenseVector<F>;
+    fn b(&self) -> DenseVector<Self::F>;
 
     /// Get the objective function value for the current basis.
     ///
     /// # Return value
     ///
     /// The objective value.
-    fn get_objective_function_value(&self) -> F;
+    fn get_objective_function_value(&self) -> Self::F;
 
     /// Get the `i`th constraint value relative to the current basis.
     ///
@@ -177,5 +192,5 @@ pub trait InverseMaintenance<F: 'static, FZ>: Display {
     /// # Return value
     ///
     /// The constraint value.
-    fn get_constraint_value(&self, i: usize) -> &F;
+    fn get_constraint_value(&self, i: usize) -> &Self::F;
 }

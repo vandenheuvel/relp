@@ -2,7 +2,7 @@
 //!
 //! If this project is ever extended to a branch and bound framework, we can generalize variables
 //! as the trait in this module specifies.
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 
 /// Logic for testing whether variables are feasible.
 ///
@@ -10,7 +10,7 @@ use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 /// the `MatrixProvider` is. Some of the logic of variable feasibility is more part of linear
 /// programming algorithms specifically, which are only defined over ordered fields. This logic is
 /// thus separated into a different trait, which depends on the other trait.
-pub trait FeasibilityLogic<F: 'static, FZ>: MatrixProvider<F, FZ> {
+pub trait FeasibilityLogic: MatrixProvider {
     /// Whether a variable is integer.
     ///
     /// # Arguments
@@ -20,7 +20,7 @@ pub trait FeasibilityLogic<F: 'static, FZ>: MatrixProvider<F, FZ> {
     /// # Return value
     ///
     /// `true` if the variable is integer, `false` otherwise.
-    fn is_feasible(&self, j: usize, value: F) -> bool;
+    fn is_feasible(&self, j: usize, value: <Self::Column as Column>::F) -> bool;
 
     /// Closest feasible variable to the left and right.
     ///
@@ -33,5 +33,9 @@ pub trait FeasibilityLogic<F: 'static, FZ>: MatrixProvider<F, FZ> {
     /// Two `Option`s, one for the closest feasible value to the left, one for the closest feasible
     /// value to the right. Note that these values might be equal, if there is only one feasible
     /// value.
-    fn closest_feasible(&self, j: usize, value: F) -> (Option<F>, Option<F>);
+    fn closest_feasible(
+        &self,
+        j: usize,
+        value: <Self::Column as Column>::F,
+    ) -> (Option<<Self::Column as Column>::F>, Option<<Self::Column as Column>::F>);
 }

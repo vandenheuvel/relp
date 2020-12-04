@@ -1,33 +1,30 @@
+//! # Non-Artificial Tableau
+//!
+//! Contains a tableau `Kind` type that acts as a simple passthrough for a matrix provider and
+//! `Tableau` logic that is only relevant in the second phase.
 use std::collections::HashSet;
-use std::marker::PhantomData;
 
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::algorithm::utilities::remove_indices;
-use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::number_types::traits::{Field, FieldRef};
 
 /// The `TableauType` in case the `Tableau` does not contain any artificial variables.
 ///
 /// This `Tableau` variant should only be constructed with a known feasible basis.
 #[derive(Eq, PartialEq, Debug)]
-pub struct NonArtificial<'a, F: 'static, FZ, MP> {
+pub struct NonArtificial<'a, MP> {
     /// Supplies data about the problem.
     ///
     /// This data doesn't change throughout the lifetime of this `Tableau`, and it is independent of
     /// the current basis as described by the `carry` and `basis_columns` attributes.
     provider: &'a MP,
-
-    phantom: PhantomData<(F, FZ)>,
 }
-impl<'a, F: 'static, FZ, MP> Kind<F, FZ> for NonArtificial<'a, F, FZ, MP>
+impl<'provider, MP> Kind for NonArtificial<'provider, MP>
 where
-    F: Field,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ>,
+    MP: MatrixProvider,
 {
     type Column = MP::Column;
 
@@ -41,7 +38,7 @@ where
     /// # Return value
     ///
     /// The cost of variable `j`.
-    fn initial_cost_value(&self, j: usize) -> &F {
+    fn initial_cost_value(&self, j: usize) -> &<Self::Column as Column>::F {
         debug_assert!(j < self.provider.nr_columns());
 
         self.provider.cost_value(j)
@@ -72,13 +69,12 @@ where
     }
 }
 
-impl<'provider, F: 'static, FZ, IM, MP> Tableau<F, FZ, IM, NonArtificial<'provider, F, FZ, MP>>
+impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    F: Field,
-    for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
-    IM: InverseMaintenance<F, FZ>,
-    MP: MatrixProvider<F, FZ>,
+    IM: InverseMaintenance,
+    MP: MatrixProvider,
+    // TODO(ENHANCEMENT): Decouple these two types
+    IM: InverseMaintenance<F=<MP::Column as Column>::F>,
 {
     /// Creates a Simplex tableau with a specific basis.
     ///
@@ -106,11 +102,7 @@ where
 
             kind: NonArtificial {
                 provider,
-
-                phantom: PhantomData,
             },
-
-            phantom: PhantomData,
         }
     }
 
@@ -139,11 +131,7 @@ where
 
             kind: NonArtificial {
                 provider,
-
-                phantom: PhantomData,
             },
-
-            phantom: PhantomData,
         }
     }
 
@@ -181,11 +169,7 @@ where
 
             kind: NonArtificial {
                 provider,
-
-                phantom: PhantomData,
             },
-
-            phantom: PhantomData,
         }
     }
 
@@ -204,10 +188,10 @@ where
         inverse_maintainer: IM,
         nr_artificial: usize,
         basis: (Vec<usize>, HashSet<usize>),
-        rows_removed: &'b RemoveRows<'provider, F, FZ, MP>,
-    ) -> Tableau<F, FZ, IM, NonArtificial<'b, F, FZ, RemoveRows<'provider, F, FZ, MP>>>
+        rows_removed: &'b RemoveRows<'provider, MP>,
+    ) -> Tableau<IM, NonArtificial<'b, RemoveRows<'provider, MP>>>
     where
-        MP::Column: IntoFilteredColumn<F>,
+        MP::Column: IntoFilteredColumn,
     {
         debug_assert!(basis.0.iter().all(|&v| v >= nr_artificial || rows_removed.rows_to_skip.contains(&v)));
 
@@ -235,11 +219,7 @@ where
 
             kind: NonArtificial {
                 provider: rows_removed,
-
-                phantom: PhantomData,
             },
-
-            phantom: PhantomData,
         }
     }
 }

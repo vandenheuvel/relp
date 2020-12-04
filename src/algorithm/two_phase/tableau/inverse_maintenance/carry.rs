@@ -12,10 +12,9 @@ use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, Order
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::utilities::remove_indices;
-use crate::data::linear_algebra::traits::SparseElementZero;
+use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector, Sparse, Vector};
 use crate::data::number_types::traits::{Field, FieldRef};
-use crate::data::linear_algebra::SparseTuple;
 
 /// The carry matrix looks like:
 ///
@@ -34,7 +33,7 @@ use crate::data::linear_algebra::SparseTuple;
 ///
 /// TODO: Write better docstring
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct Carry<F, FZ> {
+pub struct Carry<F> {
     /// Negative of the objective function value.
     ///
     /// Is non-negative (objective value is non-positive) for artificial tableaus.
@@ -46,14 +45,13 @@ pub struct Carry<F, FZ> {
     /// Basis inverse matrix, row major.
     ///
     /// TODO(ENHANCEMENT): Implement a faster basis inverse maintenance algorithm.
-    basis_inverse_rows: Vec<SparseVector<F, FZ, F>>,
+    basis_inverse_rows: Vec<SparseVector<F, F>>,
 }
 
-impl<F: 'static, FZ> Carry<F, FZ>
+impl<F> Carry<F>
 where
     F: Field,
     for <'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
 {
     /// Create a `Carry` for a tableau with a known basis inverse.
     ///
@@ -70,7 +68,7 @@ where
         minus_objective: F,
         minus_pi: DenseVector<F>,
         b: DenseVector<F>,
-        basis_inverse_rows: Vec<SparseVector<F, FZ, F>>,
+        basis_inverse_rows: Vec<SparseVector<F, F>>,
     ) -> Self {
         let m = minus_pi.len();
         debug_assert_eq!(minus_pi.len(), m);
@@ -93,8 +91,8 @@ where
     /// * `provider`: Matrix provider.
     /// * `basis`: Indices of the basis elements.
     fn create_minus_pi_from_artificial(
-        basis_inverse_rows: &Vec<SparseVector<F, FZ, F>>,
-        provider: &impl MatrixProvider<F, FZ>,
+        basis_inverse_rows: &Vec<SparseVector<F, F>>,
+        provider: &impl MatrixProvider<Column: Column<F=F>>,
         basis: &[usize],
     ) -> DenseVector<F> {
         let m = basis_inverse_rows.len();
@@ -121,8 +119,8 @@ where
     /// * `basis`: Basis indices (elements are already shifted, no compensation for the artificial
     /// variables is needed).
     /// * `b`: Constraint values with respect to this basis.
-    fn create_minus_obj_from_artificial<MP: MatrixProvider<F, FZ>>(
-        provider: &MP,
+    fn create_minus_obj_from_artificial(
+        provider: &impl MatrixProvider<Column: Column<F=F>>,
         basis: &[usize],
         b: &DenseVector<F>,
     ) -> F {
@@ -144,10 +142,10 @@ where
     fn normalize_pivot_row(
         &mut self,
         pivot_row_index: usize,
-        column: &SparseVector<F, FZ, F>,
+        column: &SparseVector<F, F>,
     ) {
-        let pivot_value = &column[pivot_row_index];
-        debug_assert_ne!(pivot_value, &F::zero());
+        let pivot_value = column.get(pivot_row_index)
+            .expect("Pivot value can't be zero.");
 
         self.basis_inverse_rows[pivot_row_index].element_wise_divide(pivot_value);
         self.b[pivot_row_index] /= pivot_value;
@@ -166,7 +164,7 @@ where
     fn row_reduce_update_basis_inverse_and_b(
         &mut self,
         pivot_row_index: usize,
-        column: &SparseVector<F, FZ, F>,
+        column: &SparseVector<F, F>,
     ) {
         debug_assert!(pivot_row_index < self.m());
         debug_assert_eq!(column.len(), self.m());
@@ -226,12 +224,13 @@ where
     }
 }
 
-impl<F: 'static, FZ> InverseMaintenance<F, FZ> for Carry<F, FZ>
+impl<F: 'static> InverseMaintenance for Carry<F>
 where
     F: Field,
     for <'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
 {
+    type F = F;
+
     fn create_for_fully_artificial(
         b: DenseVector<F>
     ) -> Self {
@@ -298,7 +297,7 @@ where
     }
 
     #[allow(unused_variables)]
-    fn from_basis(basis: &[usize], provider: &impl MatrixProvider<F, FZ>) -> Self {
+    fn from_basis(basis: &[usize], provider: &impl MatrixProvider) -> Self {
         // TODO: Implement matrix inversion
         unimplemented!()
     }
@@ -306,15 +305,15 @@ where
     #[allow(unused_variables)]
     fn from_basis_pivots(
         basis_columns: &Vec<(usize, usize)>,
-        provider: &impl MatrixProvider<F, FZ>,
+        provider: &impl MatrixProvider,
     ) -> Self {
         // TODO: Implement matrix inversion
         unimplemented!()
     }
 
-    fn from_artificial<MP: MatrixProvider<F, FZ>>(
+    fn from_artificial(
         artificial: Self,
-        provider: &MP,
+        provider: &impl MatrixProvider<Column: Column<F=Self::F>>,
         basis: &[usize],
     ) -> Self {
         let minus_pi = Carry::create_minus_pi_from_artificial(
@@ -338,7 +337,7 @@ where
 
     fn from_artificial_remove_rows(
         artificial: Self,
-        rows_removed: &impl Filtered<F, FZ>,
+        rows_removed: &impl Filtered<Column: Column<F=Self::F>>,
         basis_indices: &[usize],
     ) -> Self {
         debug_assert_eq!(basis_indices.len(), rows_removed.nr_rows());
@@ -374,7 +373,7 @@ where
         )
     }
 
-    fn change_basis(&mut self, pivot_row_index: usize, column: &Sparse<F, FZ, F>, cost: F) {
+    fn change_basis(&mut self, pivot_row_index: usize, column: &Sparse<F, F>, cost: F) {
         debug_assert!(pivot_row_index < self.m());
         debug_assert_eq!(column.len(), self.m());
 
@@ -384,11 +383,11 @@ where
         self.row_reduce_update_minus_pi_and_obj(pivot_row_index, cost);
     }
 
-    fn cost_difference<C: Column<F> + OrderedColumn<F>>(&self, original_column: &C) -> F {
+    fn cost_difference<C: Column<F=F> + OrderedColumn>(&self, original_column: &C) -> F {
         self.minus_pi.sparse_inner_product(original_column.iter())
     }
 
-    fn generate_column<C: Column<F> + OrderedColumn<F>>(&self, original_column: C) -> SparseVector<F, FZ, F> {
+    fn generate_column<C: Column<F=F> + OrderedColumn>(&self, original_column: C) -> SparseVector<F, F> {
         let column_iter = original_column.iter();
 
         let tuples = (0..self.m())
@@ -420,11 +419,10 @@ where
     }
 }
 
-impl<F: 'static, FZ> Display for Carry<F, FZ>
+impl<F: 'static> Display for Carry<F>
 where
     F: Field,
     for <'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
 {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         writeln!(f, "Carry:\n============")?;
@@ -446,7 +444,11 @@ where
         for row in 0..self.m() {
             write!(f, "{:>width$}", format!("{} |", row), width = width / 2)?;
             for column in 0..self.m() {
-                write!(f, "{:^width$}", format!("{}", self.basis_inverse_rows[row][column]), width = width)?;
+                let value = format!("{}", match self.basis_inverse_rows[row].get(column) {
+                    Some(value) => value.to_string(),
+                    None => "0".to_string(),
+                });
+                write!(f, "{:^width$}", value, width = width)?;
             }
             writeln!(f)?;
         }

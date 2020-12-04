@@ -8,8 +8,8 @@ use num::rational::Ratio;
 
 use crate::algorithm::OptimizationResult;
 use crate::algorithm::two_phase::{artificial_primal, primal, Rank, RankedFeasibilityResult};
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
@@ -48,7 +48,7 @@ fn conversion_pipeline() {
     // General form
     let result = structured_mps_computed.try_into();
     assert!(result.is_ok());
-    let mut general_form_computed: GeneralForm<_, _> = result.unwrap();
+    let mut general_form_computed: GeneralForm<_> = result.unwrap();
     assert_eq!(general_form_computed, general_form());
 
     assert!(general_form_computed.standardize().is_ok());
@@ -64,11 +64,11 @@ fn conversion_pipeline() {
     assert_eq!(matrix_data_form_computed, matrix_data_form(&constraints, &b));
 
     // Artificial tableau form
-    let artificial_tableau_form_computed = Tableau::<_, _, _, Partially<_, _, _>>::new(&matrix_data_form_computed);
+    let artificial_tableau_form_computed = Tableau::<_, Partially<_>>::new(&matrix_data_form_computed);
     assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form(&constraints, &b)));
 
     // Get to a basic feasible solution
-    let feasibility_result = artificial_primal::<_, _, _, _, MatrixData<_, _>, FirstProfitable>(artificial_tableau_form_computed);
+    let feasibility_result = artificial_primal::<_, _, MatrixData<T>, FirstProfitable>(artificial_tableau_form_computed);
     let mut tableau_form_computed = match feasibility_result {
         RankedFeasibilityResult::Feasible {
             rank,
@@ -77,7 +77,7 @@ fn conversion_pipeline() {
             basis,
         } => {
             assert_eq!(rank, Rank::Full);
-            Tableau::<_, _, _, NonArtificial<_, _, _>>::from_artificial(
+            Tableau::<_, NonArtificial<_>>::from_artificial(
                 inverse_maintainer,
                 nr_artificial_variables,
                 basis,
@@ -91,7 +91,7 @@ fn conversion_pipeline() {
     assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form(&constraints, &b)));
 
     // Get to a basic feasible solution
-    let result = primal::<T, T, _, _, FirstProfitable>(&mut tableau_form_computed);
+    let result = primal::<_, _, FirstProfitable>(&mut tableau_form_computed);
     assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
         (0, 2),
         (5, 2),
@@ -308,7 +308,7 @@ pub fn mps_form() -> MPS<T> {
 }
 
 /// The linear program in expected `GeneralForm`.
-pub fn general_form() -> GeneralForm<T, T> {
+pub fn general_form() -> GeneralForm<T> {
     let data = vec![
         vec![1, 1, 0],
         vec![1, 0, 1],
@@ -367,7 +367,7 @@ pub fn general_form() -> GeneralForm<T, T> {
     )
 }
 
-pub fn general_form_standardized() -> GeneralForm<T, T> {
+pub fn general_form_standardized() -> GeneralForm<T> {
     let data = vec![
         vec![1, 0, 1],
         vec![0, -1, 1],
@@ -423,7 +423,7 @@ pub fn general_form_standardized() -> GeneralForm<T, T> {
     )
 }
 
-pub fn create_matrix_data_data() -> (Sparse<T, T, T, ColumnMajor>, Dense<T>) {
+pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, Dense<T>) {
     let constraints = ColumnMajor::from_test_data(
         &vec![
             vec![0, -1, 1],
@@ -440,9 +440,9 @@ pub fn create_matrix_data_data() -> (Sparse<T, T, T, ColumnMajor>, Dense<T>) {
 }
 
 pub fn matrix_data_form<'a>(
-    constraints: &'a Sparse<T, T, T, ColumnMajor>,
+    constraints: &'a Sparse<T, T, ColumnMajor>,
     b: &'a Dense<T>,
-) -> MatrixData<'a, T, T> {
+) -> MatrixData<'a, T> {
     let variables = vec![
         MatrixDataVariable {
             cost: R32!(1),
@@ -470,9 +470,9 @@ pub fn matrix_data_form<'a>(
     )
 }
 
-pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
+pub fn artificial_tableau_form<MP: MatrixProvider<Column: Column<F=T>>>(
     provider: &MP,
-) -> Tableau<T, T, Carry<T, T>, Partially<T, T, MP>> {
+) -> Tableau<Carry<T>, Partially<MP>> {
     let m = 5;
     let carry = {
         let minus_objective = R32!(-2);
@@ -488,7 +488,7 @@ pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
     basis_indices.extend(vec![2 + 4, 2 + 5, 2 + 6]);
     let basis_columns = basis_indices.iter().copied().collect();
 
-    Tableau::<_, _, _, Partially<_, _, _>>::new_with_basis(
+    Tableau::<_, Partially<_>>::new_with_basis(
         provider,
         carry,
         basis_indices,
@@ -497,9 +497,9 @@ pub fn artificial_tableau_form<MP: MatrixProvider<T, T>>(
     )
 }
 
-pub fn tableau_form<MP: MatrixProvider<T, T>>(
+pub fn tableau_form<MP: MatrixProvider<Column: Column<F=T>>>(
     provider: &MP,
-) -> Tableau<T, T, Carry<T, T>, NonArtificial<T, T, MP>> {
+) -> Tableau<Carry<T>, NonArtificial<MP>> {
     let carry = {
         let minus_objective = R32!(-2);
         let minus_pi = Dense::from_test_data(vec![-8, -1, 0, 0, 0]);
@@ -516,7 +516,7 @@ pub fn tableau_form<MP: MatrixProvider<T, T>>(
     let basis_indices = vec![2, 0, 4, 5, 6];
     let basis_columns = basis_indices.iter().copied().collect();
 
-    Tableau::<_, _, _, NonArtificial<_, _, _>>::new_with_inverse_maintainer(
+    Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
         provider,
         carry,
         basis_indices,

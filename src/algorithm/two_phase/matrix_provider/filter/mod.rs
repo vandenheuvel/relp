@@ -2,12 +2,12 @@
 //!
 //! If a problem turns out to have redundant constraints after the first phase, we need to remove
 //! those rows from the problem for the rest of the implementation to work.
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 
 pub mod generic_wrapper;
 
 /// A filtered matrix provider had rows removed from it.
-pub trait Filtered<F: 'static, FZ>: MatrixProvider<F, FZ> {
+pub trait Filtered: MatrixProvider {
     /// The rows that were removed.
     ///
     /// Indexes are relevant to the original problem.
@@ -15,9 +15,9 @@ pub trait Filtered<F: 'static, FZ>: MatrixProvider<F, FZ> {
 }
 
 /// Derive a variant of the matrix provider that has rows removed from it.
-pub trait ToFiltered<F: 'static, FZ>: MatrixProvider<F, FZ> {
+pub trait ToFiltered: MatrixProvider {
     /// The resulting matrix provider type.
-    type Filtered<'provider>: Filtered<F, FZ>;
+    type Filtered<'provider>: Filtered<Column: Column<F=<Self::Column as Column>::F>>;
 
     /// Derive a variant of the matrix provider that has rows removed from it.
     ///
@@ -29,9 +29,9 @@ pub trait ToFiltered<F: 'static, FZ>: MatrixProvider<F, FZ> {
 }
 
 /// Convert into a variant of the matrix provider that has rows removed from it.
-pub trait IntoFiltered<F: 'static, FZ>: MatrixProvider<F, FZ> {
+pub trait IntoFiltered: MatrixProvider {
     /// The resulting matrix provider type.
-    type Filtered: Filtered<F, FZ>;
+    type Filtered: Filtered<Column: Column<F=<Self::Column as Column>::F>>;
 
     /// Convert into a variant of the matrix provider that has rows removed from it.
     ///

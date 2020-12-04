@@ -14,13 +14,12 @@ use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::matrix::ColumnMajor;
 use crate::data::linear_algebra::matrix::Sparse;
 use crate::data::linear_algebra::SparseTupleVec;
-use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::{BoundDirection, ConstraintType, LinearProgramType, Objective, VariableType};
 use crate::data::linear_program::general_form::presolve::Index as PresolveIndex;
 use crate::data::linear_program::general_form::RemovedVariable::{FunctionOfOthers, Solved};
 use crate::data::linear_program::solution::Solution;
-use crate::data::number_types::traits::{Field, OrderedField, OrderedFieldRef};
+use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 mod presolve;
 
@@ -32,7 +31,7 @@ mod presolve;
 /// Can be checked for consistency by the `is_consistent` method in this module. That method can be
 /// viewed as documentation for the requirements on the variables in this data structure.
 #[derive(Debug, Eq, PartialEq)]
-pub struct GeneralForm<F: Field, FZ: SparseElementZero<F>> {
+pub struct GeneralForm<F> {
     /// Which direction does the objective function go?
     objective: Objective,
 
@@ -44,7 +43,7 @@ pub struct GeneralForm<F: Field, FZ: SparseElementZero<F>> {
     ///
     /// Has size `constraint_types.len()` in the row direction, size `variables.len()` in the column
     /// direction.
-    constraints: Sparse<F, FZ, F, ColumnMajor>,
+    constraints: Sparse<F, F, ColumnMajor>,
     /// The equation type of all rows, ordered by index.
     ///
     /// These are read "from constraint to constraint value", meaning:
@@ -100,8 +99,8 @@ enum RemovedVariable<F> {
 ///
 /// This method might be expensive, use it in debugging only. It can be viewed as a piece of
 /// documentation on the requirements of a `GeneralForm` struct.
-fn is_consistent<OF: 'static + OrderedField, OFZ: SparseElementZero<OF>>(
-    general_form: &GeneralForm<OF, OFZ>,
+fn is_consistent<OF: 'static + OrderedField>(
+    general_form: &GeneralForm<OF>,
 ) -> bool
 where
     for<'r> &'r OF: OrderedFieldRef<OF>,
@@ -167,18 +166,17 @@ where
 }
 
 
-impl<OF: 'static, OFZ> GeneralForm<OF, OFZ>
+impl<OF: 'static> GeneralForm<OF>
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
-    OFZ: SparseElementZero<OF>,
 {
     /// Create a new linear program in general form.
     ///
     /// Simple constructor except for two indices that get created.
     pub fn new(
         objective: Objective,
-        constraints: Sparse<OF, OFZ, OF, ColumnMajor>,
+        constraints: Sparse<OF, OF, ColumnMajor>,
         constraint_types: Vec<ConstraintType>,
         b: Dense<OF>,
         variables: Vec<Variable<OF>>,
@@ -221,7 +219,7 @@ where
     /// # Errors
     ///
     /// In case the linear program gets solved during this presolve operation, a solution.
-    pub fn derive_matrix_data(&mut self) -> Result<MatrixData<OF, OFZ>, LinearProgramType<OF>> {
+    pub fn derive_matrix_data(&mut self) -> Result<MatrixData<OF>, LinearProgramType<OF>> {
         self.standardize()?;
 
         let variables = self.variables.iter()
@@ -691,7 +689,7 @@ where
     ///
     /// * `reduced_solution`: Solution values for all variables that are still marked as `Active` in
     /// the "original variables" of this problem.
-    pub fn reshift_solution(&self, reduced_solution: &mut SparseVector<OF, OFZ, OF>) {
+    pub fn reshift_solution(&self, reduced_solution: &mut SparseVector<OF, OF>) {
         debug_assert_eq!(reduced_solution.len(), self.variables.len());
 
         for (j, variable) in self.variables.iter().enumerate() {
@@ -714,7 +712,7 @@ where
     /// A complete solution.
     pub fn compute_full_solution_with_reduced_solution(
         self,
-        mut reduced_solution: SparseVector<OF, OFZ, OF>,
+        mut reduced_solution: SparseVector<OF, OF>,
     ) -> Solution<OF> {
         debug_assert_eq!(reduced_solution.len(), self.variables.len());
 
@@ -762,7 +760,7 @@ where
         &self,
         variable: usize,
         new_solutions: &'a mut Vec<Option<OF>>,
-        reduced_solution: &SparseVector<OF, OFZ, OF>,
+        reduced_solution: &SparseVector<OF, OF>,
     ) -> &'a OF {
         debug_assert!(variable < new_solutions.len());
         debug_assert_eq!(new_solutions.len(), self.original_variables.len());
@@ -773,7 +771,10 @@ where
         }
 
         let new_solution = match &self.original_variables[variable].1 {
-            &OriginalVariable::Active(j) => reduced_solution[j].clone(),
+            &OriginalVariable::Active(j) => match reduced_solution.get(j) {
+                Some(value) => value.clone(),
+                None => OF::zero(),
+            },
             &OriginalVariable::Removed(Solved(ref v)) => v.clone(),
             OriginalVariable::Removed(FunctionOfOthers { constant, coefficients }) => {
                 constant - coefficients.iter()
@@ -836,7 +837,7 @@ where
 /// upper bound is `upper_bound - shift`. For example, the range stays the same, regardless of the
 /// shift.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Variable<F: Field> {
+pub struct Variable<F> {
     /// Whether the variable is integer or not.
     pub variable_type: VariableType,
     /// Coefficient in the objective function.

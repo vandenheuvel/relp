@@ -3,12 +3,14 @@
 //! Strategies for moving from basis to basis, whether primal or dual.
 use std::ops::Range;
 
+use num::Zero;
+
+use crate::algorithm::two_phase::matrix_provider::Column;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
+use crate::data::number_types::traits::OrderedFieldRef;
 
 /// Deciding how to pivot.
 ///
@@ -21,16 +23,16 @@ pub trait PivotRule {
     /// Create a new instance.
     fn new() -> Self;
     /// Column selection rule for the primal Simplex method.
-    fn select_primal_pivot_column<OF: 'static, OFZ, IM, K>(
+    fn select_primal_pivot_column<IM, K>(
         &mut self,
-        tableau: &Tableau<OF, OFZ, IM, K>,
-    ) -> Option<SparseTuple<OF>>
+        tableau: &Tableau<IM, K>,
+    ) -> Option<SparseTuple<IM::F>>
     where
-        OF: OrderedField,
-        for<'r> &'r OF: OrderedFieldRef<OF>,
-        OFZ: SparseElementZero<OF>,
-        IM: InverseMaintenance<OF, OFZ>,
-        K: Kind<OF, OFZ>,
+        IM: InverseMaintenance,
+        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        K: Kind,
+        // TODO(ENHANCEMENT): Decouple these two types
+        IM: InverseMaintenance<F=<K::Column as Column>::F>,
     ;
 }
 
@@ -43,22 +45,22 @@ impl PivotRule for FirstProfitable {
         Self
     }
 
-    fn select_primal_pivot_column<OF: 'static, OFZ, IM, K>(
+    fn select_primal_pivot_column<IM, K>(
         &mut self,
-        tableau: &Tableau<OF, OFZ, IM, K>,
-    ) -> Option<SparseTuple<OF>>
+        tableau: &Tableau<IM, K>,
+    ) -> Option<SparseTuple<IM::F>>
     where
-        OF: OrderedField,
-        for<'r> &'r OF: OrderedFieldRef<OF>,
-        OFZ: SparseElementZero<OF>,
-        IM: InverseMaintenance<OF, OFZ>,
-        K: Kind<OF, OFZ>,
+        IM: InverseMaintenance,
+        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        K: Kind,
+        // TODO(ENHANCEMENT): Decouple these two types
+        IM: InverseMaintenance<F=<K::Column as Column>::F>,
     {
         // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
         (0..tableau.nr_columns())
             .filter(|column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
-            .find(|(_, cost)| cost < &OF::zero())
+            .find(|(_, cost)| cost < &<IM::F as Zero>::zero())
     }
 }
 
@@ -72,21 +74,21 @@ impl PivotRule for FirstProfitableWithMemory {
         Self { last_selected: None }
     }
 
-    fn select_primal_pivot_column<OF: 'static, OFZ, IM, K>(
+    fn select_primal_pivot_column<IM, K>(
         &mut self,
-        tableau: &Tableau<OF, OFZ, IM, K>,
-    ) -> Option<SparseTuple<OF>>
-        where
-            OF: OrderedField,
-            for<'r> &'r OF: OrderedFieldRef<OF>,
-            OFZ: SparseElementZero<OF>,
-            IM: InverseMaintenance<OF, OFZ>,
-            K: Kind<OF, OFZ>,
+        tableau: &Tableau<IM, K>,
+    ) -> Option<SparseTuple<IM::F>>
+    where
+        IM: InverseMaintenance,
+        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        K: Kind,
+        // TODO(ENHANCEMENT): Decouple these two types
+        IM: InverseMaintenance<F=<K::Column as Column>::F>,
     {
         let find = |to_consider: Range<usize>| to_consider
             .filter(|column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
-            .find(|(_, cost)| cost < &OF::zero());
+            .find(|(_, cost)| cost < &<IM::F as Zero>::zero());
 
         let potential = if let Some(last) = self.last_selected {
             // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
@@ -108,23 +110,23 @@ impl PivotRule for SteepestDescent {
         Self
     }
 
-    fn select_primal_pivot_column<OF: 'static, OFZ, IM, K>(
+    fn select_primal_pivot_column<IM, K>(
         &mut self,
-        tableau: &Tableau<OF, OFZ, IM, K>,
-    ) -> Option<SparseTuple<OF>>
-        where
-            OF: OrderedField,
-            for<'r> &'r OF: OrderedFieldRef<OF>,
-            OFZ: SparseElementZero<OF>,
-            IM: InverseMaintenance<OF, OFZ>,
-            K: Kind<OF, OFZ>,
+        tableau: &Tableau<IM, K>,
+    ) -> Option<SparseTuple<IM::F>>
+    where
+        IM: InverseMaintenance,
+        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        K: Kind,
+        // TODO(ENHANCEMENT): Decouple these two types
+        IM: InverseMaintenance<F=<K::Column as Column>::F>,
     {
         let mut smallest = None;
         // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
         for (j, cost) in (0..tableau.nr_columns())
             .filter(|column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
-            .filter(|(_, cost)| cost < &OF::zero()) {
+            .filter(|(_, cost)| cost < &<IM::F as Zero>::zero()) {
             if let Some((existing_j, existing_cost)) = smallest.as_mut() {
                 if &cost < existing_cost {
                     *existing_j = j;

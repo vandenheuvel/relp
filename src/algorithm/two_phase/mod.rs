@@ -5,9 +5,11 @@
 //! by Christos H. Papadimitriou and Kenneth Steiglitz.
 use std::collections::HashSet;
 
+use num::Zero;
+
 use crate::algorithm::{OptimizationResult, SolveRelaxation};
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
 use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
@@ -16,21 +18,23 @@ use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Identit
 use crate::algorithm::two_phase::tableau::kind::artificial::fully::Fully as FullyArtificial;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially as PartiallyArtificial;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
-use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::number_types::traits::{Field, FieldRef, OrderedField, OrderedFieldRef};
+use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 pub mod tableau;
 pub mod matrix_provider;
 pub mod strategy;
 
-impl<OF: 'static, OFZ, MP> SolveRelaxation<OF, OFZ> for MP
+impl<MP> SolveRelaxation for MP
 where
-    OF: OrderedField,
-    for<'r> &'r OF: OrderedFieldRef<OF>,
-    OFZ: SparseElementZero<OF>,
-    MP: MatrixProvider<OF, OFZ, Column: IdentityColumn<OF> + IntoFilteredColumn<OF>>,
+    MP: MatrixProvider<Column: IdentityColumn + IntoFilteredColumn>,
 {
-    default fn solve_relaxation(&self) -> OptimizationResult<OF, OFZ> {
+    default fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
+    where
+        IM: InverseMaintenance<F: OrderedField>,
+        // TODO(ENHANCEMENT): Decouple these two field types.
+        IM: InverseMaintenance<F=<<MP as MatrixProvider>::Column as Column>::F>,
+        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+    {
         // Default choice
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -46,22 +50,22 @@ where
             } => match rank {
                 Rank::Deficient(rows_to_remove) if !rows_to_remove.is_empty() => {
                     let rows_removed = RemoveRows::new(self, rows_to_remove);
-                    let mut non_artificial = Tableau::<_, _, Carry<_, _>, NonArtificial<_, _, _>>::from_artificial_removing_rows(
+                    let mut non_artificial = Tableau::<Carry<_>, NonArtificial<_>>::from_artificial_removing_rows(
                         inverse_maintainer,
                         nr_artificial_variables,
                         basis,
                         &rows_removed,
                     );
-                    primal::<_, _, _, _, NonArtificialPR>(&mut non_artificial)
+                    primal::<_, _, NonArtificialPR>(&mut non_artificial)
                 },
                 _ => {
-                    let mut non_artificial_tableau = Tableau::<_, _, _, NonArtificial<_, _, _>>::from_artificial(
+                    let mut non_artificial_tableau = Tableau::<_, NonArtificial<_>>::from_artificial(
                         inverse_maintainer,
                         nr_artificial_variables,
                         basis,
                         self,
                     );
-                    primal::<_, _, _, _, NonArtificialPR>(&mut non_artificial_tableau)
+                    primal::<_, _, NonArtificialPR>(&mut non_artificial_tableau)
                 },
             },
             RankedFeasibilityResult::Infeasible => OptimizationResult::Infeasible,
@@ -74,39 +78,39 @@ where
 /// This can happen either using the simplex method, or some more specialized method.
 ///
 /// TODO(ENHANCEMENT): Problems that can only have full rank
-pub trait FeasibilityComputeTrait {
+pub trait FeasibilityComputeTrait: MatrixProvider<Column: IdentityColumn> {
     /// Compute a basic feasible solution.
     ///
     /// # Returns
     ///
     /// A value representing the basic feasible solution, or an indicator that there is none.
-    fn compute_bfs_giving_im<OF: 'static, OFZ, IM>(&self) -> RankedFeasibilityResult<IM>
+    fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        OF: OrderedField,
-        for<'r> &'r OF: OrderedFieldRef<OF>,
-        OFZ: SparseElementZero<OF>,
-        IM: InverseMaintenance<OF, OFZ>,
-        // TODO: Can this bound be moved to the trait? Aren't OF and OFZ already inherent to Self?
-        Self: MatrixProvider<OF, OFZ, Column: IdentityColumn<OF>>,
+        IM: InverseMaintenance<F: OrderedField>,
+        // TODO(ENHANCEMENT): Decouple these two field types.
+        IM: InverseMaintenance<F=<Self::Column as Column>::F>,
+        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
     ;
 }
 
 /// Most generic implementation: finding a basic feasible solution using the Simplex method.
-impl<MP> FeasibilityComputeTrait for MP {
-    default fn compute_bfs_giving_im<OF: 'static, OFZ, IM>(&self) -> RankedFeasibilityResult<IM>
+impl<MP> FeasibilityComputeTrait for MP
+where
+    MP: MatrixProvider<Column: IdentityColumn>
+{
+    default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        OF: OrderedField,
-        for<'r> &'r OF: OrderedFieldRef<OF>,
-        OFZ: SparseElementZero<OF>,
-        IM: InverseMaintenance<OF, OFZ>,
-        MP: MatrixProvider<OF, OFZ, Column: IdentityColumn<OF>>,
+        IM: InverseMaintenance<F: OrderedField>,
+        // TODO(ENHANCEMENT): Decouple these two field types.
+        IM: InverseMaintenance<F=<MP::Column as Column>::F>,
+        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
         type PivotRule = FirstProfitable;
 
-        let artificial_tableau = Tableau::<_, _, _, FullyArtificial<_, _, _>>::new(self);
-        artificial_primal::<_, _, _, _, MP, PivotRule>(artificial_tableau)
+        let artificial_tableau = Tableau::<_, FullyArtificial<_>>::new(self);
+        artificial_primal::<_, _, MP, PivotRule>(artificial_tableau)
     }
 }
 
@@ -132,21 +136,23 @@ pub trait PartialInitialBasis {
     fn nr_initial_elements(&self) -> usize;
 }
 
-impl<MP: PartialInitialBasis> FeasibilityComputeTrait for MP {
-    fn compute_bfs_giving_im<OF: 'static, OFZ, IM>(&self) -> RankedFeasibilityResult<IM>
+impl<MP: PartialInitialBasis> FeasibilityComputeTrait for MP
+where
+    MP: MatrixProvider<Column: IdentityColumn>,
+{
+    default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        OF: OrderedField,
-        for<'r> &'r OF: OrderedFieldRef<OF>,
-        OFZ: SparseElementZero<OF>,
-        IM: InverseMaintenance<OF, OFZ>,
-        Self: MatrixProvider<OF, OFZ, Column: IdentityColumn<OF>>,
+        IM: InverseMaintenance<F: OrderedField>,
+        // TODO(ENHANCEMENT): Decouple these two field types.
+        IM: InverseMaintenance<F=<MP::Column as Column>::F>,
+        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
         type PivotRule = FirstProfitable;
 
-        let artificial_tableau = Tableau::<_, _, _, PartiallyArtificial<_, _, _>>::new(self);
-        artificial_primal::<_, _, _, _, MP, PivotRule>(artificial_tableau)
+        let artificial_tableau = Tableau::<_, PartiallyArtificial<_>>::new(self);
+        artificial_primal::<_, _, MP, PivotRule>(artificial_tableau)
     }
 }
 
@@ -164,18 +170,21 @@ pub trait FullInitialBasis: PartialInitialBasis {
 ///
 /// TODO(ARCHITECTURE): If this is true, it's ot really two-phase, now is it? Should this solution
 ///  be provided elsewhere, or the module be renamed?
-impl<OF: 'static, OFZ, MP: FullInitialBasis> SolveRelaxation<OF, OFZ> for MP
+impl<MP: FullInitialBasis> SolveRelaxation for MP
 where
-    OF: OrderedField,
-    for<'r> &'r OF: OrderedFieldRef<OF>,
-    OFZ: SparseElementZero<OF>,
     // TODO: The MP::Column trait bound might not be needed if no rows need to be removed for the
     //  initial basis.
-    // TODO: The <MP as MatrixProvider<OF, OFZ>>::Column: IdentityColumn bound is needed because of
+    // TODO: The <MP as MatrixProvider>::Column: IdentityColumn bound is needed because of
     //  limitations of the specialization feature.
-    MP: MatrixProvider<OF, OFZ, Column: IdentityColumn<OF> + IntoFilteredColumn<OF>>,
+    MP: MatrixProvider<Column: IdentityColumn + IntoFilteredColumn>,
 {
-    fn solve_relaxation(&self) -> OptimizationResult<OF, OFZ> {
+    fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
+    where
+        IM: InverseMaintenance<F: OrderedField>,
+        // TODO(ENHANCEMENT): Decouple these two field types.
+        IM: InverseMaintenance<F=<<MP as MatrixProvider>::Column as Column>::F>,
+        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+    {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
         type NonArtificialPR = FirstProfitable;
@@ -187,10 +196,10 @@ where
 
         let basis_indices: Vec<usize> = basis_indices.into_iter().map(|(_row, column)| column).collect();
         let basis_columns = basis_indices.iter().copied().collect();
-        let mut tableau = Tableau::<_, _, _, NonArtificial<_, _, _>>::new_with_inverse_maintainer(
+        let mut tableau = Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
             self, inverse_maintainer, basis_indices, basis_columns,
         );
-        primal::<_, _, _, _, NonArtificialPR>(&mut tableau)
+        primal::<_, _, NonArtificialPR>(&mut tableau)
     }
 }
 
@@ -206,16 +215,16 @@ where
 /// # Return value
 ///
 /// Whether the tableau might allow a basic feasible solution without artificial variables.
-pub(crate) fn artificial_primal<'provider, OF: 'static, OFZ, IM, K, MP, PR>(
-    mut tableau: Tableau<OF, OFZ, IM, K>,
+pub(crate) fn artificial_primal<'provider, IM, K, MP, PR>(
+    mut tableau: Tableau<IM, K>,
 ) -> RankedFeasibilityResult<IM>
 where
-    OF: OrderedField,
-    for<'r> &'r OF: OrderedFieldRef<OF>,
-    OFZ: SparseElementZero<OF>,
-    IM: InverseMaintenance<OF, OFZ>,
-    K: Artificial<OF, OFZ>,
-    MP: MatrixProvider<OF, OFZ> + 'provider,
+    IM: InverseMaintenance<F: OrderedField>,
+    // TODO(ENHANCEMENT): Decouple these two field types.
+    IM: InverseMaintenance<F=<K::Column as Column>::F>,
+    for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+    K: Artificial,
+    MP: MatrixProvider + 'provider,
     PR: PivotRule,
 {
     let mut rule = PR::new();
@@ -307,15 +316,14 @@ pub enum Rank {
 /// instead of constraints. All bounds are linearly independent among each other, and with respect
 /// to all constraints. As such, they should never be among the redundant rows returned by this
 /// method.
-fn remove_artificial_basis_variables<F: 'static, FZ, IM, K>(
-    tableau: &mut Tableau<F, FZ, IM, K>,
+fn remove_artificial_basis_variables<IM, K>(
+    tableau: &mut Tableau<IM, K>,
 ) -> Vec<usize>
 where
-    F: Field,
-    for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
-    IM: InverseMaintenance<F, FZ>,
-    K: Artificial<F, FZ>,
+    IM: InverseMaintenance,
+    K: Artificial,
+    // TODO(ENHANCEMENT): Decouple these two field types.
+    IM: InverseMaintenance<F=<K::Column as Column>::F>,
 {
     let mut artificial_variable_indices = tableau.artificial_basis_columns().into_iter().collect::<Vec<_>>();
     artificial_variable_indices.sort();
@@ -354,15 +362,16 @@ where
 ///
 /// An `OptimizationResult` indicating whether or not the problem has a finite optimum. It cannot be
 /// infeasible, as a feasible solution is needed to start using this method.
-pub(crate) fn primal<'provider, OF: 'static, OFZ, IM, MP, PR>(
-    tableau: &mut Tableau<OF, OFZ, IM, NonArtificial<'provider, OF, OFZ, MP>>,
-) -> OptimizationResult<OF, OFZ>
+pub(crate) fn primal<'provider, IM, MP, PR>(
+    tableau: &mut Tableau<IM, NonArtificial<'provider, MP>>,
+) -> OptimizationResult<IM::F>
 where
-    OF: OrderedField,
-    for<'r> &'r OF: OrderedFieldRef<OF>,
-    OFZ: SparseElementZero<OF>,
-    IM: InverseMaintenance<OF, OFZ>,
-    MP: MatrixProvider<OF, OFZ> + 'provider,
+    IM: InverseMaintenance<F: OrderedField>,
+    for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+    // TODO(ENHANCEMENT): Decouple these two field types.
+    IM: InverseMaintenance<F=<MP::Column as Column>::F>,
+    // TODO: Is this lifetime bound necessary?
+    MP: MatrixProvider + 'provider,
     PR: PivotRule,
 {
     let mut rule = PR::new();
@@ -411,18 +420,20 @@ mod test {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
         let mut tableau = tableau_form(&matrix_data_form);
-        let result = primal::<_, _, _, _, FirstProfitable>(&mut tableau);
+        let result = primal::<_, _, FirstProfitable>(&mut tableau);
         assert!(matches!(result, OptimizationResult::FiniteOptimum(_)));
         assert_eq!(tableau.objective_function_value(), R32!(9, 2));
     }
 
     #[test]
     fn finding_bfs() {
+        type T = Ratio<i32>;
+
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
-        let tableau = Tableau::<_, _, Carry<_, _>, Partially<_, _, _>>::new(&matrix_data_form);
+        let tableau = Tableau::<Carry<_>, Partially<_>>::new(&matrix_data_form);
         assert!(matches!(
-            artificial_primal::<_, _, _, _, MatrixData<_, _>, FirstProfitable>(tableau),
+            artificial_primal::<_, _, MatrixData<T>, FirstProfitable>(tableau),
             RankedFeasibilityResult::Feasible { rank: Rank::Full, .. }
         ));
     }
@@ -432,7 +443,7 @@ mod test {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
 
-        let result = SolveRelaxation::solve_relaxation(&matrix_data_form);
+        let result = SolveRelaxation::solve_relaxation::<Carry<_>>(&matrix_data_form);
         //  Optimal value: R64!(4.5)
         assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
             (1, 0.5f64),
@@ -445,7 +456,7 @@ mod test {
     fn solve_relaxation_1() {
         type T = Ratio<i32>;
 
-        let constraints = ColumnMajor::from_test_data::<T, T, _, _>(&vec![
+        let constraints = ColumnMajor::from_test_data::<T, _, _>(&vec![
             vec![1, 0],
             vec![1, 1],
         ], 2);
@@ -468,7 +479,7 @@ mod test {
 
         let data = MatrixData::new(&constraints, &b, 0, 2, 0, variables);
 
-        let result = data.solve_relaxation();
+        let result = data.solve_relaxation::<Carry<_>>();
         assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
             (0, 3f64 / 2f64),
             (1, 1f64),

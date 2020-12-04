@@ -52,6 +52,7 @@ pub trait OrderedFieldRef<Deref>: Ord + FieldRef<Deref> {}
 /// Basic field operations with Self and with references to Self.
 pub trait Field:
     PartialEq  // Equivalence relation
+        + Eq
         + Zero  // Additive identity
         + Neg<Output = Self>  // Additive inverse
         + One  // Multiplicative identity
@@ -82,6 +83,7 @@ pub trait Field:
         // Practicalities
         + Clone
         + Display
+        + ToString
         + Debug
 {
     /// Value such that for all elements of the fields, e + e_0 = e.

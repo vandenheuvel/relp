@@ -4,9 +4,9 @@
 //! practice, we store in a matrix that describes the current basis together with the original
 //! (also sparse) matrix data. This module contains structures that can provide a matrix.
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
+use crate::data::number_types::traits::Field;
 
 pub mod matrix_data;
 pub mod filter;
@@ -32,7 +32,7 @@ pub mod variable;
 /// Bound constraints ||    constants (one 1 per row)     |           0           |       +/- 1      |
 ///                   ||                                  |                       |            +/- 1 |
 /// --------------------------------------------------------------------------------------------------
-pub trait MatrixProvider<F: 'static, FZ> {
+pub trait MatrixProvider {
     /// Type used to represent a column of the matrix.
     ///
     /// TODO(ARCHITECTURE): When GATs are working, cloning can be avoided in some implementations,
@@ -40,7 +40,7 @@ pub trait MatrixProvider<F: 'static, FZ> {
     ///  lifetime parameter. Keep an eye on https://github.com/rust-lang/rust/issues/44265.
     /// TODO(ARCHITECTURE): When specializing on the generic arguments of trait methods is possible,
     ///  the columns no longer need to be ordered necessarily and the bound can be removed here.
-    type Column: Column<F> + OrderedColumn<F>;
+    type Column: Column + OrderedColumn;
 
     /// Column of the problem.
     ///
@@ -62,7 +62,7 @@ pub trait MatrixProvider<F: 'static, FZ> {
     /// # Return value
     ///
     /// Cost value.
-    fn cost_value(&self, j: usize) -> &F;
+    fn cost_value(&self, j: usize) -> &<Self::Column as Column>::F;
 
     /// Constraint values.
     ///
@@ -74,7 +74,7 @@ pub trait MatrixProvider<F: 'static, FZ> {
     /// # Return value
     ///
     /// A dense vector of constraint values, often called `b` in mathematical notation.
-    fn constraint_values(&self) -> Dense<F>;
+    fn constraint_values(&self) -> Dense<<Self::Column as Column>::F>;
 
     /// Index of the row of a virtual bound, if any.
     ///
@@ -119,10 +119,10 @@ pub trait MatrixProvider<F: 'static, FZ> {
     /// # Return value
     ///
     /// A solution that might be smaller than the number of variables in this problem.
-    fn reconstruct_solution<FZ2: SparseElementZero<F>>(
+    fn reconstruct_solution(
         &self,
-        column_values: SparseVector<F, FZ2, F>,
-    ) -> SparseVector<F, FZ2, F>;
+        column_values: SparseVector<<Self::Column as Column>::F, <Self::Column as Column>::F>,
+    ) -> SparseVector<<Self::Column as Column>::F, <Self::Column as Column>::F>;
 }
 
 /// Columns represent part of a (virtual) data matrix.
@@ -138,7 +138,13 @@ pub trait MatrixProvider<F: 'static, FZ> {
 /// used for iteration, that should be cheaply cloneable and probably not store any values itself.
 /// Rather, it should describe how this column should be iterated over.
 // TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
-pub trait Column<F: 'static> {
+pub trait Column {
+    /// Input data type.
+    ///
+    /// Items of this type get read and used in additions and multiplications often.
+    // TODO(ENHANCEMENT): Don't work with a field type directly, but an `Into<F>` type to separate.
+    type F: 'static + Field;
+
     /// Type of struct to iterate over this column.
     ///
     /// It should be somewhat cheaply cloneable and as such not be too large.
@@ -146,7 +152,7 @@ pub trait Column<F: 'static> {
     /// Note that we use a Generic Associated Type (GAT) here, and that these are (currently) part
     /// of an unfinished feature. Keep an eye on https://github.com/rust-lang/rust/issues/44265 for
     /// stabilization and possible bugs.
-    type Iter<'a>: Iterator<Item = &'a SparseTuple<F>> + Clone;
+    type Iter<'a>: Iterator<Item = &'a SparseTuple<Self::F>> + Clone;
 
     /// Derive the iterator object.
     ///
@@ -169,4 +175,4 @@ pub trait Column<F: 'static> {
 ///  currently both needed.
 ///
 // TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
-pub trait OrderedColumn<F: 'static>: Column<F> {}
+pub trait OrderedColumn: Column {}

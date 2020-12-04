@@ -9,8 +9,6 @@ use crate::algorithm::two_phase::matrix_provider::Column;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
-use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::number_types::traits::{Field, FieldRef};
 
 pub mod fully;
 pub mod partially;
@@ -19,7 +17,7 @@ pub mod partially;
 ///
 /// There are currently two implementations; either all variables are artificial, or not necessarily
 /// all variables are. See the two submodules.
-pub trait Artificial<F: 'static, FZ>: Kind<F, FZ, Column: IdentityColumn<F>> {
+pub trait Artificial: Kind<Column: IdentityColumn> {
     /// How many artificial variables are in the tableau.
     ///
     /// This number varies, because slack variables might have been recognized as practical
@@ -48,7 +46,7 @@ pub trait Artificial<F: 'static, FZ>: Kind<F, FZ, Column: IdentityColumn<F>> {
 ///
 /// When a matrix provider is to be used in the first phase, it should be possible to represent
 /// identity columns.
-pub trait IdentityColumn<F: 'static>: Column<F> {
+pub trait IdentityColumn: Column {
     /// Create an identity column, placing a "1" at a certain index and "0"'s otherwise.
     ///
     /// # Arguments
@@ -62,13 +60,12 @@ pub trait IdentityColumn<F: 'static>: Column<F> {
 ///
 /// Most of these functions get called in the artificial simplex method, or the method that removes
 /// artificial variables from the problem at zero level.
-impl<'provider, F: 'static, FZ, IM, A> Tableau<F, FZ, IM, A>
+impl<'provider, IM, A> Tableau<IM, A>
 where
-    F: Field + 'provider,
-    for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
-    IM: InverseMaintenance<F, FZ>,
-    A: Artificial<F, FZ>,
+    IM: InverseMaintenance,
+    A: Artificial,
+    // TODO(ENHANCEMENT): Decouple these two types
+    IM: InverseMaintenance<F=<A::Column as Column>::F>,
 {
     /// Whether there are any artificial variables in the basis.
     pub fn has_artificial_in_basis(&self) -> bool {

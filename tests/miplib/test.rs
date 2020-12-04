@@ -5,6 +5,7 @@ use num::rational::Ratio;
 
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use rust_lp::io::import;
 
 use super::get_test_file_path;
@@ -14,11 +15,11 @@ fn test(file_name: &str, objective: f64) {
     type T = Ratio<BigInt>;
 
     let path = get_test_file_path(file_name);
-    let result = import::<T, T>(&path).unwrap();
+    let result = import::<T>(&path).unwrap();
 
     let mut general = result.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation();
+    let result = data.solve_relaxation::<Carry<_>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {

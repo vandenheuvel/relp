@@ -13,7 +13,6 @@ use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
-use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::VariableType;
@@ -27,11 +26,11 @@ fn conversion_pipeline() {
     let matrix_data_form = matrix_data_form(&constraints, &b);
 
     // Artificial tableau form
-    let artificial_tableau_form_computed = Tableau::<_, _, _, Partially<_, _, _>>::new(&matrix_data_form);
+    let artificial_tableau_form_computed = Tableau::<_, Partially<_>>::new(&matrix_data_form);
     assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form));
 
     // Get to a basic feasible solution
-    let feasibility_result = artificial_primal::<_, _, _, _, MatrixData<_, _>, FirstProfitable>(artificial_tableau_form_computed);
+    let feasibility_result = artificial_primal::<_, _, MatrixData<T>, FirstProfitable>(artificial_tableau_form_computed);
     let mut tableau_form_computed = match feasibility_result {
         RankedFeasibilityResult::Feasible {
             rank,
@@ -40,7 +39,7 @@ fn conversion_pipeline() {
             basis,
         } => {
             assert_eq!(rank, Rank::Full);
-            Tableau::<_, _, _, NonArtificial<_, _, _>>::from_artificial(
+            Tableau::<_, NonArtificial<_>>::from_artificial(
                 inverse_maintainer,
                 nr_artificial_variables,
                 basis,
@@ -54,7 +53,7 @@ fn conversion_pipeline() {
     assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form));
 
     // Get to a basic feasible solution
-    let result = primal::<T, T, _, _, FirstProfitable>(&mut tableau_form_computed);
+    let result = primal::<_, _, FirstProfitable>(&mut tableau_form_computed);
     assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
         (1, 0.5f64),
         (3, 2.5f64),
@@ -62,7 +61,7 @@ fn conversion_pipeline() {
     ], 5)));
 }
 
-pub fn create_matrix_data_data() -> (Sparse<T, T, T, ColumnMajor>, Dense<T>) {
+pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, Dense<T>) {
     let constraints = ColumnMajor::from_test_data(
         &vec![
             vec![3, 2, 1, 0, 0],
@@ -82,9 +81,9 @@ pub fn create_matrix_data_data() -> (Sparse<T, T, T, ColumnMajor>, Dense<T>) {
 }
 
 pub fn matrix_data_form<'a>(
-    constraints: &'a Sparse<T, T, T, ColumnMajor>,
+    constraints: &'a Sparse<T, T, ColumnMajor>,
     b: &'a Dense<T>,
-) -> MatrixData<'a, T, T> {
+) -> MatrixData<'a, T> {
     let variables = vec![
         Variable {
             cost: R32!(1),
@@ -103,13 +102,12 @@ pub fn matrix_data_form<'a>(
     )
 }
 
-pub fn artificial_tableau_form<'a, F: 'static, FZ>(
-    data: &'a MatrixData<'a, F, FZ>,
-) -> Tableau<F, FZ, Carry<F, FZ>, Partially<F, FZ, MatrixData<'a, F, FZ>>>
+pub fn artificial_tableau_form<'a, F: 'static>(
+    data: &'a MatrixData<'a, F>,
+) -> Tableau<Carry<F>, Partially<MatrixData<'a, F>>>
 where
     F: Field + FromPrimitive,
     for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
 {
     let m = 3;
     let carry = {
@@ -125,7 +123,7 @@ where
     let basis_indices = artificials.clone();
     let basis_columns = basis_indices.iter().copied().collect();
 
-    Tableau::<_, _, _, Partially<_, _, _>>::new_with_basis(
+    Tableau::<_, Partially<_>>::new_with_basis(
         data,
         carry,
         basis_indices,
@@ -134,13 +132,12 @@ where
     )
 }
 
-pub fn tableau_form<'a, F, FZ>(
-    data: &'a MatrixData<'a, F, FZ>
-) -> Tableau<F, FZ, Carry<F, FZ>, NonArtificial<F, FZ, MatrixData<'a, F, FZ>>>
+pub fn tableau_form<'a, F: 'static>(
+    data: &'a MatrixData<'a, F>
+) -> Tableau<Carry<F>, NonArtificial<MatrixData<'a, F>>>
 where
     F: Field + FromPrimitive + 'a,
     for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
 {
     let carry = {
         let minus_objective = F!(-9f64 / 2f64);
@@ -168,7 +165,7 @@ where
         basis_columns
     };
 
-    Tableau::<_, _, _, NonArtificial<_, _, _>>::new_with_inverse_maintainer(
+    Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
         data,
         carry,
         basis_indices,

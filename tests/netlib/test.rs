@@ -6,25 +6,25 @@ use num::rational::Ratio;
 use rust_lp::{BR, R128};
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use rust_lp::data::linear_algebra::traits::SparseElementZero;
+use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use rust_lp::data::linear_program::solution::Solution;
 use rust_lp::data::number_types::traits::{OrderedField, OrderedFieldRef};
 use rust_lp::io::import;
 
 use super::get_test_file_path;
 
-fn solve<T: 'static + OrderedField + FromPrimitive, TZ: SparseElementZero<T>>(
+fn solve<T: 'static + OrderedField + FromPrimitive>(
     file_name: &str,
 ) -> Solution<T>
 where
     for<'r> &'r T: OrderedFieldRef<T>,
 {
     let path = get_test_file_path(file_name);
-    let mps = import::<T, T>(&path).unwrap();
+    let mps = import::<T>(&path).unwrap();
 
     let mut general = mps.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation();
+    let result = data.solve_relaxation::<Carry<_>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -40,7 +40,7 @@ where
 fn test_25FV47() {
     type T = Ratio<i128>;
 
-    let result = solve::<T, T>("25FV47");
+    let result = solve::<T>("25FV47");
     assert_eq!(result.objective_value, R128!(5.5018459e+03)); // Gurobi
 }
 
@@ -48,7 +48,7 @@ fn test_25FV47() {
 fn test_80BAU3B() {
     type T = Ratio<BigInt>;
 
-    let result = solve::<T, T>("80BAU3B");
+    let result = solve::<T>("80BAU3B");
     assert_eq!(result.objective_value, BR!(9.872241924e+05)); // Gurobi
 }
 
@@ -57,6 +57,6 @@ fn test_80BAU3B() {
 fn test_ADLITTLE() {
     type T = Ratio<BigInt>;
 
-    let result = solve::<T, T>("ADLITTLE");
+    let result = solve::<T>("ADLITTLE");
     assert_eq!(result.objective_value, BR!(2.254949632e+05)); // Gurobi
 }

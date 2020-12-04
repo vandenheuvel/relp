@@ -5,7 +5,7 @@ use num::rational::Ratio;
 
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use rust_lp::data::linear_algebra::traits::SparseElementZero;
+use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use rust_lp::data::linear_program::solution::Solution;
 use rust_lp::data::number_types::traits::{OrderedField, OrderedFieldRef};
 use rust_lp::io::import;
@@ -13,18 +13,18 @@ use rust_lp::R32;
 
 use super::get_test_file_path;
 
-fn solve<T: 'static + OrderedField + FromPrimitive, TZ: SparseElementZero<T>>(
+fn solve<T: 'static + OrderedField + FromPrimitive>(
     file_name: &str,
 ) -> Solution<T>
 where
     for<'r> &'r T: OrderedFieldRef<T>,
 {
     let path = get_test_file_path(file_name);
-    let mps = import::<T, T>(&path).unwrap();
+    let mps = import::<T>(&path).unwrap();
 
     let mut general = mps.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation();
+    let result = data.solve_relaxation::<Carry<_>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -39,7 +39,7 @@ where
 fn model_data_1() {
     type T = Ratio<i32>;
 
-    let result = solve::<T, T>("model_data_1");
+    let result = solve::<T>("model_data_1");
     assert!(result.is_probably_equal_to(&Solution::new(
         R32!(123, 38),  // GLPK
         vec![
@@ -60,7 +60,7 @@ fn model_data_1() {
 fn model_data_2() {
     type T = Ratio<i32>;
 
-    let result = solve::<T, T>("model_data_2");
+    let result = solve::<T>("model_data_2");
     assert_eq!(result, Solution::new(  // GLPK
         R32!(0),
         vec![
@@ -73,7 +73,7 @@ fn model_data_2() {
 fn model_data_3() {
     type T = Ratio<i32>;
 
-    let result = solve::<T, T>("model_data_3");
+    let result = solve::<T>("model_data_3");
     assert_eq!(result, Solution::new(  // GLPK
         R32!(70),
         vec![
@@ -88,7 +88,7 @@ fn model_data_3() {
 fn model_data_4() {
     type T = Ratio<i32>;
 
-    let result = solve::<T, T>("model_data_4");
+    let result = solve::<T>("model_data_4");
     assert_eq!(result, Solution::new(  // GLPK
         R32!(7, 1),
         vec![
@@ -104,7 +104,7 @@ fn model_data_4() {
 fn model_data_5() {
     type T = Ratio<i32>;
 
-    let result = solve::<T, T>("model_data_5");
+    let result = solve::<T>("model_data_5");
     assert_eq!(result, Solution::new(  // GLPK
         R32!(332, 1),
         vec![
@@ -119,7 +119,7 @@ fn model_data_5() {
 fn model_data_6() {
     type T = Ratio<i32>;
 
-    let result = solve::<T, T>("model_data_6");
+    let result = solve::<T>("model_data_6");
     assert!(result.is_probably_equal_to(&Solution::new(  // GLPK
         R32!(28, 1),
         vec![
@@ -156,7 +156,7 @@ fn model_data_6() {
 fn model_data_7() {
     type T = Ratio<i32>;
 
-    let _result = solve::<T, T>("model_data_7");
+    let _result = solve::<T>("model_data_7");
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn model_data_7() {
 fn model_data_8() {
     type T = Ratio<i32>;
 
-    let _result = solve::<T, T>("model_data_8");
+    let _result = solve::<T>("model_data_8");
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn model_data_8() {
 fn model_data_9() {
     type T = Ratio<i32>;
 
-    let result = solve::<T, T>("model_data_9");
+    let result = solve::<T>("model_data_9");
     let expected = Solution::new(  // GLPK
         R32!(-100, 1),
         vec![

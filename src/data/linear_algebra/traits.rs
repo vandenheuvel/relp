@@ -19,8 +19,6 @@
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 
-use num::Zero;
-
 /// Element of a `Vector` of `Matrix` type.
 ///
 /// This is an alias for a traits that are needed to derive a few practical traits for the
@@ -50,26 +48,6 @@ impl<Comparator, T:
     Borrow<Comparator>
         + Element
 > SparseElement<Comparator> for T {}
-
-/// Zero element of a sparse data structure.
-///
-/// A separate type from the comparison element, because it needs to be `Copy` such that is not
-/// (unnecessarily) behind a reference.
-///
-/// TODO: Does this even matter? Zero values should never really be constructed anyways, right?
-///  Could this allow the elimination of all these traits?
-pub trait SparseElementZero<Comparator>:
-    Zero
-        + Borrow<Comparator>
-        // + Copy  // TODO: It should be a small type and not one that's behind a reference
-        + Element
-{}
-impl<Comparator, T:
-    Zero
-        + Borrow<Comparator>
-        // + Copy
-        + Element
-> SparseElementZero<Comparator> for T {}
 
 /// Element to do comparisons between vectors of different "reference levels".
 ///

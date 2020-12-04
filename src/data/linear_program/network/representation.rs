@@ -4,28 +4,26 @@
 use std::slice::Iter;
 
 use crate::algorithm::two_phase::matrix_provider::{Column, OrderedColumn};
-use crate::data::linear_algebra::SparseTuple;
+use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
+use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
+use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse as SparseMatrix};
-use crate::data::linear_algebra::traits::SparseElementZero;
+use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Vector};
 use crate::data::number_types::traits::Field;
-use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
-use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
-use crate::algorithm::utilities::remove_sparse_indices;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ArcIncidenceMatrix<F, FZ> {
+pub struct ArcIncidenceMatrix<F> {
     /// TODO(OPTIMIZATION): Use a simpler type, like a boolean, to represent to plus and minus one.
-    pub data: SparseMatrix<F, FZ, F, ColumnMajor>,
+    pub data: SparseMatrix<F, F, ColumnMajor>,
     removed: Vec<usize>,
 }
 
-impl<F, FZ> ArcIncidenceMatrix<F, FZ>
+impl<F> ArcIncidenceMatrix<F>
 where
     F: Field,
-    FZ: SparseElementZero<F>,
 {
-    pub fn new(adjacency_matrix: SparseMatrix<F, FZ, F, ColumnMajor>, mut removed: Vec<usize>) -> (Self, DenseVector<F>) {
+    pub fn new(adjacency_matrix: SparseMatrix<F, F, ColumnMajor>, mut removed: Vec<usize>) -> (Self, DenseVector<F>) {
         let nr_vertices = adjacency_matrix.nr_columns();
         debug_assert_eq!(adjacency_matrix.nr_columns(), adjacency_matrix.nr_rows());
         // No self-arcs
@@ -101,10 +99,11 @@ where
 
 #[derive(Debug)]
 pub struct ArcIncidenceColumn<F>(pub Vec<SparseTuple<F>>);
-impl<F: 'static> Column<F> for ArcIncidenceColumn<F>
+impl<F: 'static> Column for ArcIncidenceColumn<F>
 where
     F: Field,
 {
+    type F = F;
     type Iter<'a> = ArcIncidenceColumnIter<'a, F>;
 
     fn iter(&self) -> Self::Iter<'_> {
@@ -117,7 +116,7 @@ where
             .map_or_else(|| "0".to_string(), |(_, v)| v.to_string())
     }
 }
-impl<F: 'static> IdentityColumn<F> for ArcIncidenceColumn<F>
+impl<F: 'static> IdentityColumn for ArcIncidenceColumn<F>
 where
     F: Field,
 {
@@ -125,7 +124,7 @@ where
         Self(vec![(i, F::one())])
     }
 }
-impl<F: 'static> IntoFilteredColumn<F> for ArcIncidenceColumn<F>
+impl<F: 'static> IntoFilteredColumn for ArcIncidenceColumn<F>
 where
     F: Field,
 {
@@ -136,7 +135,7 @@ where
         self
     }
 }
-impl<F: 'static> OrderedColumn<F> for ArcIncidenceColumn<F>
+impl<F: 'static> OrderedColumn for ArcIncidenceColumn<F>
 where
     F: Field,
 {

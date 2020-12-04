@@ -9,24 +9,21 @@
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fmt;
-use std::marker::PhantomData;
 
 use itertools::repeat_n;
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
-use crate::algorithm::two_phase::matrix_provider::filter::{ToFiltered, Filtered};
+use crate::algorithm::two_phase::matrix_provider::filter::{Filtered, ToFiltered};
 use crate::algorithm::two_phase::matrix_provider::variable::FeasibilityLogic;
 use crate::algorithm::two_phase::PartialInitialBasis;
 use crate::algorithm::utilities::remove_sparse_indices;
-use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::BoundDirection;
-use crate::data::number_types::traits::{Field, OrderedFieldRef};
 
 /// Remove a set of rows from a column.
 ///
 /// Note that only constraint rows should be removed.
-pub trait IntoFilteredColumn<F: 'static>: Column<F> {
+pub trait IntoFilteredColumn: Column {
     /// The type used to represent the filtered version of the column.
     ///
     /// This will often be `Self`.
@@ -34,7 +31,7 @@ pub trait IntoFilteredColumn<F: 'static>: Column<F> {
     /// This type has no lifetime attached to it, because it is likely better to filter once and
     /// then iterate over references of the filtered object, rather than to filter repeatedly while
     /// iterating.
-    type Filtered: Column<F> + OrderedColumn<F>;
+    type Filtered: Column<F=Self::F> + OrderedColumn;
 
     /// Filter the column.
     ///
@@ -51,38 +48,30 @@ pub trait IntoFilteredColumn<F: 'static>: Column<F> {
 /// Only constraint rows should be deleted, variable bounds should remain intact.
 /// TODO: Check the above property.
 #[derive(PartialEq, Debug)]
-pub struct RemoveRows<'a, F, FZ, MP> {
+pub struct RemoveRows<'a, MP> {
     provider: &'a MP,
     /// List of rows that this method removes.
     ///
     /// Sorted at all times.
     // TODO(OPTIMIZATION): Consider using a `HashMap`.
     pub rows_to_skip: Vec<usize>,
-
-    phantom_number_type: PhantomData<F>,
-    phantom_number_type_zero: PhantomData<FZ>,
 }
 
-impl<'provider, F: 'static, FZ, MP> Filtered<F, FZ> for RemoveRows<'provider, F, FZ, MP>
+impl<'provider, MP> Filtered for RemoveRows<'provider, MP>
 where
-    F: Field,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ, Column: IntoFilteredColumn<F>>,
+    MP: MatrixProvider<Column: IntoFilteredColumn>,
 {
     fn filtered_rows(&self) -> &[usize] {
         &self.rows_to_skip
     }
 }
 
-impl<F: 'static, FZ, MP: 'static> ToFiltered<F, FZ> for MP
+impl<MP: 'static> ToFiltered for MP
 where
-    F: Field,
-    for<'r> &'r F: OrderedFieldRef<F>,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ, Column: IntoFilteredColumn<F>>,
-    <<MP as MatrixProvider<F, FZ>>::Column as IntoFilteredColumn<F>>::Filtered: OrderedColumn<F>,
+    MP: MatrixProvider<Column: IntoFilteredColumn>,
+    <<MP as MatrixProvider>::Column as IntoFilteredColumn>::Filtered: OrderedColumn,
 {
-    type Filtered<'provider> = RemoveRows<'provider, F, FZ, MP>;
+    type Filtered<'provider> = RemoveRows<'provider, MP>;
 
     /// Create a new `RemoveRows` instance.
     ///
@@ -102,18 +91,13 @@ where
         RemoveRows {
             provider: self,
             rows_to_skip,
-
-            phantom_number_type: PhantomData,
-            phantom_number_type_zero: PhantomData,
         }
     }
 }
 
-impl<'provider, F: 'static, FZ, MP> RemoveRows<'provider, F, FZ, MP>
+impl<'provider, MP> RemoveRows<'provider, MP>
 where
-    F: Field,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ> + 'provider,
+    MP: MatrixProvider + 'provider,
 {
     /// Create a new `RemoveRows` instance.
     ///
@@ -133,9 +117,6 @@ where
         RemoveRows {
             provider,
             rows_to_skip,
-
-            phantom_number_type: PhantomData,
-            phantom_number_type_zero: PhantomData,
         }
     }
 
@@ -238,13 +219,11 @@ where
     }
 }
 
-impl<'provider, F: 'static, FZ, MP> MatrixProvider<F, FZ> for RemoveRows<'provider, F, FZ, MP>
+impl<'provider, MP> MatrixProvider for RemoveRows<'provider, MP>
 where
-    F: Field,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ, Column: IntoFilteredColumn<F>>,
+    MP: MatrixProvider<Column: IntoFilteredColumn>,
 {
-    type Column = <MP::Column as IntoFilteredColumn<F>>::Filtered;
+    type Column = <MP::Column as IntoFilteredColumn>::Filtered;
 
     fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
@@ -252,13 +231,13 @@ where
         self.provider.column(j).into_filtered(&self.rows_to_skip)
     }
 
-    fn cost_value(&self, j: usize) -> &F {
+    fn cost_value(&self, j: usize) -> &<Self::Column as Column>::F {
         debug_assert!(j < self.nr_columns());
 
         self.provider.cost_value(j)
     }
 
-    fn constraint_values(&self) -> DenseVector<F> {
+    fn constraint_values(&self) -> DenseVector<<Self::Column as Column>::F> {
         let mut all = self.provider.constraint_values();
         all.remove_indices(&self.rows_to_skip);
         all
@@ -292,17 +271,17 @@ where
         self.provider.nr_columns()
     }
 
-    fn reconstruct_solution<FZ2: SparseElementZero<F>>(
+    fn reconstruct_solution(
         &self,
-        column_values: SparseVector<F, FZ2, F>,
-    ) -> SparseVector<F, FZ2, F> {
+        column_values: SparseVector<<Self::Column as Column>::F, <Self::Column as Column>::F>,
+    ) -> SparseVector<<Self::Column as Column>::F, <Self::Column as Column>::F> {
         self.provider.reconstruct_solution(column_values)
     }
 }
 
-impl<'provider, F: 'static, FZ, MP> PartialInitialBasis for RemoveRows<'provider, F, FZ, MP>
+impl<'provider, MP> PartialInitialBasis for RemoveRows<'provider, MP>
 where
-    MP: MatrixProvider<F, FZ> + PartialInitialBasis,
+    MP: MatrixProvider + PartialInitialBasis,
 {
     fn pivot_element_indices(&self) -> Vec<(usize, usize)> {
         let mut from_parent = self.provider.pivot_element_indices();
@@ -317,31 +296,31 @@ where
     }
 }
 
-impl<'provider, F: 'static, FZ, MP> FeasibilityLogic<F, FZ> for RemoveRows<'provider, F, FZ, MP>
+impl<'provider, MP> FeasibilityLogic for RemoveRows<'provider, MP>
 where
-    F: Field + 'provider,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ, Column: IntoFilteredColumn<F>> + FeasibilityLogic<F, FZ>,
+    MP: MatrixProvider<Column: IntoFilteredColumn> + FeasibilityLogic,
 {
-    fn is_feasible(&self, j: usize, value: F) -> bool {
+    fn is_feasible(&self, j: usize, value: <MP::Column as Column>::F) -> bool {
         debug_assert!(j < self.nr_columns());
 
         self.provider.is_feasible(j, value)
     }
 
-    fn closest_feasible(&self, j: usize, value: F) -> (Option<F>, Option<F>) {
+    fn closest_feasible(
+        &self,
+        j: usize,
+        value: <MP::Column as Column>::F,
+    ) -> (Option<<MP::Column as Column>::F>, Option<<MP::Column as Column>::F>) {
         debug_assert!(j < self.nr_columns());
 
         self.provider.closest_feasible(j, value)
     }
 }
 
-impl<'provider, F: 'static, FZ, MP> Display for RemoveRows<'provider, F, FZ, MP>
+impl<'provider, MP> Display for RemoveRows<'provider, MP>
 where
-    F: Field + 'provider,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ, Column: IntoFilteredColumn<F>>,
-    <<MP as MatrixProvider<F, FZ>>::Column as IntoFilteredColumn<F>>::Filtered: OrderedColumn<F>,
+    MP: MatrixProvider<Column: IntoFilteredColumn>,
+    <<MP as MatrixProvider>::Column as IntoFilteredColumn>::Filtered: OrderedColumn,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 8;
@@ -368,8 +347,8 @@ where
 mod test {
     use num::rational::Ratio;
 
-    use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::RemoveRows;
+    use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 
     #[test]
     fn get_underlying_index() {
@@ -382,7 +361,7 @@ mod test {
         ] {
             let left_from_original = (0..size).filter(|i| !deleted.contains(i)).collect::<Vec<_>>();
             for (in_reduced, in_original) in (0..left_from_original.len()).zip(left_from_original.into_iter()) {
-                assert_eq!(RemoveRows::<T, T, MatrixData<T, T>>::get_underlying_index(&deleted, in_reduced), in_original);
+                assert_eq!(RemoveRows::<MatrixData<T>>::get_underlying_index(&deleted, in_reduced), in_original);
             }
         }
     }

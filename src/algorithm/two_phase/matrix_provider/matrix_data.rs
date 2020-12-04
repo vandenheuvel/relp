@@ -7,14 +7,14 @@ use std::fmt;
 use itertools::repeat_n;
 
 use crate::algorithm::two_phase::matrix_provider::{Column as ColumnTrait, OrderedColumn};
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::PartialInitialBasis;
 use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
 use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::{SparseElement, SparseElementZero};
+use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::{BoundDirection, VariableType};
 use crate::data::number_types::traits::{Field, FieldRef};
@@ -43,11 +43,11 @@ use crate::data::number_types::traits::{Field, FieldRef};
 /// ----------------------------------------------------------------------------------------------------------------
 #[allow(non_snake_case)]
 #[derive(Debug, PartialEq)]
-pub struct MatrixData<'a, F, FZ> {
+pub struct MatrixData<'a, F> {
     /// Coefficient matrix.
     ///
     /// This should not contain variable bounds.
-    constraints: &'a SparseMatrix<F, FZ, F, ColumnMajor>,
+    constraints: &'a SparseMatrix<F, F, ColumnMajor>,
     /// Constraint values for the constraints, excludes the simple bounds.
     b: &'a Dense<F>,
     /// How many of which constraint do we have?
@@ -90,10 +90,9 @@ enum ColumnType {
     BoundSlack(usize),
 }
 
-impl<'a, F: 'static, FZ> MatrixData<'a, F, FZ>
+impl<'a, F: 'static> MatrixData<'a, F>
 where
     F: SparseElement<F> + Field,
-    FZ: SparseElementZero<F>,
     for <'r> &'r F: FieldRef<F>,
 {
     /// Create a new `MatrixData` struct.
@@ -106,7 +105,7 @@ where
     /// * `negative_free_variable_dummy_index`: Index i contains the index of the i'th free
     /// variable.
     pub fn new(
-        constraints: &'a SparseMatrix<F, FZ, F, ColumnMajor>,
+        constraints: &'a SparseMatrix<F, F, ColumnMajor>,
         b: &'a Dense<F>,
         nr_equality_constraints: usize,
         nr_upper_bounded_constraints: usize,
@@ -211,11 +210,10 @@ where
     }
 }
 
-impl<'data, F: 'static, FZ> MatrixProvider<F, FZ> for MatrixData<'data, F, FZ>
+impl<'data, F: 'static> MatrixProvider for MatrixData<'data, F>
 where
     F: Field,
     for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
 {
     type Column = Column<F>;
 
@@ -305,9 +303,7 @@ where
             + self.nr_bounds()
     }
 
-    fn reconstruct_solution<FZ2: SparseElementZero<F>>(
-        &self, mut column_values: SparseVector<F, FZ2, F>,
-    ) -> SparseVector<F, FZ2, F> {
+    fn reconstruct_solution(&self, mut column_values: SparseVector<F, F>) -> SparseVector<F, F> {
         debug_assert_eq!(column_values.len(), self.nr_columns());
 
         column_values.remove_indices(&(self.nr_normal_variables()..self.nr_columns()).collect::<Vec<_>>());
@@ -315,10 +311,9 @@ where
     }
 }
 
-impl<'a, F: 'static, FZ> PartialInitialBasis for MatrixData<'a, F, FZ>
+impl<'a, F: 'static> PartialInitialBasis for MatrixData<'a, F>
 where
     F: SparseElement<F> + Field,
-    FZ: SparseElementZero<F>,
     for <'r> &'r F: FieldRef<F>,
 {
     fn pivot_element_indices(&self) -> Vec<(usize, usize)> {
@@ -382,7 +377,7 @@ pub enum Column<F> {
     Slack((usize, F), [(usize, F); 0]),
 }
 
-impl<F: 'static> IdentityColumn<F> for Column<F>
+impl<F: 'static> IdentityColumn for Column<F>
 where
     F: Field,
 {
@@ -394,7 +389,7 @@ where
 }
 
 #[allow(clippy::type_repetition_in_bounds)]
-impl<F> ColumnTrait<F> for Column<F>
+impl<F> ColumnTrait for Column<F>
 where
     // TODO: Once GATs are more developed, it could be possible to replace this bound with a where
     //  clause on the method. Then, the 'static bound doesn't propagate through the entire codebase.
@@ -402,6 +397,7 @@ where
     F: 'static,
     F: Field,
 {
+    type F = F;
     type Iter<'a> = ColumnIter<'a, F, impl Iterator<Item = &'a SparseTuple<F>> + Clone>;
 
     fn iter(&self) -> Self::Iter<'_> {
@@ -442,7 +438,7 @@ where
 }
 
 /// Mark this column implementation as ordered.
-impl<F: 'static> OrderedColumn<F> for Column<F>
+impl<F: 'static> OrderedColumn for Column<F>
 where
     F: Field,
 {
@@ -472,7 +468,7 @@ where
     }
 }
 
-impl<F: 'static> IntoFilteredColumn<F> for Column<F>
+impl<F: 'static> IntoFilteredColumn for Column<F>
 where
     F: Field,
 {
@@ -512,11 +508,10 @@ where
     }
 }
 
-impl<'a, F: 'static, FZ> Display for MatrixData<'a, F, FZ>
+impl<'a, F: 'static> Display for MatrixData<'a, F>
 where
     F: Field + 'a,
     for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 8;

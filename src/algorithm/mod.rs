@@ -1,5 +1,8 @@
 //! # Algorithms
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::data::linear_algebra::vector::Sparse;
+use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 pub mod two_phase;
 pub mod criss_cross;
@@ -12,7 +15,7 @@ pub mod utilities;
 /// specific matrix problem has a trivial basic feasible solution, this can be made clear by 
 /// implementing a trait that provides this basic feasible solution, and then a specialized
 /// implementation of this trait can use that basic feasible solution to bypass the search for one.
-pub trait SolveRelaxation<OF, OFZ> {
+pub trait SolveRelaxation: MatrixProvider {
     /// Solve the relaxed version of this problem.
     /// 
     /// In the case of linear programming, that means that integer constraints are ignored.
@@ -20,7 +23,13 @@ pub trait SolveRelaxation<OF, OFZ> {
     /// # Return value
     /// 
     /// Whether the problem is feasible, and if so, a solution if the problem is bounded.
-    fn solve_relaxation(&self) -> OptimizationResult<OF, OFZ>;
+    fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
+    where
+        IM: InverseMaintenance<F: OrderedField>,
+        // TODO(ENHANCEMENT): Decouple these two field types.
+        IM: InverseMaintenance<F=<<Self as MatrixProvider>::Column as Column>::F>,
+        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+    ;
 }
 
 /// A linear program is either infeasible, unbounded or has a finite optimum.
@@ -28,8 +37,8 @@ pub trait SolveRelaxation<OF, OFZ> {
 /// This is determined as the result of an algorithm
 #[allow(missing_docs)]
 #[derive(Eq, PartialEq, Debug)]
-pub enum OptimizationResult<F, FZ> {
+pub enum OptimizationResult<F> {
     Infeasible,
-    FiniteOptimum(Sparse<F, FZ, F>),
+    FiniteOptimum(Sparse<F, F>),
     Unbounded,
 }

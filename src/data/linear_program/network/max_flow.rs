@@ -1,23 +1,23 @@
 //! # Maximum Flow Problem
 use std::ops::Range;
 
-use crate::algorithm::two_phase::matrix_provider::{Column, matrix_data, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::{matrix_data, MatrixProvider};
 use crate::algorithm::two_phase::PartialInitialBasis;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
-use crate::data::linear_algebra::traits::{SparseComparator, SparseElement, SparseElementZero};
-use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector, Vector};
+use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
+use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
-use crate::data::linear_program::network::representation::{ArcIncidenceColumn, ArcIncidenceMatrix};
+use crate::data::linear_program::network::representation::ArcIncidenceMatrix;
 use crate::data::number_types::traits::{Field, FieldRef};
 
 /// Maximum flow problem.
 ///
 /// TODO(OPTIMIZATION): Use simpler number types for the matrix.
-struct Primal<F, FZ> {
+struct Primal<F> {
     /// For each edge, two values indicating from which value the arc leaves, and where it goes to.
     ///
     /// TODO(OPTIMIZATION): Use a simpler type, like a boolean, to represent to plus and minus one.
-    arc_incidence_matrix: ArcIncidenceMatrix<F, FZ>,
+    arc_incidence_matrix: ArcIncidenceMatrix<F>,
     capacity: DenseVector<F>,
 
     s: usize,
@@ -29,13 +29,12 @@ struct Primal<F, FZ> {
     MINUS_ONE: F,
 }
 
-impl<F, FZ> Primal<F, FZ>
+impl<F> Primal<F>
 where
     F: Field,
-    FZ: SparseElementZero<F>,
 {
     pub fn new(
-        adjacency_matrix: SparseMatrix<F, FZ, F, ColumnMajor>,
+        adjacency_matrix: SparseMatrix<F, F, ColumnMajor>,
         s: usize,
         t: usize,
     ) -> Self {
@@ -70,11 +69,10 @@ where
     }
 }
 
-impl<F: 'static, FZ> MatrixProvider<F, FZ> for Primal<F, FZ>
+impl<F: 'static> MatrixProvider for Primal<F>
 where
     F: Field + SparseElement<F> + SparseComparator,
     for <'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
 {
     type Column = matrix_data::Column<F>;
 
@@ -134,19 +132,15 @@ where
         self.nr_edges() + self.nr_edges()
     }
 
-    fn reconstruct_solution<FZ2: SparseElementZero<F>>(
-        &self,
-        column_values: SparseVector<F, FZ2, F>,
-    ) -> SparseVector<F, FZ2, F> {
+    fn reconstruct_solution(&self, column_values: SparseVector<F, F>) -> SparseVector<F, F> {
         unimplemented!()
     }
 }
 
-impl<F: 'static, FZ> PartialInitialBasis for Primal<F, FZ>
+impl<F: 'static> PartialInitialBasis for Primal<F>
 where
     F: Field,
     for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
 {
     fn pivot_element_indices(&self) -> Vec<(usize, usize)> {
         (0..self.nr_edges()).map(|j| (j + self.nr_constraints(), self.nr_edges() + j)).collect()
@@ -162,6 +156,7 @@ mod test {
     use num::rational::Ratio;
 
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
     use crate::data::linear_algebra::vector::Sparse as SparseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
@@ -172,7 +167,7 @@ mod test {
     #[test]
     fn test_1() {
         // Example from Papadimitriou's Combinatorial Optimization.
-        let data = ColumnMajor::from_test_data::<T, T, T, _>(&vec![
+        let data = ColumnMajor::from_test_data::<T, T, _>(&vec![
             // Directed; from is top, to is on the right
             //   s  a  b  t
             vec![0, 0, 0, 0], // s
@@ -182,7 +177,7 @@ mod test {
         ], 4);
         let problem = Primal::new(data, 0, 3);
         debug_assert_eq!(
-            problem.solve_relaxation(),
+            problem.solve_relaxation::<Carry<_>>(),
             OptimizationResult::FiniteOptimum(SparseVector::from_test_data(
                 vec![2, 1, 1, 1, 2, 0, 0, 0, 0, 0]
             )),

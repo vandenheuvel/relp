@@ -9,7 +9,6 @@ use std::ops::BitXor;
 
 use crate::data::linear_algebra::matrix::{RowMajor, Sparse};
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::SparseElementZero;
 use crate::data::linear_program::elements::{BoundDirection, ConstraintType, LinearProgramType, Objective};
 use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable};
 use crate::data::number_types::traits::{Field, OrderedField, OrderedFieldRef};
@@ -20,20 +19,20 @@ use crate::data::number_types::traits::{Field, OrderedField, OrderedFieldRef};
 /// variable indices. Proposed changes that don't change the solution to the final problem are
 /// collected in the Updates field. A few indices, counters, are kept to speed up the process: they
 /// indicate when which rules can be applied.
-pub(super) struct Index<'a, F: Field, FZ: SparseElementZero<F>> {
+pub(super) struct Index<'a, F: Field> {
     /// Which rule should still be applied to which constraint or variable.
     pub queues: Queues,
     /// Set of changes that doesn't change the solution to the problem.
-    pub updates: Updates<'a, F, FZ>,
+    pub updates: Updates<'a, F>,
     /// Indices to speed up solving.
-    pub counters: Counters<'a, F, FZ>,
+    pub counters: Counters<'a, F>,
 
     /// We maintain the computed activity bounds.
     /// TODO(PRECISION): Include counter for recomputation (numerical errors accumulate)
     activity_bounds: Vec<(Option<F>, Option<F>)>,
 
     /// Column major representation of the constraint matrix, borrowed from problem being presolved.
-    general_form: &'a GeneralForm<F, FZ>,
+    general_form: &'a GeneralForm<F>,
 }
 
 /// Which rules still need to be applied to which constraint or variable.
@@ -77,9 +76,7 @@ impl Queues {
     /// # Return value
     ///
     /// A new instance.
-    fn new<OF: OrderedField, OFZ: SparseElementZero<OF>>(
-        general_form: &GeneralForm<OF, OFZ>, counters: &Counters<OF, OFZ>,
-    ) -> Self
+    fn new<OF: OrderedField>(general_form: &GeneralForm<OF>, counters: &Counters<OF>) -> Self
     where
         for<'r> &'r OF: OrderedFieldRef<OF>,
     {
@@ -131,7 +128,7 @@ impl Queues {
 ///
 /// All indices in this struct are relative to the problem without anything removed (couldn't really
 /// be different, but for clarity).
-pub(super) struct Updates<'a, F: Field, FZ: SparseElementZero<F>> {
+pub(super) struct Updates<'a, F> {
     /// New constraint values (replace the current value), by constraint index.
     b: HashMap<usize, F>,
     /// New constraint types.
@@ -160,13 +157,12 @@ pub(super) struct Updates<'a, F: Field, FZ: SparseElementZero<F>> {
     columns_optimized_independently: Vec<usize>,
 
     /// Original problem being solved. Included as an attribute to allow nicer code, see above.
-    general_form: &'a GeneralForm<F, FZ>,
+    general_form: &'a GeneralForm<F>,
 }
-impl<'a, OF: 'static, OFZ> Updates<'a, OF, OFZ>
+impl<'a, OF: 'static> Updates<'a, OF>
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
-    OFZ: SparseElementZero<OF>,
 {
     /// Create a new instance.
     ///
@@ -183,8 +179,8 @@ where
     ///
     /// A new instance.
     fn new(
-        general_form: &'a GeneralForm<OF, OFZ>,
-        counters: &Counters<OF, OFZ>,
+        general_form: &'a GeneralForm<OF>,
+        counters: &Counters<OF>,
     ) -> Result<Self, LinearProgramType<OF>> {
         let mut fixed_cost = OF::zero();
         let removed_variables = counters.variable.iter().enumerate()
@@ -376,7 +372,7 @@ where
         direction: BoundDirection,
         activity_bound: &OF,
     ) -> (BoundDirection, Option<Option<OF>>) {
-        let bound_direction = !direction.bitxor(Index::<_, OFZ>::direction_from_sign(coefficient));
+        let bound_direction = !direction.bitxor(Index::<_>::direction_from_sign(coefficient));
         let bound_value = self.variable_bound(variable, bound_direction).unwrap();
         let bound = activity_bound - coefficient * bound_value;
 
@@ -464,7 +460,7 @@ where
     }
 }
 
-pub struct Counters<'a, F: Field, FZ: SparseElementZero<F>> {
+pub struct Counters<'a, F: Field> {
     /// Amount of meaningful elements still in the column or row.
     /// The elements should at least be considered when the counter drops below 2. This also
     /// depends on whether the variable appears in the cost function.
@@ -478,13 +474,12 @@ pub struct Counters<'a, F: Field, FZ: SparseElementZero<F>> {
     activity: Vec<(usize, usize)>,
 
     /// Row major representation of the constraint matrix (a copy of `generalform.constraints`).
-    rows: Sparse<&'a F, FZ, F, RowMajor>,
-    general_form: &'a GeneralForm<F, FZ>,
+    rows: Sparse<&'a F, F, RowMajor>,
+    general_form: &'a GeneralForm<F>,
 }
-impl<'a, OF: 'static, OFZ> Counters<'a, OF, OFZ>
+impl<'a, OF: 'static> Counters<'a, OF>
 where
     OF: OrderedField,
-    OFZ: SparseElementZero<OF>,
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {
     /// Create a new instance.
@@ -499,8 +494,8 @@ where
     /// # Return value
     ///
     /// A new instance.
-    fn new(general_form: &'a GeneralForm<OF, OFZ>) -> Self {
-        let rows: Sparse<_, OFZ, _, _> = Sparse::from_column_major_ordered_matrix_although_this_is_expensive(
+    fn new(general_form: &'a GeneralForm<OF>) -> Self {
+        let rows: Sparse<_, _, _> = Sparse::from_column_major_ordered_matrix_although_this_is_expensive(
             &general_form.constraints,
         );
 
@@ -514,7 +509,7 @@ where
             activity: rows.iter_rows().map(|row| {
                 row.iter().map(|&(j, coefficient)| {
                     let (lower, upper) =  (&general_form.variables[j].lower_bound, &general_form.variables[j].upper_bound);
-                    match Index::<OF, OFZ>::direction_from_sign(coefficient) {
+                    match Index::<OF>::direction_from_sign(coefficient) {
                         BoundDirection::Upper => (lower, upper),
                         BoundDirection::Lower => (upper, lower),
                     }
@@ -587,11 +582,10 @@ where
     }
 }
 
-impl<'a, OF: 'static, OFZ> Index<'a, OF, OFZ>
+impl<'a, OF: 'static> Index<'a, OF>
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
-    OFZ: SparseElementZero<OF>,
 {
     /// Create a new instance.
     ///
@@ -608,7 +602,7 @@ where
     /// # Arguments
     ///
     /// * `general_form`: Problem description which is being presolved.
-    pub(super) fn new(general_form: &'a GeneralForm<OF, OFZ>) -> Result<Self, LinearProgramType<OF>> {
+    pub(super) fn new(general_form: &'a GeneralForm<OF>) -> Result<Self, LinearProgramType<OF>> {
         let counters = Counters::new(general_form);
         let updates = Updates::new(general_form, &counters)?;
 
@@ -1394,7 +1388,7 @@ mod test {
     #[test]
     fn presolve_empty_constraint() {
         let create = |constraint_type, value| {
-            GeneralForm::<_, T>::new(
+            GeneralForm::<_>::new(
                 Objective::Minimize,
                 ColumnMajor::from_test_data(&vec![vec![0], vec![1]], 1),
                 vec![constraint_type, ConstraintType::Equal],
@@ -1440,7 +1434,7 @@ mod test {
 
     #[test]
     fn presolve_fixed_variable() {
-        let initial = GeneralForm::<_, T>::new(
+        let initial = GeneralForm::<_>::new(
             Objective::Minimize,
             ColumnMajor::from_test_data(&vec![vec![1], vec![2]], 1),
             vec![ConstraintType::Equal; 2],
@@ -1471,7 +1465,7 @@ mod test {
 
     #[test]
     fn presolve_simple_bound_constraint() {
-        let initial = GeneralForm::<T, T>::new(
+        let initial = GeneralForm::<T>::new(
             Objective::Minimize,
             ColumnMajor::from_test_data(&vec![vec![1]; 2], 1),
             vec![ConstraintType::Equal; 2],
@@ -1504,7 +1498,7 @@ mod test {
     fn presolve_constraint_if_slack_with_suitable_bounds() {
         let create = |constraint_type, lower, upper| {
             let nr_variables = 3;
-            GeneralForm::<T, T>::new(
+            GeneralForm::<T>::new(
                 Objective::Minimize,
                 ColumnMajor::from_test_data(&vec![vec![2; nr_variables]], nr_variables),
                 vec![constraint_type],
@@ -1587,7 +1581,7 @@ mod test {
             vec![1, 0],
             vec![2, 1],
         ];
-        let constraints = ColumnMajor::from_test_data::<T, T, T, _>(&data, 2);
+        let constraints = ColumnMajor::from_test_data::<T, T, _>(&data, 2);
         let b = Dense::from_test_data(vec![
             2,
             8,
@@ -1665,7 +1659,7 @@ mod test {
 
     #[test]
     fn make_b_non_negative() {
-        let rows = ColumnMajor::from_test_data::<T, T, T, _>(&vec![vec![2]], 1);
+        let rows = ColumnMajor::from_test_data::<T, T, _>(&vec![vec![2]], 1);
         let b = Dense::from_test_data(vec![-1]);
         let variables = vec![
             Variable {
@@ -1736,7 +1730,7 @@ mod test {
             vec![7, 11, 13, 0, 0, 0], // Should be removed because of fixed variable after the removal of above two
             vec![17, 19, 23, 0, 29, 31], // Removal by variable bounds
         ];
-        let constraints = ColumnMajor::from_test_data::<T, T, T, _>(&data, 6);
+        let constraints = ColumnMajor::from_test_data::<T, T, _>(&data, 6);
         let b = Dense::from_test_data(vec![
             101,
             103,

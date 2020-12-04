@@ -2,41 +2,37 @@
 //!
 //! When no initial pivots can be derived, this module is used. It is slightly quicker than the
 //! partially artificial tableau kind.
-use std::marker::PhantomData;
+use num::{One, Zero};
 
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
-use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::number_types::traits::{Field, FieldRef};
 
 /// All variables are artificial.
-pub struct Fully<'a, F, FZ, MP> {
+pub struct Fully<'a, MP: MatrixProvider> {
     /// Values that can be referred to when unsized constants need to be returned.
     ///
     /// TODO(ARCHITECTURE): Replace with values that are Copy, or an enum?
     /// TODO(ARCHITECTURE): Rename the (single) method that uses these to shift the the relevant
     ///  value to be able to remove these fields.
-    ONE: F,
-    ZERO: F,
+    ONE: <MP::Column as Column>::F,
+    ZERO: <MP::Column as Column>::F,
+
     /// Supplies data about the problem.
     ///
     /// This data doesn't change throughout the lifetime of this `Tableau`, and it is independent of
     /// the current basis as described by the `carry` and `basis_columns` attributes.
     provider: &'a MP,
-    phantom_zero: PhantomData<FZ>,
 }
-impl<'a, F: 'static, FZ, MP> Kind<F, FZ> for Fully<'a, F, FZ, MP>
+impl<'provider, MP> Kind for Fully<'provider, MP>
 where
-    F: Field,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ, Column: IdentityColumn<F>>,
+    MP: MatrixProvider<Column: Column + IdentityColumn>,
 {
     type Column = MP::Column;
 
-    fn initial_cost_value(&self, j: usize) -> &F {
+    fn initial_cost_value(&self, j: usize) -> &<Self::Column as Column>::F {
         if j < self.nr_rows() {
             &self.ONE
         } else {
@@ -48,7 +44,7 @@ where
         if j < self.nr_rows() {
             // TODO(ENHANCEMENT): Would it be possible to specialize the code where this identity
             //  column is used?
-            <Self::Column as IdentityColumn<F>>::identity(j, self.nr_rows())
+            <Self::Column as IdentityColumn>::identity(j, self.nr_rows())
         } else {
             self.provider.column(j - self.nr_rows())
         }
@@ -63,12 +59,9 @@ where
     }
 }
 
-impl<'provider, F: 'static, FZ, MP> Artificial<F, FZ> for Fully<'provider, F, FZ, MP>
+impl<'provider, MP> Artificial for Fully<'provider, MP>
 where
-    F: Field + 'provider,
-    for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ, Column: IdentityColumn<F>>,
+    MP: MatrixProvider<Column: IdentityColumn>,
 {
     fn nr_artificial_variables(&self) -> usize {
         self.nr_rows()
@@ -81,13 +74,13 @@ where
     }
 }
 
-impl<'provider, F: 'static, FZ, IM, MP> Tableau<F, FZ, IM, Fully<'provider, F, FZ, MP>>
+impl<'provider, IM, MP> Tableau<IM, Fully<'provider, MP>>
 where
-    F: Field + 'provider,
-    for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
-    IM: InverseMaintenance<F, FZ>,
-    MP: MatrixProvider<F, FZ>,
+    IM: InverseMaintenance,
+    // TODO: One + Zero or Field?
+    MP: MatrixProvider<Column: Column<F: One + Zero>>,
+    // TODO(ENHANCEMENT): Decouple these two types
+    IM: InverseMaintenance<F=<MP::Column as Column>::F>,
 {
     /// Create a `Tableau` augmented with artificial variables.
     ///
@@ -111,14 +104,11 @@ where
 
             // TODO: Make a special `Artificial` variant with this trivial basis
             kind: Fully {
-                ONE: F::one(),
-                ZERO: F::zero(),
+                ONE: <<MP::Column as Column>::F as One>::one(),
+                ZERO: <<MP::Column as Column>::F as Zero>::zero(),
 
                 provider,
-                phantom_zero: PhantomData,
             },
-
-            phantom: PhantomData,
         }
     }
 }

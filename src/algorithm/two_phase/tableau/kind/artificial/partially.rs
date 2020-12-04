@@ -3,20 +3,19 @@
 //! If a model can provide a few initial slack variables, those are used such that a basic feasible
 //! solution is found quicker. Less variables need to be driven out of the basis.
 use std::collections::HashSet;
-use std::marker::PhantomData;
 
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use num::{One, Zero};
+
+use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::PartialInitialBasis;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
-use crate::data::linear_algebra::traits::SparseElementZero;
-use crate::data::number_types::traits::{Field, FieldRef};
 
 /// The `TableauType` in case the `Tableau` contains artificial variables.
 #[derive(Eq, PartialEq, Debug)]
-pub struct Partially<'a, F, FZ, MP> {
+pub struct Partially<'a, MP: MatrixProvider> {
     /// For the `i`th artificial variable was originally a simple basis vector with the coefficient
     /// at index `column_to_row[i]`.
     column_to_row: Vec<usize>,
@@ -26,30 +25,25 @@ pub struct Partially<'a, F, FZ, MP> {
     /// TODO(ARCHITECTURE): Replace with values that are Copy, or an enum?
     /// TODO(ARCHITECTURE): Rename the (single) method that uses these to shift the the relevant
     ///  value to be able to remove these fields.
-    ONE: F,
-    ZERO: F,
+    ONE: <MP::Column as Column>::F,
+    ZERO: <MP::Column as Column>::F,
     /// Supplies data about the problem.
     ///
     /// This data doesn't change throughout the lifetime of this `Tableau`, and it is independent of
     /// the current basis as described by the `carry` and `basis_columns` attributes.
     provider: &'a MP,
-    phantom_zero: PhantomData<FZ>,
 }
-impl<'a, F: 'static, FZ, MP> Partially<'a, F, FZ, MP>
+impl<'a, MP> Partially<'a, MP>
 where
-    F: Field,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ>,
+    MP: MatrixProvider,
 {
     fn nr_artificial_variables(&self) -> usize {
         self.column_to_row.len()
     }
 }
-impl<'a, F: 'static, FZ, MP> Kind<F, FZ> for Partially<'a, F, FZ, MP>
+impl<'a, MP> Kind for Partially<'a, MP>
 where
-    F: Field,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ, Column: IdentityColumn<F>>,
+    MP: MatrixProvider<Column: IdentityColumn>,
 {
     type Column = MP::Column;
 
@@ -62,7 +56,7 @@ where
     /// # Return value
     ///
     /// The cost of variable `j`.
-    fn initial_cost_value(&self, j: usize) -> &F {
+    fn initial_cost_value(&self, j: usize) -> &<Self::Column as Column>::F {
         debug_assert!(j < self.nr_artificial_variables() + self.provider.nr_columns());
 
         if j < self.nr_artificial_variables() {
@@ -86,7 +80,7 @@ where
         debug_assert!(j < self.nr_columns());
 
         if j < self.nr_artificial_variables() {
-            <Self::Column as IdentityColumn<F>>::identity(self.column_to_row[j], self.nr_rows())
+            <Self::Column as IdentityColumn>::identity(self.column_to_row[j], self.nr_rows())
         } else {
             self.provider.column(j - self.nr_artificial_variables())
         }
@@ -100,12 +94,9 @@ where
         self.nr_artificial_variables() + self.provider.nr_columns()
     }
 }
-impl<'provider, F: 'static, FZ, MP> Artificial<F, FZ> for Partially<'provider, F, FZ, MP>
+impl<'provider, MP> Artificial for Partially<'provider, MP>
 where
-    F: Field + 'provider,
-    for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
-    MP: MatrixProvider<F, FZ, Column: IdentityColumn<F>>,
+    MP: MatrixProvider<Column: IdentityColumn>,
 {
     fn nr_artificial_variables(&self) -> usize {
         self.column_to_row.len()
@@ -118,13 +109,12 @@ where
     }
 }
 
-impl<'provider, F: 'static, FZ, IM, MP> Tableau<F, FZ, IM, Partially<'provider, F, FZ, MP>>
+impl<'provider, IM, MP> Tableau<IM, Partially<'provider, MP>>
 where
-    F: Field + 'provider,
-    for<'r> &'r F: FieldRef<F>,
-    FZ: SparseElementZero<F>,
-    IM: InverseMaintenance<F, FZ>,
-    MP: MatrixProvider<F, FZ>,
+    IM: InverseMaintenance,
+    MP: MatrixProvider,
+    // TODO(ENHANCEMENT): Decouple these two types
+    IM: InverseMaintenance<F=<MP::Column as Column>::F>,
 {
     /// Create a `Tableau` augmented with artificial variables.
     ///
@@ -215,14 +205,11 @@ where
             kind: Partially {
                 column_to_row: artificial,
 
-                ONE: F::one(),
-                ZERO: F::zero(),
+                ONE: <<MP::Column as Column>::F as One>::one(),
+                ZERO: <<MP::Column as Column>::F as Zero>::zero(),
 
                 provider,
-                phantom_zero: PhantomData,
             },
-
-            phantom: PhantomData,
         }
     }
 
@@ -256,15 +243,11 @@ where
             kind: Partially {
                 column_to_row: column_to_row_artificials,
 
-                ONE: F::one(),
-                ZERO: F::zero(),
+                ONE: <<MP::Column as Column>::F as One>::one(),
+                ZERO: <<MP::Column as Column>::F as Zero>::zero(),
 
                 provider,
-
-                phantom_zero: PhantomData
             },
-
-            phantom: PhantomData,
         }
     }
 }
