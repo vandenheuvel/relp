@@ -151,10 +151,12 @@ mod test {
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::network::shortest_path::Primal;
 
-    type T = Ratio<i32>;
-
     #[test]
     fn test_1() {
+        type T = Ratio<i32>;
+        // TODO(ENHANCEMENT): Decouple these two types
+        type S = T;
+
         // Example from Papadimitriou's Combinatorial Optimization.
         let data = ColumnMajor::from_test_data::<T, T, _>(&vec![
             // Directed; from is top, to is on the right
@@ -166,7 +168,7 @@ mod test {
         ], 4);
         let problem = Primal::new(data, 0, 3);
         debug_assert_eq!(
-            problem.solve_relaxation::<Carry<_>>(),
+            problem.solve_relaxation::<Carry<S>>(),
             OptimizationResult::FiniteOptimum(SparseVector::from_test_data(
                 vec![0, 1, 0, 0, 1]
             )),

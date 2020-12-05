@@ -23,41 +23,27 @@ use std::fmt::{Debug, Display};
 ///
 /// This is an alias for a traits that are needed to derive a few practical traits for the
 /// aforementioned types.
-pub trait Element:
-    PartialEq
-        + Clone
-        + Display
-        + Debug
-{}
-impl<T:
-    PartialEq
-        + Clone
-        + Display
-        + Debug
-> Element for T {}
+pub trait Element =
+    PartialEq +
+    Clone +
+    Display +
+    Debug +
+;
 
 /// Element of a sparse data structure.
 ///
 /// Needs to be borrowable as a type that can be used for comparison with the zero type, as well as
 /// reference types.
-pub trait SparseElement<Comparator>:
-    Borrow<Comparator>
-        + Element
-{}
-impl<Comparator, T:
-    Borrow<Comparator>
-        + Element
-> SparseElement<Comparator> for T {}
+pub trait SparseElement<Comparator> =
+    Borrow<Comparator> +
+    Element +
+;
 
 /// Element to do comparisons between vectors of different "reference levels".
 ///
 /// We might have an inner product between a `SparseVector<F>` and `SparseVector<&F>`. Then this
 /// comparator type would be `F`, such that the values can be compared as `&F`'s.
-pub trait SparseComparator:
-    PartialEq
-        + Element
-{}
-impl<T:
-    PartialEq
-        + Element
-> SparseComparator for T {}
+pub trait SparseComparator =
+    PartialEq +
+    Element +
+;

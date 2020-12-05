@@ -53,6 +53,7 @@ pub trait OrderedFieldRef<Deref>: Ord + FieldRef<Deref> {}
 pub trait Field:
     PartialEq  // Equivalence relation
         + Eq
+        + PartialOrd
         + Zero  // Additive identity
         + Neg<Output = Self>  // Additive inverse
         + One  // Multiplicative identity

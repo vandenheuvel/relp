@@ -7,13 +7,13 @@ use std::fmt::{Debug, Display, Formatter, Result as FormatResult};
 use std::iter::repeat;
 
 use itertools::repeat_n;
-use num::{One, Zero};
+use num::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::Column;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::vector::{Sparse as SparseVector, Vector};
-use crate::data::number_types::traits::{Field, OrderedField, OrderedFieldRef};
 
 pub mod inverse_maintenance;
 pub mod kind;
@@ -47,11 +47,9 @@ pub struct Tableau<IM, K> {
     kind: K,
 }
 
-impl<'a, IM, K> Tableau<IM, K>
+impl<IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintenance,
-    // TODO(ENHANCEMENT): Decouple these two field types.
-    IM: InverseMaintenance<F=<K::Column as Column>::F>,
+    IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
     K: Kind,
 {
     /// Brings a column into the basis by updating the `self.carry` matrix and updating the
@@ -210,10 +208,7 @@ where
 
 impl<IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintenance<F: OrderedField>,
-    for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
-    // TODO(ENHANCEMENT): Decouple these two field types.
-    IM: InverseMaintenance<F=<K::Column as Column>::F>,
+    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<K::Column as Column>::F>>,
     K: Kind,
 {
     /// Determine the row to pivot on.
@@ -270,10 +265,8 @@ where
 #[allow(clippy::nonminimal_bool)]
 pub fn is_in_basic_feasible_solution_state<IM, K>(tableau: &Tableau<IM, K>) -> bool
 where
-    IM: InverseMaintenance<F: OrderedField>,
+    IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
     K: Kind,
-    // TODO(ENHANCEMENT): Decouple these two field types.
-    IM: InverseMaintenance<F=<K::Column as Column>::F>,
 {
     // Checking basis_columns
     // Correct number of basis columns (uniqueness is implied because it's a set)
@@ -332,10 +325,8 @@ where
 
 impl<IM, K> Display for Tableau<IM, K>
 where
-    IM: InverseMaintenance<F: Field>,
+    IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
     K: Kind,
-    // TODO(ENHANCEMENT): Decouple these two field types.
-    IM: InverseMaintenance<F=<K::Column as Column>::F>,
 {
     fn fmt(&self, f: &mut Formatter) -> FormatResult {
         writeln!(f, "Tableau:")?;

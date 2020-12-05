@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 
 use crate::algorithm::two_phase::matrix_provider::Column;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -62,10 +62,8 @@ pub trait IdentityColumn: Column {
 /// artificial variables from the problem at zero level.
 impl<'provider, IM, A> Tableau<IM, A>
 where
-    IM: InverseMaintenance,
+    IM: InverseMaintenance<F: ExternalOps<<A::Column as Column>::F>>,
     A: Artificial,
-    // TODO(ENHANCEMENT): Decouple these two types
-    IM: InverseMaintenance<F=<A::Column as Column>::F>,
 {
     /// Whether there are any artificial variables in the basis.
     pub fn has_artificial_in_basis(&self) -> bool {

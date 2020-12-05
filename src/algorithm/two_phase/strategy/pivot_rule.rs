@@ -7,10 +7,10 @@ use num::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::Column;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::ExternalOps;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::number_types::traits::OrderedFieldRef;
 
 /// Deciding how to pivot.
 ///
@@ -28,11 +28,8 @@ pub trait PivotRule {
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintenance,
-        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
         K: Kind,
-        // TODO(ENHANCEMENT): Decouple these two types
-        IM: InverseMaintenance<F=<K::Column as Column>::F>,
     ;
 }
 
@@ -50,11 +47,8 @@ impl PivotRule for FirstProfitable {
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintenance,
-        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
         K: Kind,
-        // TODO(ENHANCEMENT): Decouple these two types
-        IM: InverseMaintenance<F=<K::Column as Column>::F>,
     {
         // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
         (0..tableau.nr_columns())
@@ -79,11 +73,8 @@ impl PivotRule for FirstProfitableWithMemory {
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintenance,
-        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
         K: Kind,
-        // TODO(ENHANCEMENT): Decouple these two types
-        IM: InverseMaintenance<F=<K::Column as Column>::F>,
     {
         let find = |to_consider: Range<usize>| to_consider
             .filter(|column| !tableau.is_in_basis(column))
@@ -115,11 +106,8 @@ impl PivotRule for SteepestDescent {
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintenance,
-        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
         K: Kind,
-        // TODO(ENHANCEMENT): Decouple these two types
-        IM: InverseMaintenance<F=<K::Column as Column>::F>,
     {
         let mut smallest = None;
         // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0

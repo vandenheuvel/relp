@@ -7,13 +7,17 @@
 //! factorization).
 //!
 //! TODO(ENHANCEMENT): A better inverse maintenance algorithm. Start with factorization?
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
+use std::iter::Sum;
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, Neg, SubAssign};
+
+use num::{One, Zero};
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::data::linear_algebra::SparseTuple;
+use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
-use crate::data::number_types::traits::Field;
 
 pub mod carry;
 
@@ -25,7 +29,7 @@ pub trait InverseMaintenance: Display {
     ///
     /// Because the algorithm works with results from this object, many other parts of the code use
     /// the same number type. Examples are the tableau and pivot rules.
-    type F: 'static + Field;
+    type F: InternalOps;
 
     /// Create a `Carry` for a tableau with only artificial variables.
     ///
@@ -39,7 +43,10 @@ pub trait InverseMaintenance: Display {
     /// # Return value
     ///
     /// `Carry` with a `minus_pi` equal to -1's and the standard basis.
-    fn create_for_fully_artificial(b: DenseVector<Self::F>) -> Self;
+    fn create_for_fully_artificial<G: Element>(b: DenseVector<G>) -> Self
+    where
+        Self::F: ExternalOps<G>,
+    ;
 
     /// Create a `Carry` for a tableau with some artificial variables.
     ///
@@ -55,11 +62,14 @@ pub trait InverseMaintenance: Display {
     /// # Return value
     ///
     /// `Carry` with a `minus_pi` equal to -1's and the standard basis.
-    fn create_for_partially_artificial(
+    fn create_for_partially_artificial<G: Element>(
         artificial: &[usize],
         basis: &Vec<(usize, usize)>,
-        b: DenseVector<Self::F>,
-    ) -> Self;
+        b: DenseVector<G>,
+    ) -> Self
+    where
+        Self::F: ExternalOps<G>,
+    ;
 
     /// Create a basis inverse when only the basis indices are known.
     ///
@@ -97,12 +107,14 @@ pub trait InverseMaintenance: Display {
     /// * `artificial`: Indices of rows where an artificial variable is needed.
     /// * `provider`: Original problem representation.
     /// * `basis`: (row index, column index) tuples of given basis variables.
-    fn from_artificial(
+    fn from_artificial<MP: MatrixProvider>(
         artificial: Self,
-        // TODO(ENHANCEMENT): Decouple these two `F` types
-        provider: &impl MatrixProvider<Column: Column<F=Self::F>>,
+        provider: &MP,
         basis: &[usize],
-    ) -> Self;
+    ) -> Self
+    where
+        Self::F: InternalOpsHR + ExternalOps<<MP::Column as Column>::F>,
+    ;
 
     /// When a previous basis inverse representation was used to find a basic feasible solution.
     ///
@@ -113,11 +125,14 @@ pub trait InverseMaintenance: Display {
     /// * `artificial`: Indices of rows where an artificial variable is needed.
     /// * `provider`: Original problem representation.
     /// * `basis`: (row index, column index) tuples of given basis variables.
-    fn from_artificial_remove_rows(
+    fn from_artificial_remove_rows<MP: Filtered>(
         artificial: Self,
-        rows_removed: &impl Filtered<Column: Column<F=Self::F>>,
-        basis: &[usize],
-    ) -> Self;
+        rows_removed: &MP,
+        basis_indices: &[usize],
+    ) -> Self
+    where
+        Self::F: ExternalOps<<<MP as MatrixProvider>::Column as Column>::F>,
+    ;
 
     /// Update the basis by representing one row reduction operation.
     ///
@@ -139,7 +154,10 @@ pub trait InverseMaintenance: Display {
     /// This cost difference is the inner product of `minus_pi` and the column.
     // TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
     //  it.
-    fn cost_difference<C: Column<F=Self::F> + OrderedColumn>(&self, original_column: &C) -> Self::F;
+    fn cost_difference<G, C: Column<F=G> + OrderedColumn>(&self, original_column: &C) -> Self::F
+    where
+        Self::F: ExternalOps<G>,
+    ;
 
     /// Multiplies the submatrix consisting of `minus_pi` and B^-1 by a original_column.
     ///
@@ -152,7 +170,10 @@ pub trait InverseMaintenance: Display {
     /// A `SparseVector<T>` of length `m`.
     /// TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
     ///  it.
-    fn generate_column<C: Column<F=Self::F> + OrderedColumn>(&self, original_column: C) -> SparseVector<Self::F, Self::F>;
+    fn generate_column<G, C: Column<F=G> + OrderedColumn>(&self, original_column: C) -> SparseVector<Self::F, Self::F>
+    where
+        Self::F: ExternalOps<G>,
+    ;
 
     /// Generate a single element in the tableau with respect to the current basis.
     ///
@@ -162,13 +183,13 @@ pub trait InverseMaintenance: Display {
     /// * `original_column`: Column with respect to the original basis.
     /// TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
     ///  it.
-    fn generate_element<'a, I: Iterator<Item=&'a SparseTuple<Self::F>>>(
+    fn generate_element<'a, G: 'a, I: Iterator<Item=&'a SparseTuple<G>>>(
         &self,
         i: usize,
         original_column: I,
     ) -> Self::F
     where
-        Self::F: 'a,
+        Self::F: ExternalOps<G>,
     ;
 
     /// Clone the latest constraint vector.
@@ -194,3 +215,58 @@ pub trait InverseMaintenance: Display {
     /// The constraint value.
     fn get_constraint_value(&self, i: usize) -> &Self::F;
 }
+
+/// Operations done by the number type within the inverse maintenance algorithm.
+pub trait InternalOps =
+    Zero +
+    One +
+
+    Neg<Output = Self> +
+
+    AddAssign +
+    for<'r> AddAssign<&'r Self> +
+    SubAssign +
+    for<'r> DivAssign<&'r Self> +
+
+    PartialEq +
+    PartialOrd +
+
+    Clone +
+    Debug +
+    Display +
+;
+
+// TODO(ARCHITECTURE): Once HRTB are propagated like normal associated type trait bounds, remove
+//  this trait by integrating the requirements into `InverseMaintenance::F`'s trait bounds.
+#[allow(clippy::type_repetition_in_bounds)]
+pub trait InternalOpsHR =
+where
+    for<'r> &'r Self: Neg<Output = Self>,
+    for<'r, 's> &'r Self: Mul<&'s Self, Output = Self>,
+    for<'r, 's> &'r Self: Div<&'s Self, Output = Self>,
+;
+
+/// Operations done with the values in the inverse maintenance algorithm while interacting with
+/// values from a matrix provider.
+pub trait ExternalOps<Rhs> =
+    Zero +
+    One +
+
+    Neg<Output = Self> +
+
+    AddAssign +
+    for<'r> AddAssign<&'r Rhs> +
+    for<'r> Add<&'r Rhs, Output = Self> +
+
+    Sum +
+
+    PartialOrd +
+
+    From<Rhs> +
+
+    Clone +
+    Debug +
+    Display +
+where
+    for<'r, 's> &'r Self: Mul<&'s Rhs, Output = Self>,
+;

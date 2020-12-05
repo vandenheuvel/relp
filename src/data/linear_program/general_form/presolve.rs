@@ -159,7 +159,7 @@ pub(super) struct Updates<'a, F> {
     /// Original problem being solved. Included as an attribute to allow nicer code, see above.
     general_form: &'a GeneralForm<F>,
 }
-impl<'a, OF: 'static> Updates<'a, OF>
+impl<'a, OF> Updates<'a, OF>
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
@@ -477,7 +477,7 @@ pub struct Counters<'a, F: Field> {
     rows: Sparse<&'a F, F, RowMajor>,
     general_form: &'a GeneralForm<F>,
 }
-impl<'a, OF: 'static> Counters<'a, OF>
+impl<'a, OF> Counters<'a, OF>
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
@@ -582,7 +582,7 @@ where
     }
 }
 
-impl<'a, OF: 'static> Index<'a, OF>
+impl<'a, OF> Index<'a, OF>
 where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,

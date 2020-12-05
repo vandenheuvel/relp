@@ -6,7 +6,7 @@ use std::collections::HashSet;
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::algorithm::utilities::remove_indices;
@@ -71,10 +71,8 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintenance,
+    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<MP::Column as Column>::F>>,
     MP: MatrixProvider,
-    // TODO(ENHANCEMENT): Decouple these two types
-    IM: InverseMaintenance<F=<MP::Column as Column>::F>,
 {
     /// Creates a Simplex tableau with a specific basis.
     ///

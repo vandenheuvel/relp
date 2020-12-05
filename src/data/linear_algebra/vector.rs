@@ -11,15 +11,14 @@ use std::fmt::Formatter;
 use std::iter::Sum;
 use std::marker::PhantomData;
 use std::mem;
-use std::ops::{AddAssign, Index, IndexMut, Mul};
+use std::ops::{AddAssign, DivAssign, Index, IndexMut, Mul, MulAssign, Neg};
 use std::slice::Iter;
 
-use num::Zero;
+use num::{One, Zero};
 
 use crate::algorithm::utilities::{remove_indices, remove_sparse_indices};
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
-use crate::data::number_types::traits::{Field, FieldRef};
 
 /// Defines basic ways to create or change a vector, regardless of back-end.
 pub trait Vector<F>: PartialEq + Display + Debug {
@@ -39,10 +38,10 @@ pub trait Vector<F>: PartialEq + Display + Debug {
     /// Input data wrapped inside a vector.
     fn new(data: Vec<Self::Inner>, len: usize) -> Self;
     /// Compute the inner product with a column vector from a matrix.
-    fn sparse_inner_product<'a, V: Iterator<Item=&'a SparseTuple<F>>>(&self, column: V) -> F
+    fn sparse_inner_product<'a, G: 'a, V: Iterator<Item=&'a SparseTuple<G>>>(&self, column: V) -> F
     where
-        F: Field + 'a,
-        for<'r> &'r F: FieldRef<F>,
+        F: Zero + AddAssign<F> + Sum,
+        for<'r, 's> &'r F: Mul<&'s G, Output = F>,
     ;
     /// Make a vector longer by one, by adding an extra value at the end of this vector.
     fn push_value(&mut self, value: F) where F: Zero;
@@ -79,7 +78,7 @@ pub struct Dense<F> {
     len: usize,
 }
 
-impl<F: Field> Dense<F> {
+impl<F> Dense<F> {
     /// Create a vector with all values being equal to a given value.
     ///
     /// # Arguments
@@ -90,7 +89,10 @@ impl<F: Field> Dense<F> {
     /// # Return value
     ///
     /// A constant `DenseVector`.
-    pub fn constant(value: F, len: usize) -> Self {
+    pub fn constant(value: F, len: usize) -> Self
+    where
+        F: Clone,
+    {
         debug_assert_ne!(len, 0);
 
         Self { data: vec![value; len], len, }
@@ -135,12 +137,12 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
         Self { data, len, }
     }
 
-    fn sparse_inner_product<'a, V: Iterator<Item=&'a SparseTuple<F>>>(&self, column: V) -> F
+    fn sparse_inner_product<'a, G: 'a, V: Iterator<Item=&'a SparseTuple<G>>>(&self, column: V) -> F
     where
-        F: Field + 'a,
-        for<'r> &'r F: FieldRef<F>,
+        F: Sum,
+        for<'r, 's> &'r F: Mul<&'s G, Output = F>,
     {
-        column.map(|(i, v)| v * &self.data[*i]).sum()
+        column.map(|(i, v)| &self.data[*i] * v).sum()
     }
 
     /// Append a value to this vector.
@@ -268,10 +270,10 @@ where
         }
     }
 
-    fn sparse_inner_product<'a, I: Iterator<Item=&'a SparseTuple<F>>>(&self, column: I) -> F
+    fn sparse_inner_product<'a, G: 'a, I: Iterator<Item=&'a SparseTuple<G>>>(&self, column: I) -> F
     where
-        F: Field + 'a,
-        for<'r> &'r F: FieldRef<F>,
+        F: Zero + AddAssign<F>,
+        for<'r, 's> &'r F: Mul<&'s G, Output = F>,
     {
         let mut total = F::zero();
 
@@ -359,10 +361,9 @@ where
     }
 }
 
-impl<F: Field, C> Sparse<F, C>
+impl<F, C> Sparse<F, C>
 where
     F: SparseElement<C>,
-    for<'r> &'r F: FieldRef<F>,
     C: SparseComparator,
 {
     /// Add the multiple of another row to this row.
@@ -381,7 +382,11 @@ where
     /// The implementation of this method doesn't look pretty, but it seems to be reasonably fast.
     /// If this method is too slow, it might be wise to consider the switching of the `SparseVector`
     /// storage backend from a `Vec` to a `HashMap`.
-    pub fn add_multiple_of_row(&mut self, multiple: F, other: &Sparse<F, C>) {
+    pub fn add_multiple_of_row(&mut self, multiple: F, other: &Sparse<F, C>)
+    where
+        F: Zero,
+        for<'r, 's> &'r F: Mul<&'s F, Output = F>,
+    {
         debug_assert_eq!(other.len(), self.len());
 
         let mut new_tuples = Vec::new();
@@ -421,7 +426,10 @@ where
     /// * `i`: Only index where there should be a 1. Note that indexing starts at zero, and runs
     /// until (not through) `len`.
     /// * `len`: Size of the `SparseVector`.
-    pub fn standard_basis_vector(i: usize, len: usize) -> Self {
+    pub fn standard_basis_vector(i: usize, len: usize) -> Self
+    where
+        F: One + Clone,
+    {
         debug_assert!(i < len);
 
         Self::new(vec![(i, F::one())], len)
@@ -435,7 +443,11 @@ where
     /// be shifted.
     /// * `value`: Value to be taken at index `i`. Should not be very close to zero to avoid
     /// memory usage and numerical error build-up.
-    pub fn shift_value(&mut self, i: usize, value: &F) {
+    pub fn shift_value(&mut self, i: usize, value: &F)
+    where
+        for<'r> F: AddAssign<&'r F>,
+        for<'r> &'r F: Neg<Output = F>,
+    {
         debug_assert!(i < self.len);
 
         match self.get_data_index(i) {
@@ -451,7 +463,10 @@ where
     }
 
     /// Multiply each element of the vector by a value.
-    pub fn element_wise_multiply(&mut self, value: &F) {
+    pub fn element_wise_multiply(&mut self, value: &F)
+    where
+        for<'r> F: Zero + MulAssign<&'r F>,
+    {
         for (_, v) in self.data.iter_mut() {
             *v *= value;
         }
@@ -459,7 +474,10 @@ where
     }
 
     /// Divide each element of the vector by a value.
-    pub fn element_wise_divide(&mut self, value: &F) {
+    pub fn element_wise_divide(&mut self, value: &F)
+    where
+        for<'r> F: Zero + DivAssign<&'r F>,
+    {
         for (_, v) in self.data.iter_mut() {
             *v /= value;
         }
@@ -647,7 +665,7 @@ pub mod test {
     }
 
     /// Test
-    fn push_value<F: Field + FromPrimitive, V: TestVector<F>>() where for<'r> &'r F: FieldRef<F> + {
+    fn push_value<F: Field + FromPrimitive, V: TestVector<F>>() where for<'r> &'r F: FieldRef<F> {
         let mut v = get_test_vector::<F, V>();
         let len = v.len();
         let new_v = F!(1);
@@ -794,12 +812,12 @@ pub mod test {
 
     #[cfg(test)]
     mod sparse_vector {
-        use num::{FromPrimitive, Zero};
+        use num::FromPrimitive;
         use num::rational::Ratio;
 
-        use crate::{F, R32};
         use crate::data::linear_algebra::vector::{Sparse as SparseVector, Vector};
         use crate::data::linear_algebra::vector::test::{get_set, get_test_vector, len, out_of_bounds_get, out_of_bounds_set, push_value, TestVector};
+        use crate::R32;
 
         type T = Ratio<i32>;
 

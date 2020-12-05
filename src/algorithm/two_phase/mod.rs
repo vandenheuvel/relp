@@ -12,13 +12,12 @@ use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
 use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
 use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::artificial::fully::Fully as FullyArtificial;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially as PartiallyArtificial;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
-use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 pub mod tableau;
 pub mod matrix_provider;
@@ -30,10 +29,7 @@ where
 {
     default fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintenance<F: OrderedField>,
-        // TODO(ENHANCEMENT): Decouple these two field types.
-        IM: InverseMaintenance<F=<<MP as MatrixProvider>::Column as Column>::F>,
-        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
     {
         // Default choice
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
@@ -86,10 +82,7 @@ pub trait FeasibilityComputeTrait: MatrixProvider<Column: IdentityColumn> {
     /// A value representing the basic feasible solution, or an indicator that there is none.
     fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintenance<F: OrderedField>,
-        // TODO(ENHANCEMENT): Decouple these two field types.
-        IM: InverseMaintenance<F=<Self::Column as Column>::F>,
-        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
     ;
 }
 
@@ -100,10 +93,7 @@ where
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintenance<F: OrderedField>,
-        // TODO(ENHANCEMENT): Decouple these two field types.
-        IM: InverseMaintenance<F=<MP::Column as Column>::F>,
-        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -142,10 +132,7 @@ where
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintenance<F: OrderedField>,
-        // TODO(ENHANCEMENT): Decouple these two field types.
-        IM: InverseMaintenance<F=<MP::Column as Column>::F>,
-        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -180,10 +167,7 @@ where
 {
     fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintenance<F: OrderedField>,
-        // TODO(ENHANCEMENT): Decouple these two field types.
-        IM: InverseMaintenance<F=<<MP as MatrixProvider>::Column as Column>::F>,
-        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>, >,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -219,10 +203,7 @@ pub(crate) fn artificial_primal<'provider, IM, K, MP, PR>(
     mut tableau: Tableau<IM, K>,
 ) -> RankedFeasibilityResult<IM>
 where
-    IM: InverseMaintenance<F: OrderedField>,
-    // TODO(ENHANCEMENT): Decouple these two field types.
-    IM: InverseMaintenance<F=<K::Column as Column>::F>,
-    for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<K::Column as Column>::F>>,
     K: Artificial,
     MP: MatrixProvider + 'provider,
     PR: PivotRule,
@@ -320,10 +301,8 @@ fn remove_artificial_basis_variables<IM, K>(
     tableau: &mut Tableau<IM, K>,
 ) -> Vec<usize>
 where
-    IM: InverseMaintenance,
+    IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
     K: Artificial,
-    // TODO(ENHANCEMENT): Decouple these two field types.
-    IM: InverseMaintenance<F=<K::Column as Column>::F>,
 {
     let mut artificial_variable_indices = tableau.artificial_basis_columns().into_iter().collect::<Vec<_>>();
     artificial_variable_indices.sort();
@@ -366,10 +345,7 @@ pub(crate) fn primal<'provider, IM, MP, PR>(
     tableau: &mut Tableau<IM, NonArtificial<'provider, MP>>,
 ) -> OptimizationResult<IM::F>
 where
-    IM: InverseMaintenance<F: OrderedField>,
-    for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
-    // TODO(ENHANCEMENT): Decouple these two field types.
-    IM: InverseMaintenance<F=<MP::Column as Column>::F>,
+    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<MP::Column as Column>::F>>,
     // TODO: Is this lifetime bound necessary?
     MP: MatrixProvider + 'provider,
     PR: PivotRule,
@@ -428,10 +404,12 @@ mod test {
     #[test]
     fn finding_bfs() {
         type T = Ratio<i32>;
+        // TODO(ENHANCEMENT): Decouple these two types
+        type S = T;
 
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
-        let tableau = Tableau::<Carry<_>, Partially<_>>::new(&matrix_data_form);
+        let tableau = Tableau::<Carry<S>, Partially<_>>::new(&matrix_data_form);
         assert!(matches!(
             artificial_primal::<_, _, MatrixData<T>, FirstProfitable>(tableau),
             RankedFeasibilityResult::Feasible { rank: Rank::Full, .. }
@@ -440,10 +418,14 @@ mod test {
 
     #[test]
     fn solve_matrix() {
+        type T = Ratio<i32>;
+        // TODO(ENHANCEMENT): Decouple these two types
+        type S = T;
+
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
 
-        let result = SolveRelaxation::solve_relaxation::<Carry<_>>(&matrix_data_form);
+        let result = SolveRelaxation::solve_relaxation::<Carry<S>>(&matrix_data_form);
         //  Optimal value: R64!(4.5)
         assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
             (1, 0.5f64),
@@ -455,6 +437,8 @@ mod test {
     #[test]
     fn solve_relaxation_1() {
         type T = Ratio<i32>;
+        // TODO(ENHANCEMENT): Decouple these two types
+        type S = T;
 
         let constraints = ColumnMajor::from_test_data::<T, _, _>(&vec![
             vec![1, 0],
@@ -479,7 +463,7 @@ mod test {
 
         let data = MatrixData::new(&constraints, &b, 0, 2, 0, variables);
 
-        let result = data.solve_relaxation::<Carry<_>>();
+        let result = data.solve_relaxation::<Carry<S>>();
         assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
             (0, 3f64 / 2f64),
             (1, 1f64),

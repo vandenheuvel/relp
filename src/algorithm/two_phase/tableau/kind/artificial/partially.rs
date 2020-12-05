@@ -8,7 +8,7 @@ use num::{One, Zero};
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::PartialInitialBasis;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -111,10 +111,8 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, Partially<'provider, MP>>
 where
-    IM: InverseMaintenance,
+    IM: InverseMaintenance<F: ExternalOps<<MP::Column as Column>::F>>,
     MP: MatrixProvider,
-    // TODO(ENHANCEMENT): Decouple these two types
-    IM: InverseMaintenance<F=<MP::Column as Column>::F>,
 {
     /// Create a `Tableau` augmented with artificial variables.
     ///

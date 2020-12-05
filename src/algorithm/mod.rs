@@ -1,8 +1,8 @@
 //! # Algorithms
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::data::linear_algebra::vector::Sparse;
-use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 pub mod two_phase;
 pub mod criss_cross;
@@ -25,10 +25,7 @@ pub trait SolveRelaxation: MatrixProvider {
     /// Whether the problem is feasible, and if so, a solution if the problem is bounded.
     fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintenance<F: OrderedField>,
-        // TODO(ENHANCEMENT): Decouple these two field types.
-        IM: InverseMaintenance<F=<<Self as MatrixProvider>::Column as Column>::F>,
-        for<'r> &'r IM::F: OrderedFieldRef<IM::F>,
+        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
     ;
 }
 

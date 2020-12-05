@@ -14,6 +14,7 @@ use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::matrix::ColumnMajor;
 use crate::data::linear_algebra::matrix::Sparse;
 use crate::data::linear_algebra::SparseTupleVec;
+use crate::data::linear_algebra::traits::Element as LinearAlgebraElement;
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::{BoundDirection, ConstraintType, LinearProgramType, Objective, VariableType};
 use crate::data::linear_program::general_form::presolve::Index as PresolveIndex;
@@ -286,7 +287,7 @@ where
     ///
     /// If the linear program gets solved during this presolve operation, a `Result::Err` return
     /// value containing the solution.
-    pub (crate) fn presolve(&mut self) -> Result<(), LinearProgramType<OF>> {
+    pub(crate) fn presolve(&mut self) -> Result<(), LinearProgramType<OF>> {
         let (
             b,
             constraints,
@@ -415,7 +416,7 @@ where
             self.from_active_to_original.drain(new_length..);
 
             // Update the reverse map
-            for (new_index,&variable) in self.from_active_to_original.iter().enumerate() {
+            for (new_index, &variable) in self.from_active_to_original.iter().enumerate() {
                 match &mut self.original_variables[variable].1 {
                     OriginalVariable::Active(index) => *index = new_index,
                     _ => panic!("Should still be in the problem."),
@@ -648,8 +649,8 @@ where
             OriginalVariable::Removed(FunctionOfOthers { constant, coefficients }) => {
                 if new_solutions[variable].is_none() {
                     new_solutions[variable] = coefficients.iter().map(|(j, coefficient)| {
-                            self.compute_solution_value(*j, new_solutions).map(|v| coefficient * v)
-                        })
+                        self.compute_solution_value(*j, new_solutions).map(|v| coefficient * v)
+                    })
                         .sum::<Option<OF>>()
                         .map(|inner_product| constant - inner_product);
                 }
@@ -788,7 +789,12 @@ where
         new_solutions[variable] = Some(new_solution);
         new_solutions[variable].as_ref().unwrap()
     }
+}
 
+impl<OF> GeneralForm<OF>
+where
+    OF: LinearAlgebraElement,
+{
     /// Number of constraints that have not been eliminated after a presolving operation.
     /// 
     /// During a presolving operation, the number of variables that is both active and not yet 

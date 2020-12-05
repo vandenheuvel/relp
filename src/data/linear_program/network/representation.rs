@@ -120,7 +120,7 @@ impl<F: 'static> IdentityColumn for ArcIncidenceColumn<F>
 where
     F: Field,
 {
-    fn identity(i: usize, len: usize) -> Self {
+    fn identity(i: usize, _len: usize) -> Self {
         Self(vec![(i, F::one())])
     }
 }

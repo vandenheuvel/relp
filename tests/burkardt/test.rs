@@ -237,7 +237,7 @@ fn nazareth_bigint() {
 
     let mut general = to_general_form::<T>("nazareth");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
+    let result = data.solve_relaxation::<Carry<T>>();
     assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
 }
 
@@ -247,7 +247,7 @@ fn nazareth() {
 
     let mut general = to_general_form::<T>("nazareth");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
+    let result = data.solve_relaxation::<Carry<T>>();
     assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
 }
 

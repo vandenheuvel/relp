@@ -10,11 +10,12 @@ use itertools::repeat_n;
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InternalOps, InternalOpsHR, ExternalOps};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
+use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector, Sparse, Vector};
-use crate::data::number_types::traits::{Field, FieldRef};
 
 /// The carry matrix looks like:
 ///
@@ -50,8 +51,7 @@ pub struct Carry<F> {
 
 impl<F> Carry<F>
 where
-    F: Field,
-    for <'r> &'r F: FieldRef<F>,
+    F: InternalOps + InternalOpsHR,
 {
     /// Create a `Carry` for a tableau with a known basis inverse.
     ///
@@ -90,11 +90,14 @@ where
     /// * `basis_inverse_rows`: A basis inverse that represents a basic feasible solution.
     /// * `provider`: Matrix provider.
     /// * `basis`: Indices of the basis elements.
-    fn create_minus_pi_from_artificial(
+    fn create_minus_pi_from_artificial<MP: MatrixProvider>(
         basis_inverse_rows: &Vec<SparseVector<F, F>>,
-        provider: &impl MatrixProvider<Column: Column<F=F>>,
+        provider: &MP,
         basis: &[usize],
-    ) -> DenseVector<F> {
+    ) -> DenseVector<F>
+    where
+        F: ExternalOps<<MP::Column as Column>::F>,
+    {
         let m = basis_inverse_rows.len();
         debug_assert_eq!(provider.nr_rows(), m);
         debug_assert_eq!(basis.len(), m);
@@ -102,7 +105,7 @@ where
         let mut pi = repeat_n(F::zero(), m).collect::<Vec<_>>();
         for row in 0..m {
             for (column, value) in basis_inverse_rows[row].iter_values() {
-                pi[*column] += provider.cost_value(basis[row]) * value;
+                pi[*column] += value * provider.cost_value(basis[row]);
             }
         }
 
@@ -119,14 +122,17 @@ where
     /// * `basis`: Basis indices (elements are already shifted, no compensation for the artificial
     /// variables is needed).
     /// * `b`: Constraint values with respect to this basis.
-    fn create_minus_obj_from_artificial(
-        provider: &impl MatrixProvider<Column: Column<F=F>>,
+    fn create_minus_obj_from_artificial<MP: MatrixProvider>(
+        provider: &MP,
         basis: &[usize],
         b: &DenseVector<F>,
-    ) -> F {
+    ) -> F
+    where
+        F: ExternalOps<<MP::Column as Column>::F>,
+    {
         let mut objective = F::zero();
         for row in 0..provider.nr_rows() {
-            objective += provider.cost_value(basis[row]) * &b[row];
+            objective += &b[row] * provider.cost_value(basis[row]);
         }
         -objective
     }
@@ -224,39 +230,44 @@ where
     }
 }
 
-impl<F: 'static> InverseMaintenance for Carry<F>
+impl<F> InverseMaintenance for Carry<F>
 where
-    F: Field,
-    for <'r> &'r F: FieldRef<F>,
+    F: InternalOps + InternalOpsHR,
 {
     type F = F;
 
-    fn create_for_fully_artificial(
-        b: DenseVector<F>
-    ) -> Self {
+    fn create_for_fully_artificial<G: Element>(
+        b: DenseVector<G>
+    ) -> Self
+    where
+        Self::F: ExternalOps<G>,
+    {
         let m = b.len();
 
-        let mut b_sum = F::zero();
+        let mut b_sum = Self::F::zero();
         for v in b.iter_values() {
             b_sum += v;
         }
 
         Self {
             minus_objective: -b_sum,
-            minus_pi: DenseVector::constant(-F::one(), m),
-            b,
+            minus_pi: DenseVector::constant(-Self::F::one(), m),
+            b: DenseVector::new(b.data.into_iter().map(|v| v.into()).collect(), m),
             // Identity matrix
             basis_inverse_rows: (0..m)
-                .map(|i| SparseVector::new(vec![(i, F::one())], m))
+                .map(|i| SparseVector::new(vec![(i, Self::F::one())], m))
                 .collect(),
         }
     }
 
-    fn create_for_partially_artificial(
+    fn create_for_partially_artificial<G: Element>(
         artificial_rows: &[usize],
         free_basis_values: &Vec<(usize, usize)>,
-        b: DenseVector<F>,
-    ) -> Self {
+        b: DenseVector<G>,
+    ) -> Self
+    where
+        Self::F: ExternalOps<G>,
+    {
         let m = b.len();
         debug_assert_eq!(artificial_rows.len() + free_basis_values.len(), m);  // Correct sizes
         let merged = artificial_rows.iter().copied()
@@ -266,11 +277,11 @@ where
 
         // Initial value of zero is the value that the objective value has when a feasible solution
         // is reached.
-        let mut objective = F::zero();
+        let mut objective = Self::F::zero();
         for &index in artificial_rows {
             // One because we minimize a simple sum of non-negative artificial variables in the
             // basis.
-            objective += F::one() * &b[index];
+            objective += &b[index];
         }
 
         // Only the artificial columns "had a cost to them" before they were added to the basis.
@@ -279,19 +290,19 @@ where
         let minus_pi_values = (0..m).map(|row| {
             if counter < artificial_rows.len() && artificial_rows[counter] == row {
                 counter += 1;
-                -F::one()
+                -Self::F::one()
             } else {
-                F::zero()
+                Self::F::zero()
             }
         }).collect();
 
         Self {
             minus_objective: -objective,
             minus_pi: DenseVector::new(minus_pi_values, m),
-            b,
+            b: DenseVector::new(b.data.into_iter().map(|v| v.into()).collect(), m),
             // Identity matrix
             basis_inverse_rows: (0..m)
-                .map(|i| SparseVector::new(vec![(i, F::one())], m))
+                .map(|i| SparseVector::new(vec![(i, Self::F::one())], m))
                 .collect(),
         }
     }
@@ -311,11 +322,14 @@ where
         unimplemented!()
     }
 
-    fn from_artificial(
+    fn from_artificial<MP: MatrixProvider>(
         artificial: Self,
-        provider: &impl MatrixProvider<Column: Column<F=Self::F>>,
+        provider: &MP,
         basis: &[usize],
-    ) -> Self {
+    ) -> Self
+    where
+        F: InternalOpsHR + ExternalOps<<MP::Column as Column>::F>,
+    {
         let minus_pi = Carry::create_minus_pi_from_artificial(
             &artificial.basis_inverse_rows,
             provider,
@@ -335,11 +349,14 @@ where
         )
     }
 
-    fn from_artificial_remove_rows(
+    fn from_artificial_remove_rows<MP: Filtered>(
         artificial: Self,
-        rows_removed: &impl Filtered<Column: Column<F=Self::F>>,
+        rows_removed: &MP,
         basis_indices: &[usize],
-    ) -> Self {
+    ) -> Self
+    where
+        Self::F: ExternalOps<<<MP as MatrixProvider>::Column as Column>::F>,
+    {
         debug_assert_eq!(basis_indices.len(), rows_removed.nr_rows());
 
         // Remove the rows
@@ -373,7 +390,7 @@ where
         )
     }
 
-    fn change_basis(&mut self, pivot_row_index: usize, column: &Sparse<F, F>, cost: F) {
+    fn change_basis(&mut self, pivot_row_index: usize, column: &Sparse<Self::F, Self::F>, cost: Self::F) {
         debug_assert!(pivot_row_index < self.m());
         debug_assert_eq!(column.len(), self.m());
 
@@ -383,11 +400,17 @@ where
         self.row_reduce_update_minus_pi_and_obj(pivot_row_index, cost);
     }
 
-    fn cost_difference<C: Column<F=F> + OrderedColumn>(&self, original_column: &C) -> F {
+    fn cost_difference<G, C: Column<F=G> + OrderedColumn>(&self, original_column: &C) -> Self::F
+    where
+        Self::F: ExternalOps<G>,
+    {
         self.minus_pi.sparse_inner_product(original_column.iter())
     }
 
-    fn generate_column<C: Column<F=F> + OrderedColumn>(&self, original_column: C) -> SparseVector<F, F> {
+    fn generate_column<G, C: Column<F=G> + OrderedColumn>(&self, original_column: C) -> SparseVector<Self::F, Self::F>
+    where
+        Self::F: ExternalOps<G>,
+    {
         let column_iter = original_column.iter();
 
         let tuples = (0..self.m())
@@ -399,30 +422,32 @@ where
         SparseVector::new(tuples, self.m())
     }
 
-    fn generate_element<'a, I: Iterator<Item=&'a SparseTuple<F>>>(&self, i: usize, original_column: I) -> F {
+    fn generate_element<'a, G: 'a, I: Iterator<Item=&'a SparseTuple<G>>>(&self, i: usize, original_column: I) -> Self::F
+    where
+        Self::F: ExternalOps<G>,
+    {
         debug_assert!(i < self.m());
 
         self.basis_inverse_rows[i].sparse_inner_product(original_column)
     }
 
-    fn b(&self) -> Dense<F> {
+    fn b(&self) -> Dense<Self::F> {
         // TODO: Rewrite this method, perhaps also in trait
         self.b.clone()
     }
 
-    fn get_objective_function_value(&self) -> F {
-        -&self.minus_objective
+    fn get_objective_function_value(&self) -> Self::F {
+        -self.minus_objective.clone()
     }
 
-    fn get_constraint_value(&self, i: usize) -> &F {
+    fn get_constraint_value(&self, i: usize) -> &Self::F {
         &self.b[i]
     }
 }
 
-impl<F: 'static> Display for Carry<F>
+impl<F> Display for Carry<F>
 where
-    F: Field,
-    for <'r> &'r F: FieldRef<F>,
+    F: InternalOps + InternalOpsHR,
 {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         writeln!(f, "Carry:\n============")?;
