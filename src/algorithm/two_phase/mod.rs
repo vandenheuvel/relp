@@ -3,21 +3,19 @@
 //! This module contains all data structures and logic specific to the simplex algorithm. The
 //! algorithm is implemented as described in chapters 2 and 4 of Combinatorial Optimization, a book
 //! by Christos H. Papadimitriou and Kenneth Steiglitz.
-use std::collections::HashSet;
-
-use num::Zero;
-
 use crate::algorithm::{OptimizationResult, SolveRelaxation};
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
-use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
-use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
+use crate::algorithm::two_phase::phase_one::{FeasibilityComputeTrait, FullInitialBasis, Rank, RankedFeasibilityResult};
+use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable};
+use crate::algorithm::two_phase::tableau::{Tableau};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
-use crate::algorithm::two_phase::tableau::kind::artificial::fully::Fully as FullyArtificial;
-use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially as PartiallyArtificial;
+use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
+
+pub(crate) mod phase_one;
+pub(crate) mod phase_two;
 
 pub mod tableau;
 pub mod matrix_provider;
@@ -52,7 +50,7 @@ where
                         basis,
                         &rows_removed,
                     );
-                    primal::<_, _, NonArtificialPR>(&mut non_artificial)
+                    phase_two::primal::<_, _, NonArtificialPR>(&mut non_artificial)
                 },
                 _ => {
                     let mut non_artificial_tableau = Tableau::<_, NonArtificial<_>>::from_artificial(
@@ -61,96 +59,12 @@ where
                         basis,
                         self,
                     );
-                    primal::<_, _, NonArtificialPR>(&mut non_artificial_tableau)
+                    phase_two::primal::<_, _, NonArtificialPR>(&mut non_artificial_tableau)
                 },
             },
             RankedFeasibilityResult::Infeasible => OptimizationResult::Infeasible,
         }
     }
-}
-
-/// Computing a feasible solution: the first phase of the two phase method.
-///
-/// This can happen either using the simplex method, or some more specialized method.
-///
-/// TODO(ENHANCEMENT): Problems that can only have full rank
-pub trait FeasibilityComputeTrait: MatrixProvider<Column: IdentityColumn> {
-    /// Compute a basic feasible solution.
-    ///
-    /// # Returns
-    ///
-    /// A value representing the basic feasible solution, or an indicator that there is none.
-    fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
-    where
-        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
-    ;
-}
-
-/// Most generic implementation: finding a basic feasible solution using the Simplex method.
-impl<MP> FeasibilityComputeTrait for MP
-where
-    MP: MatrixProvider<Column: IdentityColumn>
-{
-    default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
-    where
-        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
-    {
-        // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
-        //  dynamically
-        type PivotRule = FirstProfitable;
-
-        let artificial_tableau = Tableau::<_, FullyArtificial<_>>::new(self);
-        artificial_primal::<_, _, MP, PivotRule>(artificial_tableau)
-    }
-}
-
-/// A few basis columns are already present in the problem.
-///
-/// Sometimes, a few variables (like positive slack variables) are available that result in less
-/// artificial variables being needed.
-///
-/// TODO(ARCHITECTURE): Supertrait MatrixProvider?
-pub trait PartialInitialBasis {
-    /// Return the indices of all positive slack variables.
-    ///
-    /// This is used to find a basic feasible solution faster using the two phase method.
-    ///
-    /// # Return value
-    ///
-    /// Collection of tuples with row and column index of (positive) slack coefficients.
-    fn pivot_element_indices(&self) -> Vec<(usize, usize)>;
-
-    /// How many positive slacks there are in the problem.
-    ///
-    /// Is equal to the length of the value returned by `positive_slack_indices`.
-    fn nr_initial_elements(&self) -> usize;
-}
-
-impl<MP: PartialInitialBasis> FeasibilityComputeTrait for MP
-where
-    MP: MatrixProvider<Column: IdentityColumn>,
-{
-    default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
-    where
-        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
-    {
-        // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
-        //  dynamically
-        type PivotRule = FirstProfitable;
-
-        let artificial_tableau = Tableau::<_, PartiallyArtificial<_>>::new(self);
-        artificial_primal::<_, _, MP, PivotRule>(artificial_tableau)
-    }
-}
-
-/// A full basis is already present in the problem.
-///
-/// If the problem is of type Ax <= b, all (positive) slacks can be used as a basic feasible
-/// solution (that is, x = 0 is feasible).
-///
-/// TODO(ENHANCEMENT): Is a marker trait enough, or should there be a specialized method?
-/// TODO(ENHANCEMENT): What about the case where also an easy InverseMaintainer is available?
-pub trait FullInitialBasis: PartialInitialBasis {
 }
 
 /// Skipping the entire first phase because a basic feasible solution could be cheaply provided.
@@ -183,192 +97,7 @@ where
         let mut tableau = Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
             self, inverse_maintainer, basis_indices, basis_columns,
         );
-        primal::<_, _, NonArtificialPR>(&mut tableau)
-    }
-}
-
-
-/// Reduces the artificial cost of the basic feasible solution to zero, if possible. In doing so, a
-/// basic feasible solution to the standard form linear program is found.
-///
-/// # Arguments
-///
-/// * `tableau`: Artificial tableau with a valid basis. This basis will typically consist of only
-/// artificial variables.
-///
-/// # Return value
-///
-/// Whether the tableau might allow a basic feasible solution without artificial variables.
-pub(crate) fn artificial_primal<'provider, IM, K, MP, PR>(
-    mut tableau: Tableau<IM, K>,
-) -> RankedFeasibilityResult<IM>
-where
-    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<K::Column as Column>::F>>,
-    K: Artificial,
-    MP: MatrixProvider + 'provider,
-    PR: PivotRule,
-{
-    let mut rule = PR::new();
-    loop {
-        debug_assert!(is_in_basic_feasible_solution_state(&tableau));
-
-        match rule.select_primal_pivot_column(&tableau) {
-            Some((column_nr, cost)) => {
-                let column = tableau.generate_column(column_nr);
-                match tableau.select_primal_pivot_row(&column) {
-                    Some(row_nr) => tableau.bring_into_basis(column_nr, row_nr, &column, cost),
-                    None => panic!("Artificial cost can not be unbounded."),
-                }
-            },
-            None => break if tableau.objective_function_value().is_zero() {
-                let rank = if tableau.has_artificial_in_basis() {
-                    let rows_to_remove = remove_artificial_basis_variables(&mut tableau);
-                    if rows_to_remove.is_empty() {
-                        Rank::Full
-                    } else {
-                        Rank::Deficient(rows_to_remove)
-                    }
-                } else {
-                    Rank::Full
-                };
-
-                let (im, nr_a, basis) = tableau.into_basis();
-                RankedFeasibilityResult::Feasible {
-                    rank,
-                    nr_artificial_variables: nr_a,
-                    inverse_maintainer: im,
-                    basis,
-                }
-            } else {
-                RankedFeasibilityResult::Infeasible
-            },
-        }
-    }
-}
-
-/// LP's can be either feasible (allowing at least one solution) or infeasible (allowing no
-/// solutions).
-///
-/// If the problem is feasible, it can either have full rank, or be rank deficient.
-#[derive(Debug, Eq, PartialEq)]
-pub enum RankedFeasibilityResult<IM> {
-    /// The problem is feasible and all information necessary to construct a bfs cheaply is in this
-    /// variant.
-    Feasible {
-        /// Whether the problem needs rows to be removed.
-        rank: Rank,
-        /// The amount of artificial variables that were present in the problem.
-        nr_artificial_variables: usize,
-        /// The inverse basis that was maintained.
-        inverse_maintainer: IM,
-        /// Basis indices.
-        ///
-        /// Note that the second element is just a set version of the elements in the first element.
-        basis: (Vec<usize>, HashSet<usize>),
-    },
-    /// The problem is not feasible.
-    Infeasible,
-}
-
-/// A matrix or linear program either has full rank, or be rank deficient.
-///
-/// In case it is rank deficient, a sorted, deduplicated list of (row)indices should be provided,
-/// that when removed, makes the matrix or linear program full rank.
-#[derive(Debug, Eq, PartialEq)]
-pub enum Rank {
-    /// The matrix is full rank, no rows need to be removed.
-    Full,
-    /// The `Vec<usize>` is sorted and contains no duplicate values.
-    Deficient(Vec<usize>),
-}
-
-/// Removes all artificial variables from the tableau by making a basis change "at zero level", or
-/// without change of cost of the current solution.
-///
-/// # Arguments
-///
-/// * `tableau`: Tableau to change the basis for.
-///
-/// # Return value
-///
-/// A `Vec` with indices of rows that are redundant. Is sorted as a side effect of the algorithm.
-///
-/// Constraints containing only one variable (that is, they are actually bounds) are read as bounds
-/// instead of constraints. All bounds are linearly independent among each other, and with respect
-/// to all constraints. As such, they should never be among the redundant rows returned by this
-/// method.
-fn remove_artificial_basis_variables<IM, K>(
-    tableau: &mut Tableau<IM, K>,
-) -> Vec<usize>
-where
-    IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
-    K: Artificial,
-{
-    let mut artificial_variable_indices = tableau.artificial_basis_columns().into_iter().collect::<Vec<_>>();
-    artificial_variable_indices.sort();
-    let mut rows_to_remove = Vec::new();
-
-    for artificial in artificial_variable_indices {
-        // The problem was initialized with the artificial variable as a basis column, and it is still in the basis
-        let pivot_row = tableau.pivot_row_from_artificial(artificial);
-        let column_cost = (tableau.nr_artificial_variables()..tableau.nr_columns())
-            .filter(|j| !tableau.is_in_basis(j))
-            .map(|j| (j, tableau.relative_cost(j)))
-            .filter(|(_, cost)| cost.is_zero())
-            .find(|&(j, _)| !tableau.generate_element(pivot_row, j).is_zero());
-
-        if let Some((pivot_column, cost)) = column_cost {
-            let column = tableau.generate_column(pivot_column);
-            tableau.bring_into_basis(pivot_column, pivot_row, &column, cost);
-        } else {
-            rows_to_remove.push(artificial);
-        }
-    }
-
-    debug_assert!(rows_to_remove.is_sorted());
-    rows_to_remove
-}
-
-/// Reduces the cost of the basic feasible solution to the minimum.
-///
-/// While calling this method, a number of requirements should be satisfied:
-/// - There should be a valid basis (not necessarily optimal <=> dual feasible <=> c >= 0)
-/// - All constraint values need to be positive (primary feasibility)
-///
-/// TODO: Write debug tests for these requirements
-///
-/// # Return value
-///
-/// An `OptimizationResult` indicating whether or not the problem has a finite optimum. It cannot be
-/// infeasible, as a feasible solution is needed to start using this method.
-pub(crate) fn primal<'provider, IM, MP, PR>(
-    tableau: &mut Tableau<IM, NonArtificial<'provider, MP>>,
-) -> OptimizationResult<IM::F>
-where
-    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<MP::Column as Column>::F>>,
-    // TODO: Is this lifetime bound necessary?
-    MP: MatrixProvider + 'provider,
-    PR: PivotRule,
-{
-    let mut rule = PR::new();
-    loop {
-        debug_assert!(is_in_basic_feasible_solution_state(&tableau));
-
-        match rule.select_primal_pivot_column(tableau) {
-            Some((column_index, cost)) => {
-                let column = tableau.generate_column(column_index);
-                match tableau.select_primal_pivot_row(&column) {
-                    Some(row_index) => tableau.bring_into_basis(
-                        column_index,
-                        row_index,
-                        &column,
-                        cost,
-                    ),
-                    None => break OptimizationResult::Unbounded,
-                }
-            },
-            None => break OptimizationResult::FiniteOptimum(tableau.current_bfs()),
-        }
+        phase_two::primal::<_, _, NonArtificialPR>(&mut tableau)
     }
 }
 
@@ -378,7 +107,7 @@ mod test {
     use num::rational::Ratio;
 
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
-    use crate::algorithm::two_phase::{artificial_primal, primal, Rank, RankedFeasibilityResult};
+    use crate::algorithm::two_phase::{Rank, RankedFeasibilityResult, phase_one, phase_two};
     use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
     use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
@@ -396,7 +125,7 @@ mod test {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
         let mut tableau = tableau_form(&matrix_data_form);
-        let result = primal::<_, _, FirstProfitable>(&mut tableau);
+        let result = phase_two::primal::<_, _, FirstProfitable>(&mut tableau);
         assert!(matches!(result, OptimizationResult::FiniteOptimum(_)));
         assert_eq!(tableau.objective_function_value(), R32!(9, 2));
     }
@@ -411,7 +140,7 @@ mod test {
         let matrix_data_form = matrix_data_form(&constraints, &b);
         let tableau = Tableau::<Carry<S>, Partially<_>>::new(&matrix_data_form);
         assert!(matches!(
-            artificial_primal::<_, _, MatrixData<T>, FirstProfitable>(tableau),
+            phase_one::primal::<_, _, MatrixData<T>, FirstProfitable>(tableau),
             RankedFeasibilityResult::Feasible { rank: Rank::Full, .. }
         ));
     }

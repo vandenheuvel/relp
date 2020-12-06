@@ -15,7 +15,7 @@ use itertools::repeat_n;
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::{Filtered, ToFiltered};
 use crate::algorithm::two_phase::matrix_provider::variable::FeasibilityLogic;
-use crate::algorithm::two_phase::PartialInitialBasis;
+use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector, Vector};
 use crate::data::linear_program::elements::BoundDirection;

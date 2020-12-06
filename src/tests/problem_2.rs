@@ -5,7 +5,6 @@ use num::rational::Ratio;
 
 use crate::{F, R32};
 use crate::algorithm::OptimizationResult;
-use crate::algorithm::two_phase::{artificial_primal, primal, Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
@@ -17,6 +16,8 @@ use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::VariableType;
 use crate::data::number_types::traits::{Field, FieldRef};
+use crate::algorithm::two_phase::{phase_one, phase_two};
+use crate::algorithm::two_phase::phase_one::{RankedFeasibilityResult, Rank};
 
 type T = Ratio<i32>;
 
@@ -30,7 +31,7 @@ fn conversion_pipeline() {
     assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form));
 
     // Get to a basic feasible solution
-    let feasibility_result = artificial_primal::<_, _, MatrixData<T>, FirstProfitable>(artificial_tableau_form_computed);
+    let feasibility_result = phase_one::primal::<_, _, MatrixData<T>, FirstProfitable>(artificial_tableau_form_computed);
     let mut tableau_form_computed = match feasibility_result {
         RankedFeasibilityResult::Feasible {
             rank,
@@ -53,7 +54,7 @@ fn conversion_pipeline() {
     assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form));
 
     // Get to a basic feasible solution
-    let result = primal::<_, _, FirstProfitable>(&mut tableau_form_computed);
+    let result = phase_two::primal::<_, _, FirstProfitable>(&mut tableau_form_computed);
     assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
         (1, 0.5f64),
         (3, 2.5f64),

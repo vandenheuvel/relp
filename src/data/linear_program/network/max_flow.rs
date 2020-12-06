@@ -2,13 +2,13 @@
 use std::ops::Range;
 
 use crate::algorithm::two_phase::matrix_provider::{matrix_data, MatrixProvider};
-use crate::algorithm::two_phase::PartialInitialBasis;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::network::representation::ArcIncidenceMatrix;
 use crate::data::number_types::traits::{Field, FieldRef};
+use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 
 /// Maximum flow problem.
 ///
