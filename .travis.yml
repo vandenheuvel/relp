@@ -10,6 +10,7 @@ cache: cargo
 
 before_script:
  - cargo install cargo-tarpaulin
+ - set -e
 
 script:
  - cargo clean
