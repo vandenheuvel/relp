@@ -1,39 +1,10 @@
-use std::convert::TryInto;
-
 use num::FromPrimitive;
 use num::rational::Ratio;
 
-use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
-use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use rust_lp::data::linear_program::solution::Solution;
-use rust_lp::data::number_types::traits::{OrderedField, OrderedFieldRef};
-use rust_lp::io::import;
 use rust_lp::R32;
 
-use super::get_test_file_path;
-
-fn solve<T: 'static + OrderedField + FromPrimitive>(
-    file_name: &str,
-) -> Solution<T>
-where
-    for<'r> &'r T: OrderedFieldRef<T>,
-{
-    let path = get_test_file_path(file_name);
-    let mps = import::<T>(&path).unwrap();
-
-    let mut general = mps.try_into().ok().unwrap();
-    let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
-
-    match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let reconstructed = data.reconstruct_solution(vector);
-            general.compute_full_solution_with_reduced_solution(reconstructed)
-        },
-        _ => panic!(),
-    }
-}
+use crate::unicamp::solve;
 
 #[test]
 fn model_data_1() {

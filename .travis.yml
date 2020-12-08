@@ -14,7 +14,8 @@ before_script:
 script:
  - cargo clean
  - cargo build
- - cargo test --features burkardt unicamp
+ - cargo test
+ - cargo test --package rust-lp --all-features --release --test mod
 
 after_success:
  - cargo tarpaulin --ignore-tests --features burkardt unicamp --out Xml

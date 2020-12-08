@@ -11,7 +11,7 @@ mod test;
 ///
 /// The path is relative to the project root folder.
 fn problem_file_directory() -> PathBuf {
-    Path::new(file!()).parent().unwrap().to_path_buf()
+    Path::new(file!()).parent().unwrap().join("problem_files")
 }
 
 /// Compute the path of the problem file, based on the problem name.

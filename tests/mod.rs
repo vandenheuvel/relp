@@ -1,6 +1,7 @@
-//! Integration tests completely external from the crate.
+//! # Integration tests
 //!
-//! All code written in this module could be written by an external user of the crate.
+//! Integration tests completely external from the crate. All code written in this module could be
+//! written by an external user of the crate.
 //!
 //! ## Note
 //!
@@ -9,11 +10,11 @@
 
 #![allow(non_snake_case)]
 
-#[cfg(all(test, feature = "burkardt"))]
+#[cfg(all(feature = "burkardt"))]
 mod burkardt;
-#[cfg(all(test, feature = "miplib"))]
+#[cfg(all(feature = "miplib"))]
 mod miplib;
-#[cfg(all(test, feature = "netlib"))]
+#[cfg(all(feature = "netlib"))]
 mod netlib;
-#[cfg(all(test, feature = "unicamp"))]
+#[cfg(all(feature = "unicamp"))]
 mod unicamp;
