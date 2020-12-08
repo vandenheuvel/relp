@@ -19,6 +19,6 @@ script:
  - cargo test --package rust-lp --all-features --release --test mod
 
 after_success:
- - cargo tarpaulin --ignore-tests --features burkardt unicamp --out Xml
+ - cargo tarpaulin --ignore-tests --out Xml
  - bash <(curl -s https://codecov.io/bash) 
 

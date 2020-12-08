@@ -6,6 +6,7 @@
 use std::ops::{Add, AddAssign, Mul};
 
 use crate::data::number_types::rational::Rational64;
+use std::str::FromStr;
 
 mod wrapping;
 #[cfg(test)]
@@ -27,6 +28,12 @@ impl Big {
     /// Create a new instance by converting the two provided numbers into arbitrary size ints.
     pub fn new(numer: i64, denom: i64) -> Self {
         Self(num::BigRational::new(numer.into(), denom.into()))
+    }
+}
+
+impl From<&str> for Big {
+    fn from(input: &str) -> Self {
+        Self(num::BigRational::from_str(input).unwrap())
     }
 }
 

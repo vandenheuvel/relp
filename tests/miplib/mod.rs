@@ -10,7 +10,7 @@
 use std::convert::TryInto;
 use std::path::{Path, PathBuf};
 
-use num::{FromPrimitive, One};
+use num::FromPrimitive;
 
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -18,6 +18,7 @@ use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use rust_lp::data::number_types::rational::RationalBig;
 use rust_lp::data::number_types::traits::Abs;
 use rust_lp::io::import;
+use rust_lp::RB;
 
 /// # Generation and execution
 #[allow(missing_docs)]
@@ -45,7 +46,7 @@ fn get_test_file_path(name: &str) -> PathBuf {
 
 
 /// Testing a problem, comparing only the objective value.
-fn test(file_name: &str, objective: f64) {
+fn test(file_name: &str, objective: f64, tolerance: f64) {
     type T = RationalBig;
 
     let path = get_test_file_path(file_name);
@@ -61,7 +62,7 @@ fn test(file_name: &str, objective: f64) {
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
 
             // TODO(CORRECTNESS): Make this a relative error check.
-            assert!((solution.objective_value - T::from_f64(objective).unwrap()).abs() < T::one());
+            assert!((solution.objective_value - RB!(objective)).abs() < RB!(tolerance));
         },
         _ => assert!(false),
     }
