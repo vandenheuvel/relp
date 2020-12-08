@@ -45,6 +45,7 @@ fn test_25FV47() {
 }
 
 #[test]
+#[ignore = "Too computationally intensive"]
 fn test_80BAU3B() {
     type T = Ratio<BigInt>;
 

@@ -32,6 +32,7 @@ fn test(file_name: &str, objective: f64) {
 }
 
 #[test]
+#[ignore = "Too computationally intensive"]
 fn test_50v() {
     test("50v-10", 2879.065687f64);
 }  // GLPK
