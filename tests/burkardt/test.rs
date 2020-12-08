@@ -25,7 +25,6 @@ fn to_general_form<T: From<Rational64> + Zero + One + Ord + Element>(
 }
 
 #[test]
-#[ignore = "Takes too long, fill in the right values"]
 fn adlittle() {
     type T = RationalBig;
 
@@ -40,22 +39,14 @@ fn adlittle() {
         OptimizationResult::FiniteOptimum(vector) => {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
-            let expected = Solution::new(
-                RB!(207003, 1),  // GLPK
-                vec![
-                    ("...100".to_string(), RB!(0, 1)),
-                ],
-            );
-
-            assert!(expected.is_probably_equal_to(&solution, 0.1_f64));
+            assert_eq!(solution.objective_value, T::from("24975305659811992079614961229/120651674036153428931840"));
         },
         _ => assert!(false),
     }
 }
 
 #[test]
-#[ignore = "Fill in the accurate values"]
-fn afiro_big_int() {
+fn afiro() {
     type T = RationalBig;
 
     let mut general = to_general_form::<T>("afiro");
@@ -110,64 +101,6 @@ fn afiro_big_int() {
     }
 }
 
-/// TODO: Why does the bigint give a different solution?
-#[test]
-#[ignore = "Different values than the big integer variant of this test."]
-fn afiro() {
-    type T = RationalBig;
-
-    let mut general = to_general_form::<T>("afiro");
-    let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
-
-    match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let reconstructed = data.reconstruct_solution(vector);
-            let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
-            let expected = Solution::new(
-                T::new(-406659, 875),  // GLPK
-                vec![
-                    ("X01".to_string(), T::new(80, 1)),
-                    ("X02".to_string(), T::new(51, 2)),
-                    ("X03".to_string(), T::new(109, 2)),
-                    ("X04".to_string(), T::new(424, 5)),
-                    ("X06".to_string(), T::new(255, 14)),
-                    ("X07".to_string(), T::zero()),
-                    ("X08".to_string(), T::zero()),
-                    ("X09".to_string(), T::zero()),
-                    ("X10".to_string(), T::zero()),
-                    ("X11".to_string(), T::zero()),
-                    ("X12".to_string(), T::zero()),
-                    ("X13".to_string(), T::zero()),
-                    ("X14".to_string(), T::new(255, 14)),
-                    ("X15".to_string(), T::zero()),
-                    ("X16".to_string(), T::new(9999999999999999, 1)),
-                    ("X22".to_string(), T::new(500, 1)),
-                    ("X23".to_string(), T::new(11898, 25)),
-                    ("X24".to_string(), T::new(602, 25)),
-                    ("X25".to_string(), T::zero()),
-                    ("X26".to_string(), T::new(215, 1)),
-                    ("X28".to_string(), T::zero()),
-                    ("X29".to_string(), T::zero()),
-                    ("X30".to_string(), T::zero()),
-                    ("X31".to_string(), T::zero()),
-                    ("X32".to_string(), T::zero()),
-                    ("X33".to_string(), T::zero()),
-                    ("X34".to_string(), T::zero()),
-                    ("X35".to_string(), T::zero()),
-                    ("X36".to_string(), T::new(11898, 35)),
-                    ("X37".to_string(), T::new(11898, 35)),
-                    ("X38".to_string(), T::zero()),
-                    ("X39".to_string(), T::zero()),
-                ],
-            );
-
-            assert!(expected.is_probably_equal_to(&solution, 0.1_f64));
-        },
-        _ => assert!(false),
-    }
-}
-
 #[test]
 #[ignore = "Not yet implemented: The same range value occurring twice for a single row while being equal should be accepted."]
 fn empstest() {
@@ -175,32 +108,6 @@ fn empstest() {
 
     let path = get_test_file_path("empstest");
     import::<T>(&path).unwrap();
-}
-
-#[test]
-fn maros_bigint() {
-    type T = RationalBig;
-
-    let mut general = to_general_form::<T>("maros");
-    let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
-
-    match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let reconstructed = data.reconstruct_solution(vector);
-            let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
-            assert_eq!(solution, Solution::new(
-                RB!(385, 3),  // GLPK
-                vec![
-                    ("VOL1".to_string(), RB!(10, 3)),
-                    ("VOL2".to_string(), RB!(40, 3)),
-                    ("VOL3".to_string(), RB!(20, 1)),
-                    ("VOL4".to_string(), RB!(0, 1)),
-                ],
-            ));
-        },
-        _ => assert!(false),
-    }
 }
 
 #[test]

@@ -345,7 +345,7 @@ where
             // To make sure that doesn't happen, this heuristic rule decides when to stop.
             // TODO(ENHANCEMENT): When should we stop presolving?
             index.updates.nr_variables_remaining() + 2 * index.updates.nr_constraints_remaining()
-        }{
+        } {
             let did_removal = index.presolve_step()?;
             if did_removal {
                 iterations_without_removal = 0;

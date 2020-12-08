@@ -1,6 +1,6 @@
 [package]
 name = "rust-lp"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Bram van den Heuvel <bram@vandenheuvel.online>"]
 license = "MIT"
 repository = "https://github.com/vandenheuvel/rust-lp"
