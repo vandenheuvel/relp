@@ -19,3 +19,6 @@ burkardt = []
 miplib = []
 netlib = []
 unicamp = []
+
+[profile.release]
+lto = true
