@@ -7,6 +7,7 @@ use std::fmt::{Debug, Display, Formatter, Result as FormatResult};
 use std::iter::repeat;
 
 use itertools::repeat_n;
+use num::One;
 use num::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::Column;

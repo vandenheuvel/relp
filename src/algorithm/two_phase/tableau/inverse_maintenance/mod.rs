@@ -228,6 +228,8 @@ pub trait InternalOps =
     SubAssign +
     for<'r> DivAssign<&'r Self> +
 
+    Sum +
+
     PartialEq +
     PartialOrd +
 
@@ -249,24 +251,10 @@ where
 /// Operations done with the values in the inverse maintenance algorithm while interacting with
 /// values from a matrix provider.
 pub trait ExternalOps<Rhs> =
-    Zero +
-    One +
-
-    Neg<Output = Self> +
-
-    AddAssign +
     for<'r> AddAssign<&'r Rhs> +
     for<'r> Add<&'r Rhs, Output = Self> +
 
-    Sum +
-
-    PartialOrd +
-
     From<Rhs> +
-
-    Clone +
-    Debug +
-    Display +
 where
     for<'r> &'r Self: Mul<&'r Rhs, Output = Self>,
 ;

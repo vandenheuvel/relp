@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use num::Zero;
+
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
 use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
