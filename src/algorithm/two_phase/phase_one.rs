@@ -105,13 +105,13 @@ pub trait FullInitialBasis: PartialInitialBasis {
 /// # Return value
 ///
 /// Whether the tableau might allow a basic feasible solution without artificial variables.
-pub(crate) fn primal<'provider, IM, K, MP, PR>(
+pub(crate) fn primal<IM, K, MP, PR>(
     mut tableau: Tableau<IM, K>,
 ) -> RankedFeasibilityResult<IM>
 where
     IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<K::Column as Column>::F>>,
     K: Artificial,
-    MP: MatrixProvider + 'provider,
+    MP: MatrixProvider,
     PR: PivotRule,
 {
     let mut rule = PR::new();

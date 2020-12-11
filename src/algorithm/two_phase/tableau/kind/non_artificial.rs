@@ -182,12 +182,12 @@ where
     /// # Return value
     ///
     /// `Tableau` with the same basis, but non-artificial cost row.
-    pub fn from_artificial_removing_rows<'b: 'provider>(
+    pub fn from_artificial_removing_rows(
         inverse_maintainer: IM,
         nr_artificial: usize,
         basis: (Vec<usize>, HashSet<usize>),
-        rows_removed: &'b RemoveRows<'provider, MP>,
-    ) -> Tableau<IM, NonArtificial<'b, RemoveRows<'provider, MP>>>
+        rows_removed: &'provider RemoveRows<MP>,
+    ) -> Tableau<IM, NonArtificial<'provider, RemoveRows<'provider, MP>>>
     where
         MP::Column: IntoFilteredColumn,
     {

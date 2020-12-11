@@ -98,7 +98,7 @@ where
 
 impl<'provider, MP> RemoveRows<'provider, MP>
 where
-    MP: MatrixProvider + 'provider,
+    MP: MatrixProvider,
 {
     /// Create a new `RemoveRows` instance.
     ///
@@ -209,7 +209,7 @@ where
     ///
     /// * `i`: Index in the reduced version of the problem to be deleted from the original problem.
     fn delete_index(skip_indices_array: &mut Vec<usize>, i: usize) {
-        let in_original_problem = Self::get_underlying_index(skip_indices_array, i);
+        let in_original_problem = RemoveRows::<MP>::get_underlying_index(skip_indices_array, i);
         debug_assert!(skip_indices_array.contains(&in_original_problem));
 
         let insertion_index = match skip_indices_array.binary_search(&in_original_problem) {
