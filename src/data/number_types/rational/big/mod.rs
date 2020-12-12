@@ -21,7 +21,7 @@ mod test;
     Ord, PartialOrd, Eq, PartialEq,
     Debug,
 )]
-pub struct Big(num::BigRational);
+pub struct Big(pub num::BigRational);
 
 impl Big {
     /// Wrap an inner `num::BigRational`.

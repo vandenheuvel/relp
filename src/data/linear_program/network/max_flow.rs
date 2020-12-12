@@ -1,5 +1,5 @@
 //! # Maximum Flow Problem
-use std::ops::Range;
+use std::ops::{Range, Add, Mul};
 
 use crate::algorithm::two_phase::matrix_provider::{matrix_data, MatrixProvider};
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
@@ -9,6 +9,8 @@ use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::network::representation::ArcIncidenceMatrix;
 use crate::data::number_types::traits::{Field, FieldRef};
+use crate::data::number_types::rational::RationalBig;
+use num::Zero;
 
 /// Maximum flow problem.
 ///
@@ -23,10 +25,11 @@ struct Primal<F> {
     s: usize,
     t: usize,
     s_arc_range: Range<usize>,
+}
 
-    ONE: F,
-    ZERO: F,
-    MINUS_ONE: F,
+enum Cost {
+    Zero,
+    MinusOne,
 }
 
 impl<F> Primal<F>
@@ -53,10 +56,6 @@ where
             s,
             t,
             s_arc_range,
-
-            ONE: F::one(),
-            ZERO: F::zero(),
-            MINUS_ONE: -F::one(),
         }
     }
 
@@ -75,7 +74,7 @@ where
     for <'r> &'r F: FieldRef<F>,
 {
     type Column = matrix_data::Column<F>;
-    type Cost<'a> = &'a F;
+    type Cost<'a> = Cost;
 
     fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
@@ -95,9 +94,9 @@ where
         debug_assert!(j < self.nr_columns());
 
         if self.s_arc_range.contains(&j) {
-            &self.MINUS_ONE
+            Cost::MinusOne
         } else {
-            &self.ZERO
+            Cost::Zero
         }
     }
 
@@ -149,6 +148,31 @@ where
 
     fn nr_initial_elements(&self) -> usize {
         self.nr_edges()
+    }
+}
+
+impl Add<Cost> for RationalBig {
+    type Output = Self;
+
+    fn add(self, rhs: Cost) -> Self::Output {
+        match rhs {
+            Cost::Zero => self,
+            Cost::MinusOne => {
+                let (numer, denom): (num::BigInt, num::BigInt) = self.0.into();
+                Self(num::BigRational::new(numer - &denom, denom))
+            }
+        }
+    }
+}
+
+impl Mul<Cost> for &RationalBig {
+    type Output = RationalBig;
+
+    fn mul(self, rhs: Cost) -> Self::Output {
+        match rhs {
+            Cost::Zero => Self::Output::zero(),
+            Cost::MinusOne => -self,
+        }
     }
 }
 
