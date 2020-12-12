@@ -4,6 +4,8 @@
 //! any variables that were eliminated as part of a presolve process (constant variables, slack
 //! variables, variables that don't interact with the rest of the problem, etc.).
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt::Display;
 
 /// Represents a full (including presolved variables, constants, etc.) solution to a linear program.
 ///
@@ -76,5 +78,11 @@ impl<F: PartialEq + Clone> Solution<F> {
         }
 
         nr_equal as f64 / nr_total as f64 > min_equal // At least a few solution values should be equal
+    }
+}
+
+impl<F: Display> Display for Solution<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Objective value: {}", self.objective_value)
     }
 }

@@ -14,11 +14,19 @@ daggy = "0.7.0"  # Currently only for debug asserts
 
 itertools = "0.9.0"
 
+clap = { version = "3.0.0-beta.2", optional = true }
+
 [features]
 burkardt = []
 miplib = []
 netlib = []
 unicamp = []
+binaries = ["clap"]
 
 [profile.release]
 lto = true
+
+[[bin]]
+name = "rust-lp"
+path = "src/bin/main.rs"
+required-features = ["binaries"]

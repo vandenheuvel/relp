@@ -1,5 +1,5 @@
 //! # Maximum Flow Problem
-use std::ops::{Range, Add, Mul};
+use std::ops::{Add, Mul, Range};
 
 use crate::algorithm::two_phase::matrix_provider::{matrix_data, MatrixProvider};
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
@@ -8,8 +8,8 @@ use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::network::representation::ArcIncidenceMatrix;
-use crate::data::number_types::traits::{Field, FieldRef};
 use crate::data::number_types::rational::RationalBig;
+use crate::data::number_types::traits::{Field, FieldRef};
 
 /// Maximum flow problem.
 ///
