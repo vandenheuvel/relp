@@ -52,7 +52,7 @@ impl PivotRule for FirstProfitable {
     {
         // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
         (0..tableau.nr_columns())
-            .filter(|column| !tableau.is_in_basis(column))
+            .filter(|&column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
             .find(|(_, cost)| cost < &<IM::F as Zero>::zero())
     }
@@ -77,19 +77,19 @@ impl PivotRule for FirstProfitableWithMemory {
         K: Kind,
     {
         let find = |to_consider: Range<usize>| to_consider
-            .filter(|column| !tableau.is_in_basis(column))
+            .filter(|&column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
             .find(|(_, cost)| cost < &<IM::F as Zero>::zero());
 
-        let potential = if let Some(last) = self.last_selected {
-            // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
-            find(last..tableau.nr_columns()).or_else(|| find(0..last))
-        } else {
-            // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
-            find(0..tableau.nr_columns())
-        };
+        let potential = self.last_selected
+            .map_or_else(
+                // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
+                || find(0..tableau.nr_columns()),
+                // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
+                |last| find(last..tableau.nr_columns()).or_else(|| find(0..last)),
+            );
 
-        self.last_selected = potential.clone().map(|(i, _)| i);
+        self.last_selected = potential.as_ref().map(|&(i, _)| i);
         potential
     }
 }
@@ -112,7 +112,7 @@ impl PivotRule for SteepestDescent {
         let mut smallest = None;
         // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
         for (j, cost) in (0..tableau.nr_columns())
-            .filter(|column| !tableau.is_in_basis(column))
+            .filter(|&column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
             .filter(|(_, cost)| cost < &<IM::F as Zero>::zero()) {
             if let Some((existing_j, existing_cost)) = smallest.as_mut() {

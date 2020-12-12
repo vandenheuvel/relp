@@ -76,9 +76,9 @@ where
     ///
     /// # Arguments
     ///
-    /// * `pivot_row`: Row index of the pivot, in range 0 until self.nr_rows().
-    /// * `pivot_column`: Column index of the pivot, in range 0 until self.nr_columns(). Is not yet
-    /// in the basis.
+    /// * `pivot_row`: Row index of the pivot, in range `0` until `self.nr_rows()`.
+    /// * `pivot_column`: Column index of the pivot, in range `0` until `self.nr_columns()`. Is not
+    /// yet in the basis.
     fn update_basis_indices(&mut self, pivot_row: usize, pivot_column: usize) {
         debug_assert!(pivot_row < self.nr_rows());
         debug_assert!(pivot_column < self.nr_columns());
@@ -118,7 +118,7 @@ where
     ///
     /// # Arguments
     ///
-    /// * `j`: Column index of the variable, in range 0 until self.nr_columns().
+    /// * `j`: Column index of the variable, in range `0` until `self.nr_columns()`.
     ///
     /// # Return value
     ///
@@ -146,10 +146,10 @@ where
     /// # Note
     ///
     /// This method may not be accurate when there are artificial variables.
-    pub fn is_in_basis(&self, column: &usize) -> bool {
-        debug_assert!(*column < self.nr_columns());
+    pub fn is_in_basis(&self, column: usize) -> bool {
+        debug_assert!(column < self.nr_columns());
 
-        self.basis_columns.contains(column)
+        self.basis_columns.contains(&column)
     }
 
     /// Get the current basic feasible solution.
@@ -276,7 +276,7 @@ where
     // Checking basis_indices
     // Correct number of basis columns
     let nr_basis_indices = tableau.basis_indices.len() == tableau.nr_rows();
-    let as_set = tableau.basis_indices.iter().map(|&v| v).collect::<HashSet<_>>();
+    let as_set = tableau.basis_indices.iter().copied().collect::<HashSet<_>>();
     // Uniqueness of the basis columns
     let uniqueness = as_set.len() == tableau.nr_rows();
     // Same columns as in `basis_indices`
@@ -285,33 +285,15 @@ where
     // Checking carry matrix
     let carry = {
         // `basis_inverse_rows` are a proper inverse by regenerating basis columns
-        let mut basis = true;
-        for (i, &basis_column) in tableau.basis_indices.iter().enumerate() {
-            if !(
-                    tableau.generate_column(basis_column)
-                        == SparseVector::new(vec![(i, IM::F::one())], tableau.nr_rows())
-            ) {
-                basis = false;
-                break;
-            }
-        }
+        let basis = tableau.basis_indices.iter().enumerate().all(|(i, &j)| {
+            tableau.generate_column(j) == SparseVector::new(vec![(i, IM::F::one())], tableau.nr_rows())
+        });
         // `minus_pi` get to relative zero cost for basis columns
-        let mut minus_pi = true;
-        for &basis_column in tableau.basis_indices.iter() {
-            if !(tableau.relative_cost(basis_column) == IM::F::zero()) {
-                minus_pi = false;
-                break;
-            }
-        }
+        let minus_pi = tableau.basis_indices.iter()
+            .all(|&j| tableau.relative_cost(j) == IM::F::zero());
         // `b` >= 0
-        let mut b_ok = true;
-        let b = &tableau.inverse_maintainer.b();
-        for row in 0..tableau.nr_rows() {
-            if !(b[row] >= IM::F::zero()) {
-                b_ok = false;
-                break;
-            }
-        }
+        let b_ok = (0..tableau.nr_rows())
+            .all(|i| tableau.inverse_maintainer.b()[i] >= IM::F::zero());
 
         basis && minus_pi && b_ok
     };
@@ -503,8 +485,8 @@ mod test {
         let cost = artificial_tableau.relative_cost(column);
         artificial_tableau.bring_into_basis(column, row, &column_data, cost);
 
-        assert!(artificial_tableau.is_in_basis(&column));
-        assert!(!artificial_tableau.is_in_basis(&0));
+        assert!(artificial_tableau.is_in_basis(column));
+        assert!(!artificial_tableau.is_in_basis(0));
         assert_eq!(artificial_tableau.objective_function_value(), RB!(14, 3));
 
         let mut tableau = tableau(&matrix_data_form);
@@ -514,7 +496,7 @@ mod test {
         let cost = tableau.relative_cost(column);
         tableau.bring_into_basis(column, row, &column_data, cost);
 
-        assert!(tableau.is_in_basis(&column));
+        assert!(tableau.is_in_basis(column));
         assert_eq!(tableau.objective_function_value(), RB!(9, 2));
     }
 

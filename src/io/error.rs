@@ -67,7 +67,7 @@ impl Error for Import {
 
 /// A `ParseError` represents all errors encountered during parsing.
 ///
-/// It may recursively hold more ParseErrors to provide more detail. At the end of this chain, there
+/// It may recursively hold more `ParseError`s to provide more detail. At the end of this chain, there
 /// may be a file location containing a line number and line, at which the error was caused.
 #[derive(Debug)]
 pub struct Parse {
@@ -226,7 +226,7 @@ impl Inconsistency {
 
 impl Display for Inconsistency {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ProgramError: {}", self.to_string())
+        write!(f, "ProgramError: {}", self)
     }
 }
 

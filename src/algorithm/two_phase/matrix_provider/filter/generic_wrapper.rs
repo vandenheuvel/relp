@@ -131,6 +131,7 @@ where
     /// # Return value
     ///
     /// Index of row in the original problem.
+    #[must_use]
     pub fn get_underlying_row_index(&self, i: usize) -> usize {
         debug_assert!(i < self.provider.nr_rows() - self.rows_to_skip.len());
 
@@ -156,6 +157,7 @@ where
     }
 
     /// How many constraints were removed.
+    #[must_use]
     pub fn nr_constraints_deleted(&self) -> usize {
         self.rows_to_skip.len()
     }
@@ -170,7 +172,7 @@ where
     ///
     /// Index in the original problem.
     fn get_underlying_index(skip_indices_array: &[usize], i: usize) -> usize {
-        if skip_indices_array.len() == 0 {
+        if skip_indices_array.is_empty() {
             // If no indices have been deleted, it's just the original value
             i
         } else if skip_indices_array.len() == 1 {
@@ -280,7 +282,7 @@ where
 
 impl<'provider, MP> PartialInitialBasis for RemoveRows<'provider, MP>
 where
-    MP: MatrixProvider + PartialInitialBasis,
+    MP: MatrixProvider<Column: IntoFilteredColumn> + PartialInitialBasis,
 {
     fn pivot_element_indices(&self) -> Vec<(usize, usize)> {
         let mut from_parent = self.provider.pivot_element_indices();
@@ -289,9 +291,8 @@ where
     }
 
     fn nr_initial_elements(&self) -> usize {
-        // Requires introduction of a counter, but this code should never be run anyways (this is
-        // never part of a first phase search for a feasible value, when this is relevant).
-        panic!("This code path should not be part of the first phase.");
+        // TODO(PERFORMANCE): Avoid the recomputation of the elements.
+        self.pivot_element_indices().len()
     }
 }
 

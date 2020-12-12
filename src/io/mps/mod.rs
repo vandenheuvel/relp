@@ -2,7 +2,7 @@
 //!
 //! Reading of `.mps` files, or files of the Mathematical Programming System format.
 //!
-//! See http://lpsolve.sourceforge.net/5.5/mps-format.htm for a specification.
+//! See <http://lpsolve.sourceforge.net/5.5/mps-format.htm> for a specification.
 //!
 //! TODO:
 //!     * Support all `BoundType` variants
@@ -16,6 +16,7 @@ use crate::data::number_types::rational::Rational64;
 use crate::io::error::Import;
 use crate::io::mps::parse::free;
 
+#[allow(clippy::type_complexity)]
 mod convert;
 pub mod number;
 pub mod parse;
@@ -78,6 +79,7 @@ pub struct MPS<F> {
 #[allow(clippy::too_many_arguments)]
 impl<F> MPS<F> {
     /// Simple constructor without any logic.
+    #[must_use]
     pub fn new(
         name: String,
         cost_row_name: String,

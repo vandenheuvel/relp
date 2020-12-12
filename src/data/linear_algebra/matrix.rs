@@ -50,7 +50,7 @@ pub trait Order: Sized {
     /// Note that the numerics might not be exact due to intermediate casting to floats, for
     /// convenience in other places of the code base.
     fn from_test_data<F: FromPrimitive, C, IT: ToPrimitive + Zero>(
-        rows: &Vec<Vec<IT>>,
+        rows: &[Vec<IT>],
         nr_columns: usize,
     ) -> Sparse<F, C, Self>
     where
@@ -59,6 +59,7 @@ pub trait Order: Sized {
     ;
 
     /// Identity matrix of specified field type with this ordering.
+    #[must_use]
     fn identity<F, C>(n: usize) -> Sparse<F, C, Self>
     where
         F: Field + Borrow<C>,
@@ -88,7 +89,7 @@ impl Order for RowMajor {
     }
 
     fn from_test_data<F: FromPrimitive, C, IT: ToPrimitive + Zero>(
-        rows: &Vec<Vec<IT>>,
+        rows: &[Vec<IT>],
         nr_columns: usize,
     ) -> Sparse<F, C, Self>
     where
@@ -99,7 +100,7 @@ impl Order for RowMajor {
 
         let nr_rows = rows.len();
 
-        let mut data: Vec<_> = rows.iter().map(Vec::len).map(|l| Vec::with_capacity(l)).collect();
+        let mut data: Vec<_> = rows.iter().map(Vec::len).map(Vec::with_capacity).collect();
         for (row_index, row) in rows.iter().enumerate() {
             for (column_index, value) in row.iter().enumerate() {
                 if !value.is_zero() {
@@ -134,7 +135,7 @@ impl Order for ColumnMajor {
     }
 
     fn from_test_data<F: FromPrimitive, C, IT: ToPrimitive + Zero>(
-        rows: &Vec<Vec<IT>>,
+        rows: &[Vec<IT>],
         nr_columns: usize,
     ) -> Sparse<F, C, Self>
     where
@@ -171,6 +172,7 @@ where
     F: SparseElement<F>,
 {
     /// A copy in a different ordering by reference.
+    #[must_use]
     pub fn from_column_major_ordered_matrix_although_this_is_expensive(
         data: &Sparse<F, F, ColumnMajor>,
     ) -> Sparse<&F, F, RowMajor> {
@@ -187,6 +189,7 @@ where
     ///
     /// The new matrix will have as many rows as the two previous matrices had combined. This is a
     /// cheap operation.
+    #[must_use]
     pub fn concatenate_vertically(self, other: Self) -> Self {
         debug_assert_eq!(self.nr_columns(), other.nr_columns());
 
@@ -236,11 +239,13 @@ where
     }
 
     /// The number of rows (major dimension size).
+    #[must_use]
     pub fn nr_rows(&self) -> usize {
         self.major_dimension_size
     }
 
     /// The number of columns (minor dimension size).
+    #[must_use]
     pub fn nr_columns(&self) -> usize {
         self.minor_dimension_size
     }
@@ -257,8 +262,8 @@ where
     ///
     /// * `rows_to_change`: Indices of rows to change the sign of.
     pub fn change_row_signs(&mut self, rows_to_change: &HashSet<usize>) {
-        for column in self.data.iter_mut() {
-            for (i, value) in column.iter_mut() {
+        for column in &mut self.data {
+            for (i, value) in column {
                 if rows_to_change.contains(i) {
                     *value *= -F::one();
                 } 
@@ -279,8 +284,9 @@ impl<F: SparseElement<C>, C: SparseComparator> Sparse<F, C, ColumnMajor> {
     /// # Return value
     ///
     /// A column-major copy.
+    #[must_use]
     pub fn from_row_ordered_tuples_although_this_is_expensive(
-        rows: &Vec<SparseTupleVec<F>>,
+        rows: &[SparseTupleVec<F>],
         current_nr_columns: usize,
     ) -> Sparse<&F, F, ColumnMajor> {
         Sparse::from_minor_ordered_tuples(rows, current_nr_columns)
@@ -295,7 +301,7 @@ impl<F: SparseElement<C>, C: SparseComparator> Sparse<F, C, ColumnMajor> {
         debug_assert!(indices.len() <= self.data.len());
         debug_assert!(indices.is_sorted());
         // All values are unique
-        debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
+        debug_assert!(indices.iter().collect::<HashSet<_>>().len() == indices.len());
         debug_assert!(indices.iter().all(|&i| i < self.data.len()));
 
         self.remove_major_indices(indices);
@@ -318,6 +324,7 @@ impl<F: SparseElement<C>, C: SparseComparator> Sparse<F, C, ColumnMajor> {
     ///
     /// * `other`: A column major ordered sparse matrix with the same number of rows as this
     /// matrix.
+    #[must_use]
     pub fn concatenate_horizontally(self, other: Self) -> Self {
         debug_assert_eq!(self.nr_rows(), other.nr_rows());
 
@@ -352,11 +359,13 @@ impl<F: SparseElement<C>, C: SparseComparator> Sparse<F, C, ColumnMajor> {
     }
 
     /// The number of rows (minor dimension size).
+    #[must_use]
     pub fn nr_rows(&self) -> usize {
         self.minor_dimension_size
     }
 
     /// The number of columns (major dimension size).
+    #[must_use]
     pub fn nr_columns(&self) -> usize {
         self.major_dimension_size
     }
@@ -367,7 +376,7 @@ impl<F: SparseElement<C>, C: SparseComparator, MO: Order> Sparse<F, C, MO> {
     ///
     /// # Arguments
     ///
-    /// * `columns`: Column-major data of (row_index, value) tuples that should already be filtered
+    /// * `columns`: Column-major data of `(row_index, value)` tuples that should already be filtered
     /// for non-zero values.
     /// * `nr_rows`: Number of rows this matrix is large. Couldn't be derived from `columns`,
     /// because the final row(s) might be zero, so no column would have a value in that row.
@@ -403,7 +412,7 @@ where
     MO: Order,
 {
     fn from_minor_ordered_tuples(
-        data: &'a Vec<SparseTupleVec<F>>,
+        data: &'a [SparseTupleVec<F>],
         current_minor_dimension_size: usize,
     ) -> Self {
         debug_assert!(data.iter().all(|major| major.is_sorted_by_key(|&(i, _)| i)));
@@ -464,7 +473,7 @@ where
         debug_assert!(indices.len() <= self.major_dimension_size);
         debug_assert!(indices.is_sorted());
         // All values are unique
-        debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
+        debug_assert!(indices.iter().collect::<HashSet<_>>().len() == indices.len());
         debug_assert!(indices.iter().all(|&i| i < self.major_dimension_size));
 
         remove_indices(&mut self.data, indices);
@@ -480,7 +489,7 @@ where
         debug_assert!(indices.len() <= self.minor_dimension_size);
         debug_assert!(indices.is_sorted());
         // All values are unique
-        debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
+        debug_assert!(indices.iter().collect::<HashSet<_>>().len() == indices.len());
         debug_assert!(indices.iter().all(|&i| i < self.minor_dimension_size));
 
         for j in 0..self.major_dimension_size {
@@ -514,8 +523,9 @@ where
     }
 
     /// Get the number of non-zero values in this matrix.
+    #[must_use]
     pub fn size(&self) -> usize {
-        self.data.iter().map(|vector| vector.len()).sum()
+        self.data.iter().map(Vec::len).sum()
     }
 }
 

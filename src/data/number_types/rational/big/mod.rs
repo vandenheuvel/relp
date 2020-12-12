@@ -29,6 +29,7 @@ impl Big {
         Self(inner)
     }
     /// Create a new instance by converting the two provided numbers into arbitrary size ints.
+    #[must_use]
     pub fn new(numer: i64, denom: i64) -> Self {
         Self(num::BigRational::new(numer.into(), denom.into()))
     }

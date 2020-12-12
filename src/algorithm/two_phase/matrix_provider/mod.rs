@@ -38,7 +38,7 @@ pub trait MatrixProvider {
     ///
     /// TODO(ARCHITECTURE): When GATs are working, cloning can be avoided in some implementations,
     ///  such as the ones that explicitly store the column data, by giving this associated type a
-    ///  lifetime parameter. Keep an eye on https://github.com/rust-lang/rust/issues/44265.
+    ///  lifetime parameter. Keep an eye on <https://github.com/rust-lang/rust/issues/44265>.
     /// TODO(ARCHITECTURE): When specializing on the generic arguments of trait methods is possible,
     ///  the columns no longer need to be ordered necessarily and the bound can be removed here.
     type Column: Column + OrderedColumn;
@@ -155,9 +155,9 @@ pub trait Column {
     ///
     /// It should be somewhat cheaply cloneable and as such not be too large.
     ///
-    /// Note that we use a Generic Associated Type (GAT) here, and that these are (currently) part
-    /// of an unfinished feature. Keep an eye on https://github.com/rust-lang/rust/issues/44265 for
-    /// stabilization and possible bugs.
+    /// TODO: We use a Generic Associated Type (GAT) here, and that these are (currently) part
+    /// of an unfinished feature. Keep an eye on <https://github.com/rust-lang/rust/issues/44265>
+    /// for stabilization and possible bugs.
     type Iter<'a>: Iterator<Item = &'a SparseTuple<Self::F>> + Clone;
 
     /// Derive the iterator object.

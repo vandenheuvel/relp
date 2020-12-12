@@ -60,10 +60,8 @@ impl BitXor for BoundDirection {
 
     fn bitxor(self, other: Self) -> Self::Output {
         match (self, other) {
-            (Self::Lower, Self::Upper) => Self::Upper,
-            (Self::Upper, Self::Lower) => Self::Upper,
-            (Self::Lower, Self::Lower) => Self::Lower,
-            (Self::Upper, Self::Upper) => Self::Lower,
+            (Self::Lower, Self::Upper) | (Self::Upper, Self::Lower) => Self::Upper,
+            (Self::Lower, Self::Lower) | (Self::Upper, Self::Upper) => Self::Lower,
         }
     }
 }

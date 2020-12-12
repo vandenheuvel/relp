@@ -276,7 +276,7 @@ fn check_row_section_consistency(
 ///
 /// If there are rows with duplicate names, the MPS is considered inconsistent.
 fn build_row_index<'a>(
-    rows: &'a Vec<Row>,
+    rows: &'a [Row],
     cost_row_name: &str,
 ) -> Result<HashMap<&'a str, usize>, Inconsistency> {
     let names = rows.iter().map(|row| row.name.as_str()).collect::<HashSet<_>>();
@@ -296,7 +296,7 @@ fn build_row_index<'a>(
 
 fn parse_column_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item = FileLocation<'a>>>(
     lines: &mut L,
-    cost_row_name: &String,
+    cost_row_name: &str,
     row_map: &HashMap<&str, usize>,
 ) -> Result<(Vec<Column<F>>, Vec<(usize, F)>, Section), ImportError> {
     // Collecting data that is returned from the function.
@@ -363,7 +363,7 @@ fn parse_column_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item 
                                 let column_index = collector.len();
                                 cost_values_collector.push((column_index, value))
                             } else {
-                                Err(Inconsistency::new(format!("Row \"{}\" not known.", row_name)))?;
+                                return Err(Inconsistency::new(format!("Row \"{}\" not known.", row_name)).into());
                             },
                             Some(row_index) => column_collector.push((*row_index, value)),
                         }
@@ -441,7 +441,7 @@ fn save_to_column_collector<F>(
 /// # Note
 ///
 /// This assignment is not a specific order.
-fn build_column_index<F>(columns: &Vec<Column<F>>) -> HashMap<&str, usize> {
+fn build_column_index<F>(columns: &[Column<F>]) -> HashMap<&str, usize> {
     debug_assert_eq!(
         columns.iter().map(|column| column.name.as_str()).collect::<HashSet<_>>().len(),
         columns.len(),
@@ -546,7 +546,7 @@ fn parse_value_section_line<'a, F: Parse, T: ListedInGroup<ValueType = F>, CR: C
 
     let mut save_pair = |row_name, value_text| {
         let row_index: Result<_, Inconsistency> = row_map.get(row_name)
-            .ok_or(Inconsistency::new(format!("Row \"{}\" not known.", row_name)));
+            .ok_or_else(|| Inconsistency::new(format!("Row \"{}\" not known.", row_name)));
         let value: Result<_, ParseError> = F::parse(value_text).map_err(|e| e.wrap(
             "Couldn't parse (row name, value) pair",
         ));
@@ -591,7 +591,7 @@ fn save_to_group_collector<T: ListedInGroup, const CAN_HAVE_DUPLICATES: bool>(
     Ok(())
 }
 
-fn check_ranges_consistency<F>(ranges: &Vec<Range<F>>) -> Result<(), Inconsistency> {
+fn check_ranges_consistency<F>(ranges: &[Range<F>]) -> Result<(), Inconsistency> {
     let mut unique = HashSet::with_capacity(ranges.iter().map(|r| r.values.len()).sum());
     let all_unique = ranges.iter().flat_map(|range| range.values.iter())
         .all(|&(row_index, _)| unique.insert(row_index));
@@ -633,7 +633,7 @@ fn parse_bounds_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item 
         }
     }
 
-    Err(ParseError::new("Section \"COLUMNS\" ended sooner than expected."))?
+    Err(ParseError::new("Section \"COLUMNS\" ended sooner than expected.").into())
 }
 
 fn parse_bound_line<'a, F: Parse, CR: ColumnRetriever<'a>>(
@@ -646,8 +646,8 @@ fn parse_bound_line<'a, F: Parse, CR: ColumnRetriever<'a>>(
     collector: &mut Vec<Bound<F>>,
     column_index: &HashMap<&str, usize>,
 ) -> Result<(), ImportError> {
-    let column_index = *column_index.get(column_name).ok_or(
-        Inconsistency::new(format!("Column name \"{}\" unknown", column_name))
+    let column_index = *column_index.get(column_name).ok_or_else(
+        || Inconsistency::new(format!("Column name \"{}\" unknown", column_name))
     )?;
 
     if let Some(active_column) = active_group {
@@ -682,7 +682,7 @@ fn parse_bound_line<'a, F: Parse, CR: ColumnRetriever<'a>>(
             }
         },
         "SC" => unimplemented!(),
-        _ => Err(ParseError::new(format!("Bound type \"{}\" unknown.", bound_type_text)))?,
+        _ => return Err(ParseError::new(format!("Bound type \"{}\" unknown.", bound_type_text)).into()),
     };
 
     group_collector.push((column_index, bound_type));

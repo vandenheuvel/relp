@@ -28,7 +28,7 @@ pub trait Kind {
     ///
     /// # Arguments
     ///
-    /// * `j`: Column index of the variable, in range 0 until self.nr_columns().
+    /// * `j`: Column index of the variable, in range `0` until `self.nr_columns()`.
     ///
     /// # Return value
     ///

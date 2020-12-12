@@ -16,6 +16,7 @@ use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector, Sparse, Vector};
+use std::cmp::Ordering;
 
 /// The carry matrix looks like:
 ///
@@ -91,7 +92,7 @@ where
     /// * `provider`: Matrix provider.
     /// * `basis`: Indices of the basis elements.
     fn create_minus_pi_from_artificial<'a, MP: MatrixProvider>(
-        basis_inverse_rows: &Vec<SparseVector<F, F>>,
+        basis_inverse_rows: &[SparseVector<F, F>],
         provider: &'a MP,
         basis: &[usize],
     ) -> DenseVector<F>
@@ -182,13 +183,13 @@ where
         let (rows_middle, rows_right) = rows_right.split_first_mut().unwrap();
 
         for (edit_row_index, column_value) in column.iter_values() {
-            if *edit_row_index != pivot_row_index {
-                if *edit_row_index < pivot_row_index {
+            match edit_row_index.cmp(&pivot_row_index) {
+                Ordering::Less => {
                     b_left[*edit_row_index] -= column_value * &*b_middle;
                     rows_left[*edit_row_index].add_multiple_of_row(-column_value, &rows_middle);
-                } else if *edit_row_index == pivot_row_index {
-                    continue;
-                } else {
+                },
+                Ordering::Equal => {},
+                Ordering::Greater => {
                     b_right[*edit_row_index - (pivot_row_index + 1)] -= column_value * &*b_middle;
                     rows_right[*edit_row_index - (pivot_row_index + 1)].add_multiple_of_row(-column_value, &rows_middle);
                 }
@@ -262,7 +263,7 @@ where
 
     fn create_for_partially_artificial<G: Element>(
         artificial_rows: &[usize],
-        free_basis_values: &Vec<(usize, usize)>,
+        free_basis_values: &[(usize, usize)],
         b: DenseVector<G>,
     ) -> Self
     where
@@ -315,7 +316,7 @@ where
 
     #[allow(unused_variables)]
     fn from_basis_pivots(
-        basis_columns: &Vec<(usize, usize)>,
+        basis_columns: &[(usize, usize)],
         provider: &impl MatrixProvider,
     ) -> Self {
         // TODO: Implement matrix inversion
@@ -469,10 +470,10 @@ where
         for row in 0..self.m() {
             write!(f, "{:>width$}", format!("{} |", row), width = width / 2)?;
             for column in 0..self.m() {
-                let value = format!("{}", match self.basis_inverse_rows[row].get(column) {
+                let value = match self.basis_inverse_rows[row].get(column) {
                     Some(value) => value.to_string(),
                     None => "0".to_string(),
-                });
+                };
                 write!(f, "{:^width$}", value, width = width)?;
             }
             writeln!(f)?;

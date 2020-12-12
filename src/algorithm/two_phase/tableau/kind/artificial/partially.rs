@@ -43,7 +43,7 @@ where
     ///
     /// # Arguments
     ///
-    /// * `j`: Column index of the variable, in range 0 until self.nr_columns().
+    /// * `j`: Column index of the variable, in range `0` until `self.nr_columns()`.
     ///
     /// # Return value
     ///
@@ -63,7 +63,7 @@ where
     /// # Arguments
     ///
     /// * `tableau`: Tableau to retrieve the column from.
-    /// * `j`: Column index.
+    /// * `j`: Column index of the variable, in range `0` until `self.nr_columns()`.
     ///
     /// # Return value
     ///

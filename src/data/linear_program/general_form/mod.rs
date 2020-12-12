@@ -103,6 +103,7 @@ enum RemovedVariable<F> {
 ///
 /// This method might be expensive, use it in debugging only. It can be viewed as a piece of
 /// documentation on the requirements of a `GeneralForm` struct.
+#[allow(clippy::nonminimal_bool)]
 fn is_consistent<F: LinearAlgebraElement>(general_form: &GeneralForm<F>) -> bool {
     // Reference values
     let nr_active_constraints = general_form.nr_active_constraints();
@@ -135,9 +136,7 @@ fn is_consistent<F: LinearAlgebraElement>(general_form: &GeneralForm<F>) -> bool
                     els.iter().map(move |&(j, _)| Element::<(), ()>::Edge { source: j, target, weight: (), })
                 });
 
-            if let Err(WouldCycle(_)) = Dag::<(), (), usize>::from_elements(nodes.chain(edges)) {
-                false
-            } else { true }
+            !matches!(Dag::<(), (), usize>::from_elements(nodes.chain(edges)), Err(WouldCycle(_)))
         };
 
         size && kept_increasing && no_cycles
@@ -308,11 +307,8 @@ where
         debug_assert!(is_consistent(&self));
 
         self.compute_solution_where_possible();
-        if let Some(solution) = self.get_solution() {
-            Err(LinearProgramType::FiniteOptimum(solution))
-        } else {
-            Ok(())
-        }
+        self.get_solution()
+            .map_or(Ok(()), |solution| Err(LinearProgramType::FiniteOptimum(solution)))
     }
 
     /// Run the presolve operation using a `PresolveIndex` and return all the proposed reductions.
@@ -411,8 +407,8 @@ where
     /// ordered matrix.
     fn remove_rows_and_columns(&mut self, mut constraints: Vec<usize>, mut variables: Vec<usize>) {
         // TODO(OPTIMIZATION): Consider unstable sorting
-        constraints.sort();
-        variables.sort();
+        constraints.sort_unstable();
+        variables.sort_unstable();
 
         self.constraints.remove_columns(&variables);
         remove_indices(&mut self.variables, &variables);
@@ -501,7 +497,7 @@ where
             .collect();
 
         self.constraints.change_row_signs(&rows_to_negate);
-        for row in rows_to_negate.into_iter() {
+        for row in rows_to_negate {
             self.constraint_types[row] = match self.constraint_types[row] {
                 ConstraintType::Greater => ConstraintType::Less,
                 ConstraintType::Equal => ConstraintType::Equal,
@@ -754,7 +750,7 @@ where
         for j in 0..self.original_variables.len() {
             self.compute_solution_value_with_bfs::<G>(j, &mut new_solutions, &reduced_solution);
         }
-        debug_assert!(new_solutions.iter().all(|v| v.is_some()));
+        debug_assert!(new_solutions.iter().all(Option::is_some));
 
         Solution::new(
             cost,
@@ -932,7 +928,7 @@ where
     /// Get any feasible value, if there is one.
     fn get_feasible_value(&self) -> Option<OF> {
         if self.has_feasible_value() {
-            self.upper_bound.as_ref().or(self.lower_bound.as_ref()).cloned().or(Some(OF::zero()))
+            self.upper_bound.as_ref().or_else(|| self.lower_bound.as_ref()).cloned().or_else(|| Some(OF::zero()))
         } else { None }
     }
 

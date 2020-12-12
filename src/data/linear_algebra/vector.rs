@@ -207,7 +207,7 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
 
 impl<F: Display> Display for Dense<F> {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        for value in self.data.iter() {
+        for value in &self.data {
             writeln!(f, "{}", value)?;
         }
         writeln!(f)
@@ -426,6 +426,7 @@ where
     /// * `i`: Only index where there should be a 1. Note that indexing starts at zero, and runs
     /// until (not through) `len`.
     /// * `len`: Size of the `SparseVector`.
+    #[must_use]
     pub fn standard_basis_vector(i: usize, len: usize) -> Self
     where
         F: One + Clone,
@@ -467,7 +468,7 @@ where
     where
         for<'r> F: Zero + MulAssign<&'r F>,
     {
-        for (_, v) in self.data.iter_mut() {
+        for (_, v) in &mut self.data {
             *v *= value;
         }
         self.data.retain(|(_, v)| !v.is_zero());
@@ -478,7 +479,7 @@ where
     where
         for<'r> F: Zero + DivAssign<&'r F>,
     {
-        for (_, v) in self.data.iter_mut() {
+        for (_, v) in &mut self.data {
             *v /= value;
         }
         self.data.retain(|(_, v)| !v.is_zero());
@@ -499,11 +500,11 @@ where
     /// # Return value
     ///
     /// The inner product.
+    #[must_use]
     pub fn inner_product_with_dense<'a, F2, O: 'a>(&'a self, other: &'a Dense<F2>) -> O
     where
         F: Borrow<O>,
-        F2: Borrow<O>,
-        F2: PartialEq + Display + Debug,
+        F2: Borrow<O> + PartialEq + Display + Debug,
         O: Sum,
         &'a O: Mul<&'a O, Output = O>,
     {
@@ -521,6 +522,7 @@ where
     /// # Return value
     ///
     /// The inner product.
+    #[must_use]
     pub fn inner_product<'a, F2>(&'a self, other: &'a Sparse<F2, C>) -> C
     where
         F2: SparseElement<C>,
@@ -577,7 +579,7 @@ where
 
 impl<F: SparseElement<C>, C: SparseComparator> Display for Sparse<F, C> {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
-        for (index, value) in self.data.iter() {
+        for (index, value) in &self.data {
             writeln!(f, "({} {}), ", index, value)?;
         }
         writeln!(f)

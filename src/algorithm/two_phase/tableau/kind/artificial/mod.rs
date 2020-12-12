@@ -104,7 +104,7 @@ where
     pub fn pivot_row_from_artificial(&self, artificial_index: usize) -> usize {
         debug_assert!(artificial_index < self.nr_artificial_variables());
         // Only used to remove variables from basis
-        debug_assert!(self.is_in_basis(&artificial_index));
+        debug_assert!(self.is_in_basis(artificial_index));
 
         self.kind.pivot_row_from_artificial(artificial_index)
     }

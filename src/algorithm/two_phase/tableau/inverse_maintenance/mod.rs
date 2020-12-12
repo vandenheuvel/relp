@@ -64,7 +64,7 @@ pub trait InverseMaintenance: Display {
     /// `Carry` with a `minus_pi` equal to -1's and the standard basis.
     fn create_for_partially_artificial<G: Element>(
         artificial: &[usize],
-        basis: &Vec<(usize, usize)>,
+        basis: &[(usize, usize)],
         b: DenseVector<G>,
     ) -> Self
     where
@@ -94,7 +94,7 @@ pub trait InverseMaintenance: Display {
     /// of the provider. Values should be unique, could have been a set.
     /// * `provider`: Problem representation.
     fn from_basis_pivots(
-        basis: &Vec<(usize, usize)>,
+        basis: &[(usize, usize)],
         provider: &impl MatrixProvider,
     ) -> Self;
 
@@ -160,7 +160,7 @@ pub trait InverseMaintenance: Display {
         Self::F: ColumnOps<G>,
     ;
 
-    /// Multiplies the submatrix consisting of `minus_pi` and B^-1 by a original_column.
+    /// Multiplies the submatrix consisting of `minus_pi` and B^-1 by an `original_column`.
     ///
     /// # Arguments
     ///
@@ -169,7 +169,7 @@ pub trait InverseMaintenance: Display {
     /// # Return value
     ///
     /// A `SparseVector<T>` of length `m`.
-    /// TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
+    /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
     fn generate_column<G, C: Column<F=G> + OrderedColumn>(&self, original_column: C) -> SparseVector<Self::F, Self::F>
     where
@@ -182,7 +182,7 @@ pub trait InverseMaintenance: Display {
     ///
     /// * `i`: Row index
     /// * `original_column`: Column with respect to the original basis.
-    /// TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
+    /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
     fn generate_element<'a, G: 'a, I: Iterator<Item=&'a SparseTuple<G>>>(
         &self,

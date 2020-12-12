@@ -281,7 +281,7 @@ where
             // It is often positive slacks that get removed here, so we pick the upper bound if
             // there is one, because it makes it more likely that a meaningful variable is zero,
             // which in turn might lead to sparser solutions.
-            upper.cloned().or(lower.cloned()).or(Some(OF::zero()))
+            upper.cloned().or_else(|| lower.cloned()).or_else(|| Some(OF::zero()))
         } else { None }
     }
     /// Latest version of both bounds of a variable at once.
@@ -523,9 +523,9 @@ where
                     }
                 })
                     .fold((0, 0), |(lower_total, upper_total), (lower, upper)| {
-                        let is_missing = |option| match option {
-                            &Some(_) => 0,
-                            &None => 1,
+                        let is_missing = |option: &Option<_>| match option.as_ref() {
+                            Some(_) => 0,
+                            None => 1,
                         };
                         (lower_total + is_missing(lower), upper_total + is_missing(upper))
                     })
@@ -1142,10 +1142,10 @@ where
     ) -> bool {
         match (direction, self.updates.constraint_types(constraint)) {
             (BoundDirection::Lower, ConstraintType::Less | ConstraintType::Equal) => {
-                bound_value > &self.updates.b(constraint)
+                bound_value > self.updates.b(constraint)
             },
             (BoundDirection::Upper, ConstraintType::Greater | ConstraintType::Equal) => {
-                bound_value < &self.updates.b(constraint)
+                bound_value < self.updates.b(constraint)
             },
             _ => false,
         }
@@ -1230,8 +1230,8 @@ where
         by_how_much: OF,
     ) {
         debug_assert!(match direction {
-            BoundDirection::Lower => &by_how_much > &OF::zero(),
-            BoundDirection::Upper => &by_how_much < &OF::zero(),
+            BoundDirection::Lower => by_how_much > OF::zero(),
+            BoundDirection::Upper => by_how_much < OF::zero(),
         });
 
         let rows_to_check = self.counters.iter_active_column(variable).collect::<Vec<_>>();

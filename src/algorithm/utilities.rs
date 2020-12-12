@@ -1,9 +1,7 @@
 //! # Utilities
 //!
 //! Helper functions for algorithms.
-use std::clone::Clone;
 use std::collections::HashSet;
-use std::iter::IntoIterator;
 
 /// Reduce the size of the vector by removing values.
 ///
@@ -15,7 +13,7 @@ pub(crate) fn remove_indices<T>(vector: &mut Vec<T>, indices: &[usize]) {
     debug_assert!(indices.len() <= vector.len());
     debug_assert!(indices.is_sorted());
     // All values are unique
-    debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
+    debug_assert!(indices.iter().collect::<HashSet<_>>().len() == indices.len());
     debug_assert!(indices.iter().all(|&i| i < vector.len()));
 
     let mut i = 0;
@@ -49,7 +47,7 @@ pub(crate) fn remove_indices<T>(vector: &mut Vec<T>, indices: &[usize]) {
 pub(crate) fn remove_sparse_indices<T>(vector: &mut Vec<(usize, T)>, indices: &[usize]) {
     debug_assert!(indices.is_sorted());
     // All values are unique
-    debug_assert!(indices.clone().into_iter().collect::<HashSet<_>>().len() == indices.len());
+    debug_assert!(indices.iter().collect::<HashSet<_>>().len() == indices.len());
 
     if indices.is_empty() || vector.is_empty() {
         return;

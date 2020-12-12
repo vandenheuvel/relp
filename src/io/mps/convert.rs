@@ -81,7 +81,7 @@ where
 ///
 /// # Return value
 ///
-/// Collection of variable info's as used in the GeneralForm and a collection of the column names.
+/// Collection of variable info's as used in the `GeneralForm` and a collection of the column names.
 ///
 /// # Errors
 ///
@@ -355,7 +355,7 @@ fn compute_constraint_info<FI: Sub<Output=FI> + Abs + Ord + Zero + Display + Clo
 fn compute_columns<FI, FO: Element + Clone>(
     columns: Vec<SparseTupleVec<FO>>,
     original_nr_rows: usize,
-    ranges: &Vec<SparseTuple<FI>>,
+    ranges: &[SparseTuple<FI>],
 ) -> Sparse<FO, FO, ColumnMajor> {
     debug_assert!(ranges.is_sorted_by_key(|&(i, _)| i));
     debug_assert_eq!(ranges.iter().map(|&(i, _)| i).collect::<HashSet<_>>().len(), ranges.len());
@@ -406,8 +406,8 @@ fn compute_columns<FI, FO: Element + Clone>(
 ///
 /// Extended constraint types. See the documentation of the `UnstructuredRange` for more.
 fn compute_constraint_types<F>(
-    rows: &Vec<Row>,
-    ranges: &Vec<SparseTuple<F>>,
+    rows: &[Row],
+    ranges: &[SparseTuple<F>],
 ) -> Vec<ConstraintType> {
     debug_assert!(ranges.is_sorted_by_key(|&(i, _)| i));
     // TODO: How about uniqueness?
@@ -452,8 +452,8 @@ fn compute_constraint_types<F>(
 #[allow(unreachable_patterns)]
 fn compute_b<OFI: Sub<Output = OFI> + Abs + Ord + Zero + Clone, OFO: From<OFI> + Zero + PartialOrd + Element>(
     rhss: Vec<Rhs<OFI>>,
-    constraints: &Vec<ConstraintType>,
-    rows: &Vec<Row>,
+    constraints: &[ConstraintType],
+    rows: &[Row],
     original_nr_rows: usize,
     ranges: Vec<SparseTuple<OFI>>,
 ) -> Result<DenseVector<OFO>, Inconsistency> {
@@ -486,15 +486,15 @@ fn compute_b<OFI: Sub<Output = OFI> + Abs + Ord + Zero + Clone, OFO: From<OFI> +
             } else if let Some(current) = &mut b[i + extra_done] {
                 let converted: OFO = value.into();
                 match constraints[i + extra_done] {
-                    ConstraintType::Equal => if &converted != &*current {
+                    ConstraintType::Equal => if converted != *current {
                         return Err(Inconsistency::new(
                             format!("Trivial infeasibility: a constraint can't equal both {} and {}", current, converted),
                         ))
                     },
-                    ConstraintType::Greater => if &converted > current {
+                    ConstraintType::Greater => if converted > *current {
                         *current = converted;
                     },
-                    ConstraintType::Less => if &converted < current {
+                    ConstraintType::Less => if converted < *current {
                         *current = converted;
                     },
                 }

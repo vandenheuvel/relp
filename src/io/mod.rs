@@ -41,7 +41,7 @@ pub fn import<F: From<Rational64> + Zero + One + Ord + Element>(
     // Choose the right parser
     match file_path.extension() {
         Some(extension) => match extension.to_str() {
-            Some("mps" | "SIF") => mps::parse(&program).map(|mps| DataTypes::MPS(mps)),
+            Some("mps" | "SIF") => mps::parse(&program).map(DataTypes::MPS),
             Some(extension_string) => Err(Import::FileExtension(format!(
                 "Could not recognise file extension \"{}\" of file: {:?}",
                 extension_string, file_path

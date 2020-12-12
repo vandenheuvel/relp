@@ -51,9 +51,7 @@ where
 ///
 /// Sometimes, a few variables (like positive slack variables) are available that result in less
 /// artificial variables being needed.
-///
-/// TODO(ARCHITECTURE): Supertrait MatrixProvider?
-pub trait PartialInitialBasis {
+pub trait PartialInitialBasis: MatrixProvider {
     /// Return the indices of all positive slack variables.
     ///
     /// This is used to find a basic feasible solution faster using the two phase method.
@@ -92,7 +90,7 @@ where
 /// solution (that is, x = 0 is feasible).
 ///
 /// TODO(ENHANCEMENT): Is a marker trait enough, or should there be a specialized method?
-/// TODO(ENHANCEMENT): What about the case where also an easy InverseMaintainer is available?
+/// TODO(ENHANCEMENT): What about the case where also an easy `InverseMaintainer` is available?
 pub trait FullInitialBasis: PartialInitialBasis {
 }
 
@@ -213,14 +211,14 @@ where
     K: Artificial,
 {
     let mut artificial_variable_indices = tableau.artificial_basis_columns().into_iter().collect::<Vec<_>>();
-    artificial_variable_indices.sort();
+    artificial_variable_indices.sort_unstable();
     let mut rows_to_remove = Vec::new();
 
     for artificial in artificial_variable_indices {
         // The problem was initialized with the artificial variable as a basis column, and it is still in the basis
         let pivot_row = tableau.pivot_row_from_artificial(artificial);
         let column_cost = (tableau.nr_artificial_variables()..tableau.nr_columns())
-            .filter(|j| !tableau.is_in_basis(j))
+            .filter(|&j| !tableau.is_in_basis(j))
             .map(|j| (j, tableau.relative_cost(j)))
             .filter(|(_, cost)| cost.is_zero())
             .find(|&(j, _)| !tableau.generate_element(pivot_row, j).is_zero());

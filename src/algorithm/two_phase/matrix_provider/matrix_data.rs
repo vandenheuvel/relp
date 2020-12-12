@@ -99,6 +99,7 @@ where
     /// * `b`: Constraint values.
     /// * `negative_free_variable_dummy_index`: Index i contains the index of the i'th free
     /// variable.
+    #[must_use]
     pub fn new(
         constraints: &'a SparseMatrix<F, F, ColumnMajor>,
         b: &'a Dense<F>,
@@ -373,6 +374,7 @@ impl<F: 'static> IdentityColumn for Column<F>
 where
     F: Field,
 {
+    #[must_use]
     fn identity(i: usize, len: usize) -> Self {
         assert!(i < len);
 
@@ -538,11 +540,10 @@ where
                 if self.get_variable_separating_indices().contains(&column) {
                     write!(f, "|")?;
                 }
-                let value = &self.column(column).iter()
+                let value = self.column(column).iter()
                     .find(|&&(index, _)| index == row)
-                    .map(|(_, value)| value.to_string())
-                    .unwrap_or("0".to_string());
-                write!(f, "{:^width$}", format!("{}", value), width = width)?;
+                    .map_or_else(|| "0".to_string(), |(_, value)| value.to_string());
+                write!(f, "{:^width$}", value, width = width)?;
             }
             writeln!(f)?;
         }
