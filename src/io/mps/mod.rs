@@ -14,7 +14,7 @@ use crate::data::linear_program::elements::{ConstraintType, Objective};
 use crate::data::linear_program::elements::VariableType;
 use crate::data::number_types::rational::Rational64;
 use crate::io::error::Import;
-use crate::io::mps::parse::free;
+use crate::io::mps::parse::{free, fixed};
 
 #[allow(clippy::type_complexity)]
 mod convert;
@@ -40,6 +40,26 @@ pub fn parse(
     program: &impl AsRef<str>,
 ) -> Result<MPS<Rational64>, Import> {
     free::parse(program.as_ref())
+}
+
+/// Parse an MPS program, in string form, to a MPS with struct assumptions on file layout.
+///
+/// # Arguments
+///
+/// * `program`: The input in [MPS format](https://en.wikipedia.org/wiki/MPS_(format)).
+///
+/// # Return value
+///
+/// A `Result<MPS, ImportError>` instance.
+///
+/// # Errors
+///
+/// An Import error, wrapping either a parse error indicating that the file was syntactically
+/// incorrect, or an Inconsistency error indicating that the file is "logically" incorrect.
+pub fn parse_fixed(
+    program: &impl AsRef<str>,
+) -> Result<MPS<Rational64>, Import> {
+    fixed::parse(program.as_ref())
 }
 
 /// Represents the contents of a MPS file in a structured manner.

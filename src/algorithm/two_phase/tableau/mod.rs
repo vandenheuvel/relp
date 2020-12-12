@@ -33,8 +33,8 @@ pub struct Tableau<IM, K> {
 
     /// Maps the rows to the column containing its pivot.
     ///
-    /// The rows are indexed 0 through self.nr_rows(), while the columns are indexed 0 through
-    /// self.nr_columns().
+    /// The rows are indexed 0 through `self.nr_rows()`, while the columns are indexed 0 through
+    /// `self.nr_columns()`.
     ///
     /// This attribute changes with a basis change.
     basis_indices: Vec<usize>,

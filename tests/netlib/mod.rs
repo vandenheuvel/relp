@@ -2,6 +2,8 @@
 //!
 //! Hosted [here](http://www.numerical.rl.ac.uk/cute/netlib.html).
 use std::convert::TryInto;
+use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
@@ -9,8 +11,9 @@ use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use rust_lp::data::linear_program::general_form::GeneralForm;
 use rust_lp::data::linear_program::solution::Solution;
-use rust_lp::data::number_types::rational::{RationalBig};
-use rust_lp::io::import;
+use rust_lp::data::number_types::rational::RationalBig;
+use rust_lp::io::error::Import;
+use rust_lp::io::mps::parse_fixed;
 
 /// # Generation and execution
 #[allow(missing_docs)]
@@ -40,11 +43,17 @@ type T = RationalBig;
 type S = RationalBig;
 
 fn solve(file_name: &str) -> Solution<S> {
-    let path = get_test_file_path(file_name);
-    let mps = import(&path).unwrap();
+    let file_path = get_test_file_path(file_name);
 
-    let mut general: GeneralForm<T> = mps.try_into().ok().unwrap();
-    let data = general.derive_matrix_data().ok().unwrap();
+    let mut program = String::new();
+    File::open(&file_path)
+        .map_err(Import::IO).unwrap()
+        .read_to_string(&mut program)
+        .map_err(Import::IO).unwrap();
+    let mps = parse_fixed(&program).unwrap();
+
+    let mut general: GeneralForm<T> = mps.try_into().unwrap();
+    let data = general.derive_matrix_data().unwrap();
     let result = data.solve_relaxation::<Carry<S>>();
 
     match result {
