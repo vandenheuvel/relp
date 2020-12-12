@@ -10,7 +10,7 @@ use std::fmt::{Display, Formatter};
 use std::fmt;
 
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
-use crate::data::linear_program::elements::ConstraintType;
+use crate::data::linear_program::elements::{ConstraintType, Objective};
 use crate::data::linear_program::elements::VariableType;
 use crate::data::number_types::rational::Rational64;
 use crate::io::error::Import;
@@ -49,6 +49,8 @@ pub fn parse(
 pub struct MPS<F> {
     /// Name of the linear program.
     name: String,
+    /// Whether this is a minimization or maximization.
+    objective: Objective,
 
     /// Name of the cost row.
     cost_row_name: String,
@@ -82,6 +84,7 @@ impl<F> MPS<F> {
     #[must_use]
     pub fn new(
         name: String,
+        objective: Objective,
         cost_row_name: String,
         cost_values: SparseTupleVec<F>,
         rows: Vec<Row>,
@@ -92,6 +95,7 @@ impl<F> MPS<F> {
     ) -> Self {
         Self {
             name,
+            objective,
             cost_row_name,
             cost_values,
             rows,

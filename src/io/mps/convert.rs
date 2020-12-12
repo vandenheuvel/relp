@@ -15,7 +15,6 @@ use crate::data::linear_algebra::matrix::{ColumnMajor, Order as MatrixOrder, Spa
 use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Vector};
 use crate::data::linear_program::elements::{ConstraintType, VariableType};
-use crate::data::linear_program::elements::Objective;
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::Variable as ShiftedVariable;
 use crate::data::number_types::traits::Abs;
@@ -60,7 +59,7 @@ where
         )?;
 
         Ok(GeneralForm::new(
-            Objective::Minimize,
+            self.objective,
             columns,
             constraint_types,
             b,

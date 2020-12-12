@@ -18,3 +18,5 @@ mod miplib;
 mod netlib;
 #[cfg(all(feature = "unicamp"))]
 mod unicamp;
+#[cfg(all(feature = "cook"))]
+mod cook;

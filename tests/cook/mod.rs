@@ -1,6 +1,6 @@
-//! # John Burkardt's test files
+//! # William Cook's test file
 //!
-//! Retrieved from <http://people.math.sc.edu/Burkardt/datasets/mps/mps.html>.
+//! Retrieved from <https://www.math.uwaterloo.ca/~bico/qsopt/hlp/ff_mps_smallexample.htm>.
 use std::path::{Path, PathBuf};
 
 /// # Generation and execution

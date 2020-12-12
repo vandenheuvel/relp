@@ -175,6 +175,7 @@ pub fn mps() -> MPS<T> {
 
     MPS::new(
         name,
+        Objective::Minimize,
         cost_row_name,
         cost_values,
         rows,

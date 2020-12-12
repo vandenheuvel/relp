@@ -21,6 +21,8 @@ burkardt = []
 miplib = []
 netlib = []
 unicamp = []
+cook = []
+
 binaries = ["clap"]
 
 [profile.release]

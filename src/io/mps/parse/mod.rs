@@ -7,7 +7,7 @@ use std::mem::take;
 use std::str::FromStr;
 
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
-use crate::data::linear_program::elements::{ConstraintType, VariableType};
+use crate::data::linear_program::elements::{ConstraintType, VariableType, Objective};
 use crate::io::error::{FileLocation, Import as ImportError, Inconsistency, Parse as ParseError, ParseResult};
 use crate::io::mps::{Bound, BoundType, Column, MPS, Range, Rhs, Row};
 use crate::io::mps::number::parse::Parse;
@@ -45,9 +45,9 @@ fn parse<'a, F: Parse, CR: ColumnRetriever<'a>>(
         .map_err(|e| e.wrap("Error while parsing reading the program name."))?;
 
     // Go through the file, line by line, section by section. We never look back.
+    // The below call removes the line that indicates the start of the ROWS section.
+    let objective = parse_objsense_section(&mut lines)?;
 
-    // Throw away the line which's contents are "ROWS"
-    lines.next();
     let (cost_row_name, rows) = parse_row_section::<CR, _>(&mut lines)?;
     let (cost_row_name, rows) = check_row_section_consistency(cost_row_name, rows)?;
     let row_index = build_row_index(&rows, &cost_row_name)?;
@@ -78,6 +78,7 @@ fn parse<'a, F: Parse, CR: ColumnRetriever<'a>>(
 
     Ok(MPS {
         name,
+        objective,
         cost_row_name,
         cost_values,
         rows,
@@ -190,6 +191,58 @@ fn parse_program_name<'a, CR: ColumnRetriever<'a>>(
                 ))
             }
         },
+    }
+}
+
+/// Try to read the objective direction and consume the rows section indicator.
+///
+/// # Arguments
+///
+/// `lines`: Iterator yielding meaningful program lines.
+///
+/// # Errors
+///
+/// If the iterator is empty, or the next lines don't pretty much look like
+/// ```compile_fail
+/// OBJSENSE
+///   MAXIMIZE
+/// ```
+/// where it is allowed to abbreviate the direction to the first three characters.
+fn parse_objsense_section<'a, L: Iterator<Item = FileLocation<'a>>>(
+    lines: &mut L,
+) -> ParseResult<Objective> {
+    match lines.next() {
+        None => Err(ParseError::new("No line to read, is the program more than a name?")),
+        Some((number, line)) => {
+            match line.trim_end() {
+                // The default: OBJSENSE is not mentioned and we minimize.
+                "ROWS" => Ok(Objective::Minimize),
+                "OBJSENSE" => {
+                    match lines.next() {
+                        None => Err(ParseError::new("Program can't end in the OBJSENSE section.")),
+                        Some((number, line)) => {
+                            // Throw away the next line, who's contents are "ROWS", check to be sure
+                            if !matches!(lines.next(), Some((_, line)) if line.starts_with("ROWS")) {
+                                return Err(ParseError::new("Expected the ROWS section next."));
+                            }
+
+                            match line.trim_end() {
+                                "  MINIMIZE" | "  MIN" => Ok(Objective::Minimize),
+                                "  MAXIMIZE" | "  MAX" => Ok(Objective::Maximize),
+                                _ => Err(ParseError::with_location(
+                                    format!("Can't read objective {}", line.trim_end()),
+                                    (number, line),
+                                )),
+                            }
+                        }
+                    }
+                },
+                _ => Err(ParseError::with_location(
+                    format!("Line contents \"{}\" were unexpected", line),
+                    (number, line),
+                )),
+            }
+        }
     }
 }
 
