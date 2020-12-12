@@ -15,7 +15,7 @@ use num::FromPrimitive;
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use rust_lp::data::number_types::rational::RationalBig;
+use rust_lp::data::number_types::rational::{RationalBig, Rational64};
 use rust_lp::data::number_types::traits::Abs;
 use rust_lp::io::import;
 use rust_lp::RB;
@@ -47,14 +47,15 @@ fn get_test_file_path(name: &str) -> PathBuf {
 
 /// Testing a problem, comparing only the objective value.
 fn test(file_name: &str, objective: f64, tolerance: f64) {
-    type T = RationalBig;
+    type T = Rational64;
+    type S = RationalBig;
 
     let path = get_test_file_path(file_name);
     let result = import::<T>(&path).unwrap();
 
     let mut general = result.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
+    let result = data.solve_relaxation::<Carry<S>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {

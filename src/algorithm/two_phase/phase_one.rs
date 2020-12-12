@@ -5,10 +5,12 @@ use num::Zero;
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
 use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOpsHR, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::artificial::fully::Fully as FullyArtificial;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially as PartiallyArtificial;
+
+use crate::algorithm::two_phase::tableau::kind::artificial::Cost;
 
 /// Computing a feasible solution: the first phase of the two phase method.
 ///
@@ -23,7 +25,7 @@ pub trait FeasibilityComputeTrait: MatrixProvider<Column: IdentityColumn> {
     /// A value representing the basic feasible solution, or an indicator that there is none.
     fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
+        IM: InverseMaintenance<F: InternalOpsHR + ColumnOps<<<Self as MatrixProvider>::Column as Column>::F> + CostOps<Cost>>,
     ;
 }
 
@@ -34,7 +36,7 @@ where
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
+        IM: InverseMaintenance<F: InternalOpsHR + ColumnOps<<<Self as MatrixProvider>::Column as Column>::F> + CostOps<Cost>>,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -73,7 +75,7 @@ where
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
+        IM: InverseMaintenance<F: InternalOpsHR + ColumnOps<<<Self as MatrixProvider>::Column as Column>::F> + CostOps<Cost>>,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -109,7 +111,7 @@ pub(crate) fn primal<IM, K, MP, PR>(
     mut tableau: Tableau<IM, K>,
 ) -> RankedFeasibilityResult<IM>
 where
-    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<K::Column as Column>::F>>,
+    IM: InverseMaintenance<F: InternalOpsHR + ColumnOps<<K::Column as Column>::F> + CostOps<K::Cost>>,
     K: Artificial,
     MP: MatrixProvider,
     PR: PivotRule,
@@ -207,7 +209,7 @@ fn remove_artificial_basis_variables<IM, K>(
     tableau: &mut Tableau<IM, K>,
 ) -> Vec<usize>
 where
-    IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
+    IM: InverseMaintenance<F: ColumnOps<<K::Column as Column>::F> + CostOps<K::Cost>>,
     K: Artificial,
 {
     let mut artificial_variable_indices = tableau.artificial_basis_columns().into_iter().collect::<Vec<_>>();

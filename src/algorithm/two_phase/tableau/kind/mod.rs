@@ -13,9 +13,16 @@ pub mod non_artificial;
 /// The tableau type provides two different ways for the `Tableau` to function, depending on whether
 /// any virtual artificial variables should be included in the problem.
 pub trait Kind {
+    /// Representation of the column of the tableau.
+    ///
     /// TODO(ENHANCEMENT): Drop the Ordered requirement once specialization on generic type
     ///  type arguments of trait methods is possible.
     type Column: Column + OrderedColumn;
+    /// Cost row type.
+    ///
+    /// For artificial tableaus, this type is always the zero-one cost type in the artificial
+    /// module.
+    type Cost;
 
     /// Coefficient of variable `j` in the objective function.
     ///
@@ -26,7 +33,7 @@ pub trait Kind {
     /// # Return value
     ///
     /// The cost of variable `j`.
-    fn initial_cost_value(&self, j: usize) -> &<Self::Column as Column>::F;
+    fn initial_cost_value(&self, j: usize) -> Self::Cost;
 
     /// Get the column from the original problem.
     ///

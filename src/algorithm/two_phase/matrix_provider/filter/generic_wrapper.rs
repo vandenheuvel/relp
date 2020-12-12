@@ -225,6 +225,7 @@ where
     MP: MatrixProvider<Column: IntoFilteredColumn>,
 {
     type Column = <MP::Column as IntoFilteredColumn>::Filtered;
+    type Cost<'a> = MP::Cost<'a>;
 
     fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
@@ -232,7 +233,7 @@ where
         self.provider.column(j).into_filtered(&self.rows_to_skip)
     }
 
-    fn cost_value(&self, j: usize) -> &<Self::Column as Column>::F {
+    fn cost_value(&self, j: usize) -> Self::Cost<'_> {
         debug_assert!(j < self.nr_columns());
 
         self.provider.cost_value(j)

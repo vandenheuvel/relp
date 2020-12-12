@@ -1,6 +1,6 @@
 use num::FromPrimitive;
 
-use rust_lp::{R64, RB};
+use rust_lp::{RB};
 use rust_lp::data::linear_program::solution::Solution;
 use rust_lp::data::number_types::rational::{Rational64, RationalBig};
 
@@ -8,18 +8,18 @@ use crate::unicamp::solve;
 
 #[test]
 fn model_data_1() {
-    let result = solve::<Rational64, Rational64>("model_data_1");
+    let result = solve::<RationalBig, Rational64>("model_data_1");
     assert!(result.is_probably_equal_to(&Solution::new(
-        R64!(123, 38),  // GLPK
+        RB!(123, 38),  // GLPK
         vec![
-            ("COL01".to_string(), R64!(5, 2)),
-            ("COL02".to_string(), R64!(0)),
-            ("COL03".to_string(), R64!(0)),
-            ("COL04".to_string(), R64!(9, 14)),
-            ("COL05".to_string(), R64!(1, 2)),
-            ("COL06".to_string(), R64!(4)),
-            ("COL07".to_string(), R64!(0)),
-            ("COL08".to_string(), R64!(5, 19)),
+            ("COL01".to_string(), RB!(5, 2)),
+            ("COL02".to_string(), RB!(0)),
+            ("COL03".to_string(), RB!(0)),
+            ("COL04".to_string(), RB!(9, 14)),
+            ("COL05".to_string(), RB!(1, 2)),
+            ("COL06".to_string(), RB!(4)),
+            ("COL07".to_string(), RB!(0)),
+            ("COL08".to_string(), RB!(5, 19)),
         ],
     ), 0.5));
 }
@@ -27,11 +27,11 @@ fn model_data_1() {
 #[test]
 #[ignore = "In this implementation, at least one RHS is needed."]
 fn model_data_2() {
-    let result = solve::<Rational64, Rational64>("model_data_2");
+    let result = solve::<RationalBig, Rational64>("model_data_2");
     assert_eq!(result, Solution::new(  // GLPK
-        R64!(0),
+        RB!(0),
         vec![
-            ("DCOL1".to_string(), R64!(0)),
+            ("DCOL1".to_string(), RB!(0)),
         ],
     ));
 }
@@ -103,47 +103,47 @@ fn model_data_4() {
 #[test]
 #[ignore = "This problem type is not supported."]
 fn model_data_5() {
-    let result = solve::<Rational64, Rational64>("model_data_5");
+    let result = solve::<RationalBig, Rational64>("model_data_5");
     assert_eq!(result, Solution::new(  // GLPK
-        R64!(332, 1),
+        RB!(332, 1),
         vec![
-            ("COL01".to_string(), R64!(1, 1)),
-            ("COL02".to_string(), R64!(2, 1)),
-            ("COL03".to_string(), R64!(2, 1)),
+            ("COL01".to_string(), RB!(1, 1)),
+            ("COL02".to_string(), RB!(2, 1)),
+            ("COL03".to_string(), RB!(2, 1)),
         ],
     ));
 }
 
 #[test]
 fn model_data_6() {
-    let result = solve::<Rational64, Rational64>("model_data_6");
+    let result = solve::<RationalBig, Rational64>("model_data_6");
     assert!(result.is_probably_equal_to(&Solution::new(  // GLPK
-        R64!(28, 1),
+        RB!(28, 1),
         vec![
-            ("X00".to_string(), R64!(0)),
-            ("X01".to_string(), R64!(1)),
-            ("X02".to_string(), R64!(1)),
-            ("X03".to_string(), R64!(0)),
-            ("X04".to_string(), R64!(0)),
-            ("X05".to_string(), R64!(0)),
-            ("X06".to_string(), R64!(0)),
-            ("X07".to_string(), R64!(0)),
-            ("X10".to_string(), R64!(1)),
-            ("X11".to_string(), R64!(0)),
-            ("X12".to_string(), R64!(0)),
-            ("X13".to_string(), R64!(2)),
-            ("X14".to_string(), R64!(0)),
-            ("X15".to_string(), R64!(0)),
-            ("X16".to_string(), R64!(0)),
-            ("X17".to_string(), R64!(0)),
-            ("X20".to_string(), R64!(1)),
-            ("X21".to_string(), R64!(0)),
-            ("X22".to_string(), R64!(0)),
-            ("X23".to_string(), R64!(3)),
-            ("X24".to_string(), R64!(0)),
-            ("X25".to_string(), R64!(0)),
-            ("X26".to_string(), R64!(0)),
-            ("X27".to_string(), R64!(0)),
+            ("X00".to_string(), RB!(0)),
+            ("X01".to_string(), RB!(1)),
+            ("X02".to_string(), RB!(1)),
+            ("X03".to_string(), RB!(0)),
+            ("X04".to_string(), RB!(0)),
+            ("X05".to_string(), RB!(0)),
+            ("X06".to_string(), RB!(0)),
+            ("X07".to_string(), RB!(0)),
+            ("X10".to_string(), RB!(1)),
+            ("X11".to_string(), RB!(0)),
+            ("X12".to_string(), RB!(0)),
+            ("X13".to_string(), RB!(2)),
+            ("X14".to_string(), RB!(0)),
+            ("X15".to_string(), RB!(0)),
+            ("X16".to_string(), RB!(0)),
+            ("X17".to_string(), RB!(0)),
+            ("X20".to_string(), RB!(1)),
+            ("X21".to_string(), RB!(0)),
+            ("X22".to_string(), RB!(0)),
+            ("X23".to_string(), RB!(3)),
+            ("X24".to_string(), RB!(0)),
+            ("X25".to_string(), RB!(0)),
+            ("X26".to_string(), RB!(0)),
+            ("X27".to_string(), RB!(0)),
         ],
     ), 0.5));
 }
@@ -163,7 +163,7 @@ fn model_data_8() {
 #[test]
 #[ignore = "Unnamed problem files are not supported."]
 fn model_data_9() {
-    let result = solve::<RationalBig, RationalBig>("model_data_9");
+    let result = solve::<RationalBig, Rational64>("model_data_9");
     let expected = Solution::new(  // GLPK
         RB!(-100, 1),
         vec![

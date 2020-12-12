@@ -5,6 +5,7 @@
 #![warn(missing_docs)]
 #![allow(incomplete_features)]
 
+#![allow(incomplete_features)]
 #![feature(is_sorted)]
 #![feature(or_patterns)]
 #![feature(drain_filter)]

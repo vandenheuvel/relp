@@ -34,7 +34,7 @@ pub mod variable;
 ///                   ||                                  |                       |            +/- 1 |
 /// --------------------------------------------------------------------------------------------------
 pub trait MatrixProvider {
-    /// Type used to represent a column of the matrix.
+    /// Representation of a column of the matrix.
     ///
     /// TODO(ARCHITECTURE): When GATs are working, cloning can be avoided in some implementations,
     ///  such as the ones that explicitly store the column data, by giving this associated type a
@@ -42,6 +42,11 @@ pub trait MatrixProvider {
     /// TODO(ARCHITECTURE): When specializing on the generic arguments of trait methods is possible,
     ///  the columns no longer need to be ordered necessarily and the bound can be removed here.
     type Column: Column + OrderedColumn;
+    /// Cost row type.
+    ///
+    /// This type will often be of the form `Option<_>` so to not have to store any zero values, the
+    /// inner type would never be zero in that case.
+    type Cost<'a>;
 
     /// Column of the problem.
     ///
@@ -63,7 +68,7 @@ pub trait MatrixProvider {
     /// # Return value
     ///
     /// Cost value.
-    fn cost_value(&self, j: usize) -> &<Self::Column as Column>::F;
+    fn cost_value(&self, j: usize) -> Self::Cost<'_>;
 
     /// Constraint values.
     ///

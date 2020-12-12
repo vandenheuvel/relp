@@ -8,8 +8,8 @@ use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
 use crate::algorithm::two_phase::phase_one::{FeasibilityComputeTrait, FullInitialBasis, Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
-use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOpsHR, InverseMaintenance};
+use crate::algorithm::two_phase::tableau::kind::artificial::{IdentityColumn, Cost as ArtificialCost};
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -24,9 +24,15 @@ impl<MP> SolveRelaxation for MP
 where
     MP: MatrixProvider<Column: IdentityColumn + IntoFilteredColumn>,
 {
+    // TODO: Specialize for MatrixProviders that can be filtered directly.
     default fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>>,
+        IM: InverseMaintenance<F:
+            InternalOpsHR +
+            ColumnOps<<<Self as MatrixProvider>::Column as Column>::F> +
+            CostOps<ArtificialCost> +
+        >,
+        for<'r> IM::F: CostOps<MP::Cost<'r>>,
     {
         // Default choice
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
@@ -79,7 +85,11 @@ where
 {
     fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<<Self as MatrixProvider>::Column as Column>::F>, >,
+        IM: InverseMaintenance<F:
+            InternalOpsHR +
+            ColumnOps<<<Self as MatrixProvider>::Column as Column>::F> +
+        >,
+        for<'r> IM::F: CostOps<MP::Cost<'r>>,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -113,25 +123,26 @@ mod test {
     use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::VariableType;
-    use crate::data::number_types::rational::Rational32;
-    use crate::R32;
+    use crate::data::number_types::rational::{Rational64, RationalBig};
+    use crate::{R64, RB};
     use crate::tests::problem_2::{create_matrix_data_data, matrix_data_form, tableau_form};
 
     #[test]
     fn simplex() {
-        let (constraints, b) = create_matrix_data_data();
+        type T = Rational64;
+
+        let (constraints, b) = create_matrix_data_data::<T>();
         let matrix_data_form = matrix_data_form(&constraints, &b);
         let mut tableau = tableau_form(&matrix_data_form);
         let result = phase_two::primal::<_, _, FirstProfitable>(&mut tableau);
         assert!(matches!(result, OptimizationResult::FiniteOptimum(_)));
-        assert_eq!(tableau.objective_function_value(), R32!(9, 2));
+        assert_eq!(tableau.objective_function_value(), RB!(9, 2));
     }
 
     #[test]
     fn finding_bfs() {
-        type T = Rational32;
-        // TODO(ENHANCEMENT): Decouple these two types
-        type S = T;
+        type T = Rational64;
+        type S = RationalBig;
 
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
@@ -144,9 +155,7 @@ mod test {
 
     #[test]
     fn solve_matrix() {
-        type T = Rational32;
-        // TODO(ENHANCEMENT): Decouple these two types
-        type S = T;
+        type S = RationalBig;
 
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
@@ -162,9 +171,8 @@ mod test {
 
     #[test]
     fn solve_relaxation_1() {
-        type T = Rational32;
-        // TODO(ENHANCEMENT): Decouple these two types
-        type S = T;
+        type T = Rational64;
+        type S = RationalBig;
 
         let constraints = ColumnMajor::from_test_data::<T, _, _>(&vec![
             vec![1, 0],
@@ -176,12 +184,12 @@ mod test {
         ]);
         let variables = vec![
             Variable {
-                cost: R32!(-2),
+                cost: R64!(-2),
                 upper_bound: None,
                 variable_type: VariableType::Integer,
             },
             Variable {
-                cost: R32!(-1),
+                cost: R64!(-1),
                 upper_bound: None,
                 variable_type: VariableType::Integer,
             },

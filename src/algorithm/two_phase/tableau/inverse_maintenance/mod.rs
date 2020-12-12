@@ -45,7 +45,7 @@ pub trait InverseMaintenance: Display {
     /// `Carry` with a `minus_pi` equal to -1's and the standard basis.
     fn create_for_fully_artificial<G: Element>(b: DenseVector<G>) -> Self
     where
-        Self::F: ExternalOps<G>,
+        Self::F: ColumnOps<G>,
     ;
 
     /// Create a `Carry` for a tableau with some artificial variables.
@@ -68,7 +68,7 @@ pub trait InverseMaintenance: Display {
         b: DenseVector<G>,
     ) -> Self
     where
-        Self::F: ExternalOps<G>,
+        Self::F: ColumnOps<G>,
     ;
 
     /// Create a basis inverse when only the basis indices are known.
@@ -107,13 +107,14 @@ pub trait InverseMaintenance: Display {
     /// * `artificial`: Indices of rows where an artificial variable is needed.
     /// * `provider`: Original problem representation.
     /// * `basis`: (row index, column index) tuples of given basis variables.
-    fn from_artificial<MP: MatrixProvider>(
+    // TODO: Specialize this method with the "remove_rows" version below.
+    fn from_artificial<'provider, MP: MatrixProvider>(
         artificial: Self,
-        provider: &MP,
+        provider: &'provider MP,
         basis: &[usize],
     ) -> Self
     where
-        Self::F: InternalOpsHR + ExternalOps<<MP::Column as Column>::F>,
+        Self::F: InternalOpsHR + ColumnOps<<MP::Column as Column>::F> + CostOps<MP::Cost<'provider>>,
     ;
 
     /// When a previous basis inverse representation was used to find a basic feasible solution.
@@ -125,13 +126,13 @@ pub trait InverseMaintenance: Display {
     /// * `artificial`: Indices of rows where an artificial variable is needed.
     /// * `provider`: Original problem representation.
     /// * `basis`: (row index, column index) tuples of given basis variables.
-    fn from_artificial_remove_rows<MP: Filtered>(
+    fn from_artificial_remove_rows<'a, MP: Filtered>(
         artificial: Self,
-        rows_removed: &MP,
+        rows_removed: &'a MP,
         basis_indices: &[usize],
     ) -> Self
     where
-        Self::F: ExternalOps<<<MP as MatrixProvider>::Column as Column>::F>,
+        Self::F: ColumnOps<<<MP as MatrixProvider>::Column as Column>::F> + CostOps<MP::Cost<'a>>,
     ;
 
     /// Update the basis by representing one row reduction operation.
@@ -156,7 +157,7 @@ pub trait InverseMaintenance: Display {
     //  it.
     fn cost_difference<G, C: Column<F=G> + OrderedColumn>(&self, original_column: &C) -> Self::F
     where
-        Self::F: ExternalOps<G>,
+        Self::F: ColumnOps<G>,
     ;
 
     /// Multiplies the submatrix consisting of `minus_pi` and B^-1 by a original_column.
@@ -172,7 +173,7 @@ pub trait InverseMaintenance: Display {
     ///  it.
     fn generate_column<G, C: Column<F=G> + OrderedColumn>(&self, original_column: C) -> SparseVector<Self::F, Self::F>
     where
-        Self::F: ExternalOps<G>,
+        Self::F: ColumnOps<G>,
     ;
 
     /// Generate a single element in the tableau with respect to the current basis.
@@ -189,7 +190,7 @@ pub trait InverseMaintenance: Display {
         original_column: I,
     ) -> Self::F
     where
-        Self::F: ExternalOps<G>,
+        Self::F: ColumnOps<G>,
     ;
 
     /// Clone the latest constraint vector.
@@ -250,11 +251,17 @@ where
 
 /// Operations done with the values in the inverse maintenance algorithm while interacting with
 /// values from a matrix provider.
-pub trait ExternalOps<Rhs> =
+pub trait ColumnOps<Rhs> =
     for<'r> AddAssign<&'r Rhs> +
     for<'r> Add<&'r Rhs, Output = Self> +
 
     From<Rhs> +
 where
     for<'r> &'r Self: Mul<&'r Rhs, Output = Self>,
+;
+
+pub trait CostOps<Rhs> =
+    Add<Rhs, Output = Self> +
+where
+    for<'r> &'r Self: Mul<Rhs, Output = Self>,
 ;

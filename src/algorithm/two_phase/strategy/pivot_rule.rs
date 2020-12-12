@@ -6,7 +6,7 @@ use std::ops::Range;
 use num::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::Column;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::ExternalOps;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -28,7 +28,7 @@ pub trait PivotRule {
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
+        IM: InverseMaintenance<F: ColumnOps<<K::Column as Column>::F> + CostOps<K::Cost>>,
         K: Kind,
     ;
 }
@@ -47,7 +47,7 @@ impl PivotRule for FirstProfitable {
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
+        IM: InverseMaintenance<F: ColumnOps<<K::Column as Column>::F> + CostOps<K::Cost>>,
         K: Kind,
     {
         // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
@@ -73,7 +73,7 @@ impl PivotRule for FirstProfitableWithMemory {
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
+        IM: InverseMaintenance<F: ColumnOps<<K::Column as Column>::F> + CostOps<K::Cost>>,
         K: Kind,
     {
         let find = |to_consider: Range<usize>| to_consider
@@ -106,7 +106,7 @@ impl PivotRule for SteepestDescent {
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
+        IM: InverseMaintenance<F: ColumnOps<<K::Column as Column>::F> + CostOps<K::Cost>>,
         K: Kind,
     {
         let mut smallest = None;

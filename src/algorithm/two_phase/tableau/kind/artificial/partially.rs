@@ -4,12 +4,10 @@
 //! solution is found quicker. Less variables need to be driven out of the basis.
 use std::collections::HashSet;
 
-use num::{One, Zero};
-
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InverseMaintenance};
-use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, InverseMaintenance};
+use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn, Cost};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -20,13 +18,6 @@ pub struct Partially<'a, MP: MatrixProvider> {
     /// at index `column_to_row[i]`.
     column_to_row: Vec<usize>,
 
-    /// Values that can be referred to when unsized constants need to be returned.
-    ///
-    /// TODO(ARCHITECTURE): Replace with values that are Copy, or an enum?
-    /// TODO(ARCHITECTURE): Rename the (single) method that uses these to shift the the relevant
-    ///  value to be able to remove these fields.
-    ONE: <MP::Column as Column>::F,
-    ZERO: <MP::Column as Column>::F,
     /// Supplies data about the problem.
     ///
     /// This data doesn't change throughout the lifetime of this `Tableau`, and it is independent of
@@ -46,6 +37,7 @@ where
     MP: MatrixProvider<Column: IdentityColumn>,
 {
     type Column = MP::Column;
+    type Cost = Cost;
 
     /// Coefficient of variable `j` in the objective function.
     ///
@@ -56,13 +48,13 @@ where
     /// # Return value
     ///
     /// The cost of variable `j`.
-    fn initial_cost_value(&self, j: usize) -> &<Self::Column as Column>::F {
+    fn initial_cost_value(&self, j: usize) -> Self::Cost {
         debug_assert!(j < self.nr_artificial_variables() + self.provider.nr_columns());
 
         if j < self.nr_artificial_variables() {
-            &self.ONE
+            Cost::One
         } else {
-            &self.ZERO
+            Cost::Zero
         }
     }
 
@@ -111,7 +103,7 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, Partially<'provider, MP>>
 where
-    IM: InverseMaintenance<F: ExternalOps<<MP::Column as Column>::F>>,
+    IM: InverseMaintenance<F: ColumnOps<<MP::Column as Column>::F>>,
     MP: MatrixProvider,
 {
     /// Create a `Tableau` augmented with artificial variables.
@@ -203,9 +195,6 @@ where
             kind: Partially {
                 column_to_row: artificial,
 
-                ONE: <<MP::Column as Column>::F as One>::one(),
-                ZERO: <<MP::Column as Column>::F as Zero>::zero(),
-
                 provider,
             },
         }
@@ -240,9 +229,6 @@ where
 
             kind: Partially {
                 column_to_row: column_to_row_artificials,
-
-                ONE: <<MP::Column as Column>::F as One>::one(),
-                ZERO: <<MP::Column as Column>::F as Zero>::zero(),
 
                 provider,
             },

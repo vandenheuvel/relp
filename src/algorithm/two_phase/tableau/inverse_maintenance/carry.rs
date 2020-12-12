@@ -10,7 +10,7 @@ use itertools::repeat_n;
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOps, InternalOpsHR};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOps, InternalOpsHR};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
@@ -90,13 +90,13 @@ where
     /// * `basis_inverse_rows`: A basis inverse that represents a basic feasible solution.
     /// * `provider`: Matrix provider.
     /// * `basis`: Indices of the basis elements.
-    fn create_minus_pi_from_artificial<MP: MatrixProvider>(
+    fn create_minus_pi_from_artificial<'a, MP: MatrixProvider>(
         basis_inverse_rows: &Vec<SparseVector<F, F>>,
-        provider: &MP,
+        provider: &'a MP,
         basis: &[usize],
     ) -> DenseVector<F>
     where
-        F: ExternalOps<<MP::Column as Column>::F>,
+        F: ColumnOps<<MP::Column as Column>::F> + CostOps<MP::Cost<'a>>,
     {
         let m = basis_inverse_rows.len();
         debug_assert_eq!(provider.nr_rows(), m);
@@ -122,13 +122,13 @@ where
     /// * `basis`: Basis indices (elements are already shifted, no compensation for the artificial
     /// variables is needed).
     /// * `b`: Constraint values with respect to this basis.
-    fn create_minus_obj_from_artificial<MP: MatrixProvider>(
-        provider: &MP,
+    fn create_minus_obj_from_artificial<'a, MP: MatrixProvider>(
+        provider: &'a MP,
         basis: &[usize],
         b: &DenseVector<F>,
     ) -> F
     where
-        F: ExternalOps<<MP::Column as Column>::F>,
+        F: ColumnOps<<MP::Column as Column>::F> + CostOps<MP::Cost<'a>>,
     {
         let mut objective = F::zero();
         for row in 0..provider.nr_rows() {
@@ -240,7 +240,7 @@ where
         b: DenseVector<G>
     ) -> Self
     where
-        Self::F: ExternalOps<G>,
+        Self::F: ColumnOps<G>,
     {
         let m = b.len();
 
@@ -266,7 +266,7 @@ where
         b: DenseVector<G>,
     ) -> Self
     where
-        Self::F: ExternalOps<G>,
+        Self::F: ColumnOps<G>,
     {
         let m = b.len();
         debug_assert_eq!(artificial_rows.len() + free_basis_values.len(), m);  // Correct sizes
@@ -322,13 +322,13 @@ where
         unimplemented!()
     }
 
-    fn from_artificial<MP: MatrixProvider>(
+    fn from_artificial<'provider, MP: MatrixProvider>(
         artificial: Self,
-        provider: &MP,
+        provider: &'provider MP,
         basis: &[usize],
     ) -> Self
     where
-        F: InternalOpsHR + ExternalOps<<MP::Column as Column>::F>,
+        F: InternalOpsHR + ColumnOps<<MP::Column as Column>::F> + CostOps<MP::Cost<'provider>>,
     {
         let minus_pi = Carry::create_minus_pi_from_artificial(
             &artificial.basis_inverse_rows,
@@ -349,13 +349,13 @@ where
         )
     }
 
-    fn from_artificial_remove_rows<MP: Filtered>(
+    fn from_artificial_remove_rows<'a, MP: Filtered>(
         artificial: Self,
-        rows_removed: &MP,
+        rows_removed: &'a MP,
         basis_indices: &[usize],
     ) -> Self
     where
-        Self::F: ExternalOps<<<MP as MatrixProvider>::Column as Column>::F>,
+        Self::F: ColumnOps<<<MP as MatrixProvider>::Column as Column>::F> + CostOps<MP::Cost<'a>>,
     {
         debug_assert_eq!(basis_indices.len(), rows_removed.nr_rows());
 
@@ -402,14 +402,14 @@ where
 
     fn cost_difference<G, C: Column<F=G> + OrderedColumn>(&self, original_column: &C) -> Self::F
     where
-        Self::F: ExternalOps<G>,
+        Self::F: ColumnOps<G>,
     {
         self.minus_pi.sparse_inner_product(original_column.iter())
     }
 
     fn generate_column<G, C: Column<F=G> + OrderedColumn>(&self, original_column: C) -> SparseVector<Self::F, Self::F>
     where
-        Self::F: ExternalOps<G>,
+        Self::F: ColumnOps<G>,
     {
         let column_iter = original_column.iter();
 
@@ -424,7 +424,7 @@ where
 
     fn generate_element<'a, G: 'a, I: Iterator<Item=&'a SparseTuple<G>>>(&self, i: usize, original_column: I) -> Self::F
     where
-        Self::F: ExternalOps<G>,
+        Self::F: ColumnOps<G>,
     {
         debug_assert!(i < self.m());
 

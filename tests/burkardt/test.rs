@@ -27,19 +27,20 @@ fn to_general_form<T: From<Rational64> + Zero + One + Ord + Element>(
 #[test]
 fn adlittle() {
     type T = RationalBig;
+    type S = RationalBig;
 
     let path = get_test_file_path("adlittle");
     let result = import::<T>(&path).unwrap();
 
     let mut general = result.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
+    let result = data.solve_relaxation::<Carry<S>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
-            assert_eq!(solution.objective_value, T::from("24975305659811992079614961229/120651674036153428931840"));
+            assert_eq!(solution.objective_value, S::from("24975305659811992079614961229/120651674036153428931840"));
         },
         _ => assert!(false),
     }
@@ -48,6 +49,7 @@ fn adlittle() {
 #[test]
 fn afiro() {
     type T = RationalBig;
+    type S = RationalBig;
 
     let mut general = to_general_form::<T>("afiro");
     let data = general.derive_matrix_data().ok().unwrap();
@@ -65,33 +67,33 @@ fn afiro() {
                     ("X03".to_string(), RB!(109, 2)),
                     ("X04".to_string(), RB!(424, 5)),
                     ("X06".to_string(), RB!(255, 14)),
-                    ("X07".to_string(), T::zero()),
-                    ("X08".to_string(), T::zero()),
-                    ("X09".to_string(), T::zero()),
-                    ("X10".to_string(), T::zero()),
-                    ("X11".to_string(), T::zero()),
-                    ("X12".to_string(), T::zero()),
-                    ("X13".to_string(), T::zero()),
+                    ("X07".to_string(), S::zero()),
+                    ("X08".to_string(), S::zero()),
+                    ("X09".to_string(), S::zero()),
+                    ("X10".to_string(), S::zero()),
+                    ("X11".to_string(), S::zero()),
+                    ("X12".to_string(), S::zero()),
+                    ("X13".to_string(), S::zero()),
                     ("X14".to_string(), RB!(255, 14)),
-                    ("X15".to_string(), T::zero()),
+                    ("X15".to_string(), S::zero()),
                     ("X16".to_string(), RB!(999, 1)),
                     ("X22".to_string(), RB!(500, 1)),
                     ("X23".to_string(), RB!(11898, 25)),
                     ("X24".to_string(), RB!(602, 25)),
-                    ("X25".to_string(), T::zero()),
+                    ("X25".to_string(), S::zero()),
                     ("X26".to_string(), RB!(215, 1)),
-                    ("X28".to_string(), T::zero()),
-                    ("X29".to_string(), T::zero()),
-                    ("X30".to_string(), T::zero()),
-                    ("X31".to_string(), T::zero()),
-                    ("X32".to_string(), T::zero()),
-                    ("X33".to_string(), T::zero()),
-                    ("X34".to_string(), T::zero()),
-                    ("X35".to_string(), T::zero()),
+                    ("X28".to_string(), S::zero()),
+                    ("X29".to_string(), S::zero()),
+                    ("X30".to_string(), S::zero()),
+                    ("X31".to_string(), S::zero()),
+                    ("X32".to_string(), S::zero()),
+                    ("X33".to_string(), S::zero()),
+                    ("X34".to_string(), S::zero()),
+                    ("X35".to_string(), S::zero()),
                     ("X36".to_string(), RB!(11898, 35)),
                     ("X37".to_string(), RB!(11898, 35)),
-                    ("X38".to_string(), T::zero()),
-                    ("X39".to_string(), T::zero()),
+                    ("X38".to_string(), S::zero()),
+                    ("X39".to_string(), S::zero()),
                 ],
             );
 
@@ -113,22 +115,23 @@ fn empstest() {
 #[test]
 fn maros() {
     type T = Rational64;
+    type S = RationalBig;
 
     let mut general = to_general_form::<T>("maros");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
+    let result = data.solve_relaxation::<Carry<S>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(solution, Solution::new(
-                T::new(385, 3),  // GLPK
+                S::new(385, 3),  // GLPK
                 vec![
-                    ("VOL1".to_string(), T::new(10, 3)),
-                    ("VOL2".to_string(), T::new(40, 3)),
-                    ("VOL3".to_string(), T::new(20, 1)),
-                    ("VOL4".to_string(), T::new(0, 1)),
+                    ("VOL1".to_string(), S::new(10, 3)),
+                    ("VOL2".to_string(), S::new(40, 3)),
+                    ("VOL3".to_string(), S::new(20, 1)),
+                    ("VOL4".to_string(), S::new(0, 1)),
                 ],
             ));
         },
@@ -138,31 +141,34 @@ fn maros() {
 
 #[test]
 fn nazareth_bigint() {
-    type T = RationalBig;
+    type T = Rational64;
+    type S = RationalBig;
 
     let mut general = to_general_form::<T>("nazareth");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<T>>();
+    let result = data.solve_relaxation::<Carry<S>>();
     assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
 }
 
 #[test]
 fn nazareth() {
     type T = Rational64;
+    type S = RationalBig;
 
     let mut general = to_general_form::<T>("nazareth");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<T>>();
+    let result = data.solve_relaxation::<Carry<S>>();
     assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
 }
 
 #[test]
 fn testprob_bigint() {
-    type T = RationalBig;
+    type T = Rational64;
+    type S = RationalBig;
 
     let mut general = to_general_form::<T>("testprob");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
+    let result = data.solve_relaxation::<Carry<S>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -184,21 +190,22 @@ fn testprob_bigint() {
 #[test]
 fn testprob() {
     type T = Rational64;
+    type S = RationalBig;
 
     let mut general = to_general_form::<T>("testprob");
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
+    let result = data.solve_relaxation::<Carry<S>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(solution, Solution::new(
-                T::new(54, 1),  // GLPK
+                S::new(54, 1),  // GLPK
                 vec![
-                    ("X1".to_string(), T::new(4, 1)),
-                    ("X2".to_string(), T::new(-1, 1)),
-                    ("X3".to_string(), T::new(6, 1)),
+                    ("X1".to_string(), S::new(4, 1)),
+                    ("X2".to_string(), S::new(-1, 1)),
+                    ("X3".to_string(), S::new(6, 1)),
                 ],
             ));
         },

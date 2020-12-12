@@ -216,6 +216,7 @@ where
     for<'r> &'r F: FieldRef<F>,
 {
     type Column = Column<F>;
+    type Cost<'a> = Option<&'a <Self::Column as ColumnTrait>::F>;
 
     fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
@@ -247,12 +248,12 @@ where
         }
     }
 
-    fn cost_value(&self, j: usize) -> &F {
+    fn cost_value(&self, j: usize) -> Self::Cost<'_> {
         debug_assert!(j < self.nr_columns());
 
         match self.column_type(j) {
-            ColumnType::Normal(j) => &self.variables[j].cost,
-            _ => &self.ZERO,
+            ColumnType::Normal(j) => Some(&self.variables[j].cost),
+            _ => None,
         }
     }
 
@@ -531,7 +532,8 @@ where
             if self.get_variable_separating_indices().contains(&column) {
                 write!(f, "|")?;
             }
-            write!(f, "{:^width$}", format!("{}", self.cost_value(column)), width = width)?;
+            let cost = self.cost_value(column).map_or("0".to_string(), ToString::to_string);
+            write!(f, "{:^width$}", cost, width = width)?;
         }
         writeln!(f)?;
         writeln!(f, "{}", repeat_n("=",separator_width).collect::<String>())?;
@@ -614,13 +616,13 @@ mod test {
         );
 
         // Variable cost
-        assert_eq!(matrix_data.cost_value(0),  &R64!(1));
+        assert_eq!(matrix_data.cost_value(0),  Some(&R64!(1)));
         // Upper bounded inequality slack variable cost
-        assert_eq!(matrix_data.cost_value(3), &R64!(0));
+        assert_eq!(matrix_data.cost_value(3), None);
         // Lower bounded inequality slack variable cost
-        assert_eq!(matrix_data.cost_value(4), &R64!(0));
+        assert_eq!(matrix_data.cost_value(4), None);
         // Bound slack variable cost
-        assert_eq!(matrix_data.cost_value(5), &R64!(0));
+        assert_eq!(matrix_data.cost_value(5), None);
 
         assert_eq!(
             matrix_data.constraint_values(),

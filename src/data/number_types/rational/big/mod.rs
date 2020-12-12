@@ -4,9 +4,12 @@
 //! This is needed because some of the impl's in this module are not provided by `num`. Methods on
 //! this type can be modified and specialized as needed.
 use std::ops::{Add, AddAssign, Mul};
-
-use crate::data::number_types::rational::Rational64;
 use std::str::FromStr;
+
+use num::Zero;
+
+use crate::algorithm::two_phase::tableau::kind::artificial::Cost;
+use crate::data::number_types::rational::Rational64;
 
 mod wrapping;
 #[cfg(test)]
@@ -65,12 +68,76 @@ impl Add<&Rational64> for Big {
     }
 }
 
+impl Add<Option<&Rational64>> for Big {
+    type Output = Big;
+
+    fn add(self, rhs: Option<&Rational64>) -> Self::Output {
+        // TODO(PERFORMANCE): Make sure that this is just as efficient as a native algorithm.
+        match rhs {
+            None => self,
+            Some(rhs) => Add::add(self, rhs),
+        }
+    }
+}
+
 impl Add<&Rational64> for &Big {
     type Output = Big;
 
     fn add(self, rhs: &Rational64) -> Self::Output {
         // TODO(PERFORMANCE): Make sure that this is just as efficient as a native algorithm.
         self.clone().add(rhs)
+    }
+}
+
+impl Add<Cost> for Big {
+    type Output = Big;
+
+    fn add(self, rhs: Cost) -> Self::Output {
+        match rhs {
+            Cost::Zero => self,
+            Cost::One => {
+                let (numer, denom): (num::BigInt, num::BigInt) = self.0.into();
+                Self(num::BigRational::new(numer + &denom, denom))
+            },
+        }
+    }
+}
+
+impl Add<Option<&Big>> for Big {
+    type Output = Big;
+
+    fn add(self, rhs: Option<&Big>) -> Self::Output {
+        // TODO(PERFORMANCE): Make sure that this is just as efficient as a native algorithm.
+        match rhs {
+            None => self,
+            Some(rhs) => Add::add(self, rhs),
+        }
+    }
+}
+
+impl Add<Option<&Rational64>> for &Big {
+    type Output = Big;
+
+    fn add(self, rhs: Option<&Rational64>) -> Self::Output {
+        // TODO(PERFORMANCE): Make sure that this is just as efficient as a native algorithm.
+        let copy = self.clone();
+        match rhs {
+            None => copy,
+            Some(rhs) => Add::add(copy, rhs),
+        }
+    }
+}
+
+impl Add<Option<&Big>> for &Big {
+    type Output = Big;
+
+    fn add(self, rhs: Option<&Big>) -> Self::Output {
+        // TODO(PERFORMANCE): Make sure that this is just as efficient as a native algorithm.
+        let copy = self.clone();
+        match rhs {
+            None => copy,
+            Some(rhs) => Add::add(copy, rhs),
+        }
     }
 }
 
@@ -109,5 +176,50 @@ impl Mul<&Rational64> for &Big {
     fn mul(self, rhs: &Rational64) -> Self::Output {
         // TODO(PERFORMANCE): Make sure that this is just as efficient as a native algorithm.
         self.clone() * rhs
+    }
+}
+
+impl Mul<Cost> for Big {
+    type Output = Big;
+
+    fn mul(self, rhs: Cost) -> Self::Output {
+        match rhs {
+            Cost::Zero => Self::Output::zero(),
+            Cost::One => self,
+        }
+    }
+}
+
+impl Mul<Cost> for &Big {
+    type Output = Big;
+
+    fn mul(self, rhs: Cost) -> Self::Output {
+        match rhs {
+            Cost::Zero => Self::Output::zero(),
+            Cost::One => self.clone(),
+        }
+    }
+}
+
+impl Mul<Option<&Rational64>> for &Big {
+    type Output = Big;
+
+    fn mul(self, rhs: Option<&Rational64>) -> Self::Output {
+        // TODO(PERFORMANCE): Make sure that this is just as efficient as a native algorithm.
+        match rhs {
+            None => Big::zero(),
+            Some(rhs) => Mul::mul(self, rhs),
+        }
+    }
+}
+
+impl Mul<Option<&Big>> for &Big {
+    type Output = Big;
+
+    fn mul(self, rhs: Option<&Big>) -> Self::Output {
+        match rhs {
+            None => Big::zero(),
+            Some(rhs) => Mul::mul(self, rhs)
+        }
     }
 }

@@ -9,7 +9,7 @@ use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use rust_lp::data::linear_program::general_form::GeneralForm;
 use rust_lp::data::linear_program::solution::Solution;
-use rust_lp::data::number_types::rational::RationalBig;
+use rust_lp::data::number_types::rational::{RationalBig};
 use rust_lp::io::import;
 
 /// # Generation and execution
@@ -37,14 +37,15 @@ fn get_test_file_path(name: &str) -> PathBuf {
 }
 
 type T = RationalBig;
+type S = RationalBig;
 
-fn solve(file_name: &str) -> Solution<T> {
+fn solve(file_name: &str) -> Solution<S> {
     let path = get_test_file_path(file_name);
     let mps = import(&path).unwrap();
 
     let mut general: GeneralForm<T> = mps.try_into().ok().unwrap();
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<T>>();
+    let result = data.solve_relaxation::<Carry<S>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {

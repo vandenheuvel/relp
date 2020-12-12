@@ -6,18 +6,31 @@
 use std::collections::HashSet;
 
 use crate::algorithm::two_phase::matrix_provider::Column;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InverseMaintenance};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 
 pub mod fully;
 pub mod partially;
 
-/// tableaus with artificial variables.
+/// Artificial cost elements.
+///
+/// When artificial variables are in the basis, we minimize a simple sum. That is, all artificial
+/// variables have cost `One`. Variables in the artificial tableau that are not artificial (and
+/// should not be minimized out of the basis) have artificial cost `Zero` (although they might have
+/// a non-artificial cost).
+pub enum Cost {
+    /// Artificial cost of the non-artificial variables.
+    Zero,
+    /// Artificial cost of the artificial variables.
+    One,
+}
+
+/// Tableaus with artificial variables.
 ///
 /// There are currently two implementations; either all variables are artificial, or not necessarily
 /// all variables are. See the two submodules.
-pub trait Artificial: Kind<Column: IdentityColumn> {
+pub trait Artificial: Kind<Column: IdentityColumn, Cost=Cost> {
     /// How many artificial variables are in the tableau.
     ///
     /// This number varies, because slack variables might have been recognized as practical
@@ -62,7 +75,7 @@ pub trait IdentityColumn: Column {
 /// artificial variables from the problem at zero level.
 impl<'provider, IM, A> Tableau<IM, A>
 where
-    IM: InverseMaintenance<F: ExternalOps<<A::Column as Column>::F>>,
+    IM: InverseMaintenance<F: ColumnOps<<A::Column as Column>::F> + CostOps<A::Cost>>,
     A: Artificial,
 {
     /// Whether there are any artificial variables in the basis.

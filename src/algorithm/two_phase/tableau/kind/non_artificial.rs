@@ -6,7 +6,7 @@ use std::collections::HashSet;
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOpsHR, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::algorithm::utilities::remove_indices;
@@ -27,6 +27,7 @@ where
     MP: MatrixProvider,
 {
     type Column = MP::Column;
+    type Cost = MP::Cost<'provider>;
 
     /// Coefficient of variable `j` in the objective function.
     ///
@@ -38,7 +39,7 @@ where
     /// # Return value
     ///
     /// The cost of variable `j`.
-    fn initial_cost_value(&self, j: usize) -> &<Self::Column as Column>::F {
+    fn initial_cost_value(&self, j: usize) -> Self::Cost {
         debug_assert!(j < self.provider.nr_columns());
 
         self.provider.cost_value(j)
@@ -71,7 +72,7 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<MP::Column as Column>::F>>,
+    IM: InverseMaintenance<F: InternalOpsHR + ColumnOps<<MP::Column as Column>::F> + CostOps<MP::Cost<'provider>>>,
     MP: MatrixProvider,
 {
     /// Creates a Simplex tableau with a specific basis.
@@ -174,7 +175,7 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<MP::Column as Column>::F>>,
+    IM: InverseMaintenance<F: InternalOpsHR + ColumnOps<<MP::Column as Column>::F> + CostOps<MP::Cost<'provider>>>,
     MP: Filtered,
 {
     /// Create a `Tableau` from an artificial tableau while removing some rows.
@@ -192,24 +193,24 @@ where
         inverse_maintainer: IM,
         nr_artificial: usize,
         basis: (Vec<usize>, HashSet<usize>),
-        rows_removed: &'provider MP,
+        provider: &'provider MP,
     ) -> Self {
-        debug_assert!(basis.0.iter().all(|&v| v >= nr_artificial || rows_removed.filtered_rows().contains(&v)));
+        debug_assert!(basis.0.iter().all(|&v| v >= nr_artificial || provider.filtered_rows().contains(&v)));
 
         let (mut basis_indices, mut basis_columns) = basis;
-        for &row in rows_removed.filtered_rows() {
+        for &row in provider.filtered_rows() {
             let was_there = basis_columns.remove(&basis_indices[row]);
             debug_assert!(was_there);
         }
         let basis_columns = basis_columns.into_iter().map(|j| j - nr_artificial).collect();
 
-        remove_indices(&mut basis_indices, rows_removed.filtered_rows());
+        remove_indices(&mut basis_indices, provider.filtered_rows());
         basis_indices.iter_mut().for_each(|index| *index -= nr_artificial);
 
         // Remove same row and column from carry matrix
         let inverse_maintainer = IM::from_artificial_remove_rows(
             inverse_maintainer,
-            rows_removed,
+            provider,
             &basis_indices,
         );
 
@@ -219,7 +220,7 @@ where
             basis_columns,
 
             kind: NonArtificial {
-                provider: rows_removed,
+                provider,
             },
         }
     }

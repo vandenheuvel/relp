@@ -11,7 +11,7 @@ use num::One;
 use num::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::Column;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOpsHR};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::vector::{Sparse as SparseVector, Vector};
@@ -50,7 +50,7 @@ pub struct Tableau<IM, K> {
 
 impl<IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
+    IM: InverseMaintenance<F: ColumnOps<<K::Column as Column>::F> + CostOps<K::Cost>>,
     K: Kind,
 {
     /// Brings a column into the basis by updating the `self.carry` matrix and updating the
@@ -209,7 +209,7 @@ where
 
 impl<IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<K::Column as Column>::F>>,
+    IM: InverseMaintenance<F: InternalOpsHR + ColumnOps<<K::Column as Column>::F> + CostOps<K::Cost>>,
     K: Kind,
 {
     /// Determine the row to pivot on.
@@ -266,7 +266,7 @@ where
 #[allow(clippy::nonminimal_bool)]
 pub fn is_in_basic_feasible_solution_state<IM, K>(tableau: &Tableau<IM, K>) -> bool
 where
-    IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
+    IM: InverseMaintenance<F: ColumnOps<<K::Column as Column>::F> + CostOps<K::Cost>>,
     K: Kind,
 {
     // Checking basis_columns
@@ -326,7 +326,7 @@ where
 
 impl<IM, K> Display for Tableau<IM, K>
 where
-    IM: InverseMaintenance<F: ExternalOps<<K::Column as Column>::F>>,
+    IM: InverseMaintenance<F: ColumnOps<<K::Column as Column>::F> + CostOps<K::Cost>>,
     K: Kind,
 {
     fn fmt(&self, f: &mut Formatter) -> FormatResult {
@@ -399,7 +399,7 @@ mod test {
 
     use num::FromPrimitive;
 
-    use crate::{F, R32};
+    use crate::{RB};
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
@@ -407,19 +407,17 @@ mod test {
     use crate::algorithm::two_phase::tableau::Tableau;
     use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
     use crate::data::linear_algebra::vector::test::TestVector;
-    use crate::data::number_types::rational::Rational32;
-    use crate::data::number_types::traits::{Field, FieldRef};
+    use crate::data::number_types::rational::{Rational64, RationalBig};
     use crate::tests::problem_2::{artificial_tableau_form, create_matrix_data_data, matrix_data_form};
 
-    fn tableau<'a, F: 'static>(
-        data: &'a MatrixData<'a, F>,
-    ) -> Tableau<Carry<F>, NonArtificial<'a, MatrixData<'a, F>>>
-    where
-        F: Field + FromPrimitive + 'a,
-        for<'r> &'r F: FieldRef<F>,
-    {
+    type T = Rational64;
+    type S = RationalBig;
+
+    fn tableau<'a>(
+        data: &'a MatrixData<'a, T>,
+    ) -> Tableau<Carry<S>, NonArtificial<'a, MatrixData<'a, T>>> {
         let carry = {
-            let minus_objective = F!(-6);
+            let minus_objective = RB!(-6);
             let minus_pi = Dense::from_test_data(vec![1, -1, -1]);
             let b = Dense::from_test_data(vec![1, 2, 3]);
             let basis_inverse_rows = vec![
@@ -427,7 +425,7 @@ mod test {
                 SparseVector::from_test_data(vec![-1, 1, 0]),
                 SparseVector::from_test_data(vec![-1, 0, 1]),
             ];
-            Carry::<F>::new(minus_objective, minus_pi, b, basis_inverse_rows)
+            Carry::<S>::new(minus_objective, minus_pi, b, basis_inverse_rows)
         };
         let basis_indices = vec![2, 3, 4];
         let mut basis_columns = HashSet::new();
@@ -448,10 +446,10 @@ mod test {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
         let artificial_tableau = artificial_tableau_form(&matrix_data_form);
-        assert_eq!(artificial_tableau.objective_function_value(), R32!(8));
+        assert_eq!(artificial_tableau.objective_function_value(), RB!(8));
 
         let tableau = tableau(&matrix_data_form);
-        assert_eq!(tableau.objective_function_value(), R32!(6));
+        assert_eq!(tableau.objective_function_value(), RB!(6));
     }
 
     #[test]
@@ -459,17 +457,17 @@ mod test {
         let (constraints, b) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b);
         let artificial_tableau = artificial_tableau_form(&matrix_data_form);
-        assert_eq!(artificial_tableau.relative_cost(0), R32!(0));
+        assert_eq!(artificial_tableau.relative_cost(0), RB!(0));
 
         assert_eq!(
             artificial_tableau.relative_cost(artificial_tableau.nr_artificial_variables() + 0),
-            R32!(-10),
+            RB!(-10),
         );
 
         let tableau = tableau(&matrix_data_form);
-        assert_eq!(tableau.relative_cost(0), R32!(-3));
-        assert_eq!(tableau.relative_cost(1), R32!(-3));
-        assert_eq!(tableau.relative_cost(2), R32!(0));
+        assert_eq!(tableau.relative_cost(0), RB!(-3));
+        assert_eq!(tableau.relative_cost(1), RB!(-3));
+        assert_eq!(tableau.relative_cost(2), RB!(0));
     }
 
     #[test]
@@ -483,7 +481,7 @@ mod test {
         let expected = SparseVector::from_test_data(vec![3, 5, 2]);
         assert_eq!(column, expected);
         let result = artificial_tableau.relative_cost(index_to_test);
-        assert_eq!(result, R32!(-10));
+        assert_eq!(result, RB!(-10));
 
         let tableau = tableau(&matrix_data_form);
         let index_to_test = 0;
@@ -491,7 +489,7 @@ mod test {
         let expected = SparseVector::from_test_data(vec![3, 2, -1]);
         assert_eq!(column, expected);
         let result = tableau.relative_cost(index_to_test);
-        assert_eq!(result, R32!(-3));
+        assert_eq!(result, RB!(-3));
     }
 
     #[test]
@@ -507,7 +505,7 @@ mod test {
 
         assert!(artificial_tableau.is_in_basis(&column));
         assert!(!artificial_tableau.is_in_basis(&0));
-        assert_eq!(artificial_tableau.objective_function_value(), R32!(14, 3));
+        assert_eq!(artificial_tableau.objective_function_value(), RB!(14, 3));
 
         let mut tableau = tableau(&matrix_data_form);
         let column = 1;
@@ -517,19 +515,15 @@ mod test {
         tableau.bring_into_basis(column, row, &column_data, cost);
 
         assert!(tableau.is_in_basis(&column));
-        assert_eq!(tableau.objective_function_value(), R32!(9, 2));
+        assert_eq!(tableau.objective_function_value(), RB!(9, 2));
     }
 
-    fn bfs_tableau<'a, F: 'static>(
-        data: &'a MatrixData<'a, F>,
-    ) -> Tableau<Carry<F>, NonArtificial<'a, MatrixData<'a, F>>>
-    where
-        F: Field + FromPrimitive,
-        for<'r> &'r F: FieldRef<F>,
-    {
+    fn bfs_tableau<'a>(
+        data: &'a MatrixData<'a, Rational64>,
+    ) -> Tableau<Carry<RationalBig>, NonArtificial<'a, MatrixData<'a, Rational64>>> {
         let m = 3;
         let carry = {
-            let minus_objective = F::from_i32(0).unwrap();
+            let minus_objective = RB!(0);
             let minus_pi = Dense::from_test_data(vec![1, 1, 1]);
             let b = Dense::from_test_data(vec![1, 2, 3]);
             let basis_inverse_rows = vec![
@@ -537,7 +531,7 @@ mod test {
                 SparseVector::from_test_data(vec![-1, 1, 0]),
                 SparseVector::from_test_data(vec![-1, 0, 1]),
             ];
-            Carry::<F>::new(minus_objective, minus_pi, b, basis_inverse_rows)
+            Carry::new(minus_objective, minus_pi, b, basis_inverse_rows)
         };
         let basis_indices = vec![m + 2, m + 3, m + 4];
         let mut basis_columns = HashSet::new();

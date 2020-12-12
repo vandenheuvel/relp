@@ -20,8 +20,6 @@ pub struct Primal<F> {
     s: usize,
     /// Sink node index.
     t: usize,
-
-    ZERO: F,
 }
 
 impl<F> Primal<F>
@@ -46,7 +44,6 @@ where
             cost,
             s,
             t,
-            ZERO: F::zero(),
         }
     }
 
@@ -64,6 +61,7 @@ where
     F: Field,
 {
     type Column = ArcIncidenceColumn<F>;
+    type Cost<'a> = &'a F;
 
     fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_edges());
@@ -71,7 +69,7 @@ where
         ArcIncidenceColumn(self.arc_incidence_matrix.column(j))
     }
 
-    fn cost_value(&self, j: usize) -> &F {
+    fn cost_value(&self, j: usize) -> Self::Cost<'_> {
         debug_assert!(j < self.nr_edges());
 
         &self.cost[j]
@@ -148,13 +146,12 @@ mod test {
     use crate::data::linear_algebra::vector::Sparse as SparseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::network::shortest_path::Primal;
-    use crate::data::number_types::rational::Rational32;
+    use crate::data::number_types::rational::{Rational64, RationalBig};
 
     #[test]
     fn test_1() {
-        type T = Rational32;
-        // TODO(ENHANCEMENT): Decouple these two types
-        type S = T;
+        type T = Rational64;
+        type S = RationalBig;
 
         // Example from Papadimitriou's Combinatorial Optimization.
         let data = ColumnMajor::from_test_data::<T, T, _>(&vec![

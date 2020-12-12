@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use num::FromPrimitive;
 
-use crate::{F, R32};
 use crate::algorithm::OptimizationResult;
 use crate::algorithm::two_phase::{phase_one, phase_two};
 use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
@@ -16,14 +15,17 @@ use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::VariableType;
-use crate::data::number_types::rational::Rational32;
-use crate::data::number_types::traits::{Field, FieldRef};
+use crate::data::number_types::rational::{Rational64, RationalBig};
+use crate::data::number_types::traits::{Field};
+use crate::R64;
+use crate::RB;
 
-type T = Rational32;
+type T = Rational64;
+type S = RationalBig;
 
 #[test]
 fn conversion_pipeline() {
-    let (constraints, b) = create_matrix_data_data();
+    let (constraints, b) = create_matrix_data_data::<T>();
     let matrix_data_form = matrix_data_form(&constraints, &b);
 
     // Artificial tableau form
@@ -62,7 +64,7 @@ fn conversion_pipeline() {
     ], 5)));
 }
 
-pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, Dense<T>) {
+pub fn create_matrix_data_data<T: Field + FromPrimitive>() -> (Sparse<T, T, ColumnMajor>, Dense<T>) {
     let constraints = ColumnMajor::from_test_data(
         &vec![
             vec![3, 2, 1, 0, 0],
@@ -87,7 +89,7 @@ pub fn matrix_data_form<'a>(
 ) -> MatrixData<'a, T> {
     let variables = vec![
         Variable {
-            cost: R32!(1),
+            cost: R64!(1),
             upper_bound: None,
             variable_type: VariableType::Continuous
         }; 5
@@ -103,16 +105,12 @@ pub fn matrix_data_form<'a>(
     )
 }
 
-pub fn artificial_tableau_form<'a, F: 'static>(
-    data: &'a MatrixData<'a, F>,
-) -> Tableau<Carry<F>, Partially<MatrixData<'a, F>>>
-where
-    F: Field + FromPrimitive,
-    for<'r> &'r F: FieldRef<F>,
-{
+pub fn artificial_tableau_form<'a>(
+    data: &'a MatrixData<'a, T>,
+) -> Tableau<Carry<S>, Partially<MatrixData<'a, T>>> {
     let m = 3;
     let carry = {
-        let minus_objective = F!(-8);
+        let minus_objective = RB!(-8);
         let minus_pi = Dense::from_test_data(vec![-1; 3]);
         let b = Dense::from_test_data(vec![1, 3, 4]);
         let basis_inverse_rows = (0..m)
@@ -133,15 +131,11 @@ where
     )
 }
 
-pub fn tableau_form<'a, F: 'static>(
-    data: &'a MatrixData<'a, F>
-) -> Tableau<Carry<F>, NonArtificial<MatrixData<'a, F>>>
-where
-    F: Field + FromPrimitive + 'a,
-    for<'r> &'r F: FieldRef<F>,
-{
+pub fn tableau_form<'a>(
+    data: &'a MatrixData<'a, T>,
+) -> Tableau<Carry<S>, NonArtificial<MatrixData<'a, T>>> {
     let carry = {
-        let minus_objective = F!(-9f64 / 2f64);
+        let minus_objective = RB!(-9f64 / 2f64);
         let minus_pi = Dense::from_test_data(vec![2.5f64, -1f64, -1f64]);
         let b = Dense::from_test_data(vec![
             0.5f64,

@@ -12,6 +12,7 @@ use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Vari
 use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::CostOps;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -21,12 +22,14 @@ use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{ConstraintType, Objective, VariableType};
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::Variable as GeneralFormVariable;
-use crate::data::number_types::rational::Rational64;
+use crate::data::number_types::rational::{Rational64, RationalBig};
 use crate::io::mps::{Bound, BoundType, Column, MPS, Rhs, Row};
 use crate::io::mps::parse;
 use crate::R64;
+use crate::RB;
 
 type T = Rational64;
+type S = RationalBig;
 
 #[test]
 fn conversion_pipeline() {
@@ -41,7 +44,7 @@ fn conversion_pipeline() {
     // General form
     let result = mps_computed.try_into();
     assert!(result.is_ok());
-    let mut general_form_computed: GeneralForm<_> = result.unwrap();
+    let mut general_form_computed: GeneralForm<T> = result.unwrap();
     assert_eq!(general_form_computed, general_form());
 
     assert!(general_form_computed.standardize().is_ok());
@@ -347,10 +350,10 @@ pub fn matrix_data_form<'a>(
 
 pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
     provider: &MP,
-) -> Tableau<Carry<T>, Partially<MP>> {
+) -> Tableau<Carry<S>, Partially<MP>> {
     let m = 5;
     let carry = {
-        let minus_objective = R64!(-2);
+        let minus_objective = RB!(-2);
         let minus_pi = Dense::from_test_data(vec![-1, -1, 0, 0, 0]);
         let b = Dense::from_test_data(vec![0, 2, 2, 2, 2]);
         let basis_inverse_rows = (0..m)
@@ -374,9 +377,12 @@ pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
 
 pub fn tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
     provider: &MP,
-) -> Tableau<Carry<T>, NonArtificial<MP>> {
+) -> Tableau<Carry<S>, NonArtificial<MP>>
+where
+    for<'a> S: CostOps<MP::Cost<'a>>,
+{
     let carry = {
-        let minus_objective = R64!(-2);
+        let minus_objective = RB!(-2);
         let minus_pi = Dense::from_test_data(vec![-8, -1, 0, 0, 0]);
         let b = Dense::from_test_data(vec![0, 2, 0, 2, 2]);
         let basis_inverse_rows = vec![
