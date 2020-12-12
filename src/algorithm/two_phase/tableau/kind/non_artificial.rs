@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
-use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
+use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -170,7 +170,13 @@ where
             },
         }
     }
+}
 
+impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
+where
+    IM: InverseMaintenance<F: InternalOpsHR + ExternalOps<<MP::Column as Column>::F>>,
+    MP: Filtered,
+{
     /// Create a `Tableau` from an artificial tableau while removing some rows.
     ///
     /// # Arguments
@@ -186,21 +192,18 @@ where
         inverse_maintainer: IM,
         nr_artificial: usize,
         basis: (Vec<usize>, HashSet<usize>),
-        rows_removed: &'provider RemoveRows<MP>,
-    ) -> Tableau<IM, NonArtificial<'provider, RemoveRows<'provider, MP>>>
-    where
-        MP::Column: IntoFilteredColumn,
-    {
-        debug_assert!(basis.0.iter().all(|&v| v >= nr_artificial || rows_removed.rows_to_skip.contains(&v)));
+        rows_removed: &'provider MP,
+    ) -> Self {
+        debug_assert!(basis.0.iter().all(|&v| v >= nr_artificial || rows_removed.filtered_rows().contains(&v)));
 
         let (mut basis_indices, mut basis_columns) = basis;
-        for &row in &rows_removed.rows_to_skip {
+        for &row in rows_removed.filtered_rows() {
             let was_there = basis_columns.remove(&basis_indices[row]);
             debug_assert!(was_there);
         }
         let basis_columns = basis_columns.into_iter().map(|j| j - nr_artificial).collect();
 
-        remove_indices(&mut basis_indices, &rows_removed.rows_to_skip);
+        remove_indices(&mut basis_indices, rows_removed.filtered_rows());
         basis_indices.iter_mut().for_each(|index| *index -= nr_artificial);
 
         // Remove same row and column from carry matrix
