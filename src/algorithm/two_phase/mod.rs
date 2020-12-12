@@ -9,7 +9,6 @@ use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{Into
 use crate::algorithm::two_phase::phase_one::{FeasibilityComputeTrait, FullInitialBasis, Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ExternalOps, InternalOpsHR, InverseMaintenance};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -33,9 +32,8 @@ where
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
         type NonArtificialPR = FirstProfitable;
-        // TODO: Extract the matrix inverse maintenance algorithm
 
-        match self.compute_bfs_giving_im() {
+        match self.compute_bfs_giving_im::<IM>() {
             RankedFeasibilityResult::Feasible {
                 rank,
                 nr_artificial_variables,
@@ -44,7 +42,7 @@ where
             } => match rank {
                 Rank::Deficient(rows_to_remove) if !rows_to_remove.is_empty() => {
                     let rows_removed = RemoveRows::new(self, rows_to_remove);
-                    let mut non_artificial = Tableau::<Carry<_>, NonArtificial<_>>::from_artificial_removing_rows(
+                    let mut non_artificial = Tableau::<_, NonArtificial<_>>::from_artificial_removing_rows(
                         inverse_maintainer,
                         nr_artificial_variables,
                         basis,
@@ -86,11 +84,10 @@ where
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
         type NonArtificialPR = FirstProfitable;
-        // TODO: Extract IM type
 
         let basis_indices = self.pivot_element_indices();
         // Sorting of identity matrix columns
-        let inverse_maintainer = Carry::from_basis_pivots(&basis_indices, self);
+        let inverse_maintainer = IM::from_basis_pivots(&basis_indices, self);
 
         let basis_indices: Vec<usize> = basis_indices.into_iter().map(|(_row, column)| column).collect();
         let basis_columns = basis_indices.iter().copied().collect();
