@@ -10,7 +10,6 @@ use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::network::representation::ArcIncidenceMatrix;
 use crate::data::number_types::traits::{Field, FieldRef};
 use crate::data::number_types::rational::RationalBig;
-use num::Zero;
 
 /// Maximum flow problem.
 ///

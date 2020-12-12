@@ -64,11 +64,6 @@ pub struct MatrixData<'a, F> {
     non_slack_variable_index_to_bound_index: Vec<Option<usize>>,
     /// (bound index -> non-slack variable)
     bound_index_to_non_slack_variable_index: Vec<usize>,
-
-    /// Constants to refer to when retuning SparseVector<&F> types.
-    ONE: F,
-    MINUS_ONE: F,
-    ZERO: F,
 }
 
 /// Variable for a standard form linear program.
@@ -139,10 +134,6 @@ where
             variables,
             non_slack_variable_index_to_bound_index,
             bound_index_to_non_slack_variable_index,
-
-            ONE: F::one(),
-            MINUS_ONE: -F::one(),
-            ZERO: F::zero(),
         }
     }
 
