@@ -73,9 +73,6 @@ pub trait Vector<F>: PartialEq + Display + Debug {
 pub struct Dense<F> {
     #[allow(missing_docs)]
     pub data: Vec<F>,
-    /// Length of the vector being represented. Equal to the length of the inner data.
-    /// TODO: Consider removing this field.
-    len: usize,
 }
 
 impl<F> Dense<F> {
@@ -95,7 +92,7 @@ impl<F> Dense<F> {
     {
         debug_assert_ne!(len, 0);
 
-        Self { data: vec![value; len], len, }
+        Self { data: vec![value; len], }
     }
 
     /// Append multiple values to this vector.
@@ -104,24 +101,23 @@ impl<F> Dense<F> {
     ///
     /// * `new_values`: An ordered collections of values to append.
     pub fn extend_with_values(&mut self, new_values: Vec<F>) {
-        self.len += new_values.len();
         self.data.extend(new_values);
     }
 }
 
-impl<F> Index<usize> for Dense<F> {
+impl<F: PartialEq + Display + Debug> Index<usize> for Dense<F> {
     type Output = F;
 
     fn index(&self, index: usize) -> &Self::Output {
-        debug_assert!(index < self.len);
+        debug_assert!(index < self.len());
 
         &self.data[index]
     }
 }
 
-impl<F> IndexMut<usize> for Dense<F> {
+impl<F: PartialEq + Display + Debug> IndexMut<usize> for Dense<F> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        debug_assert!(index < self.len);
+        debug_assert!(index < self.len());
 
         &mut self.data[index]
     }
@@ -134,7 +130,7 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     fn new(data: Vec<Self::Inner>, len: usize) -> Self {
         debug_assert_eq!(data.len(), len);
 
-        Self { data, len, }
+        Self { data, }
     }
 
     fn sparse_inner_product<'a, G: 'a, V: Iterator<Item=&'a SparseTuple<G>>>(&self, column: V) -> F
@@ -152,18 +148,17 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     /// * `value`: The value to append.
     fn push_value(&mut self, value: F) {
         self.data.push(value);
-        self.len += 1;
     }
 
     /// Set the value at index `i` to `value`.
     fn set(&mut self, i: usize, value: F) {
-        debug_assert!(i < self.len);
+        debug_assert!(i < self.len());
 
         self.data[i] = value;
     }
 
     fn get(&self, i: usize) -> Option<&F> {
-        debug_assert!(i < self.len);
+        debug_assert!(i < self.len());
 
         Some(&self.data[i])
     }
@@ -174,14 +169,13 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     ///
     /// * `indices`: A set of indices to remove from the vector, assumed sorted.
     fn remove_indices(&mut self, indices: &[usize]) {
-        debug_assert!(indices.len() <= self.len);
+        debug_assert!(indices.len() <= self.len());
         debug_assert!(indices.is_sorted());
         // All values are unique
         debug_assert!(indices.iter().collect::<HashSet<_>>().len() == indices.len());
-        debug_assert!(indices.iter().all(|&i| i < self.len));
+        debug_assert!(indices.iter().all(|&i| i < self.len()));
 
         remove_indices(&mut self.data, indices);
-        self.len -= indices.len();
     }
 
     /// Iterate over the values of this vector.
@@ -191,12 +185,12 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
 
     /// The length of this vector.
     fn len(&self) -> usize {
-        self.len
+        self.data.len()
     }
 
     /// Whether this vector is empty.
     fn is_empty(&self) -> bool {
-        self.len == 0
+        self.len() == 0
     }
 
     /// The size of this vector in memory.
@@ -217,10 +211,9 @@ impl<F: Display> Display for Dense<F> {
 /// A sparse vector using a `Vec<>` with (row, value) combinations as back-end. Indices start at
 /// `0`.
 ///
-/// TODO: Consider making this backed by a `HashMap`.
+/// TODO(ENHANCEMENT): Consider making this backed by a `HashMap`.
 #[allow(non_snake_case)]
 #[derive(Eq, PartialEq, Clone, Debug)]
-// TODO: Remove these trait bounds to simplify the codebase.
 pub struct Sparse<F, C> {
     data: SparseTupleVec<F>,
     len: usize,
@@ -612,7 +605,6 @@ pub mod test {
                 data: data.into_iter()
                     .map(|v| F::from_f64(v.to_f64().unwrap()).unwrap())
                     .collect(),
-                len: size,
             }
         }
     }

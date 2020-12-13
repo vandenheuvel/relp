@@ -44,7 +44,7 @@ where
     /// 
     /// # Errors
     /// 
-    /// TODO: When can errors occur?
+    /// TODO(DOCUMENTATION): When can errors occur?
     fn try_into(self) -> Result<GeneralForm<FO>, Self::Error> {
         let (variable_info, variable_values, variable_names) = compute_variable_info(
             self.columns,
@@ -140,7 +140,7 @@ fn compute_variable_info<FI, FO: From<FI> + Zero + One + Ord + Clone>(
 /// # Errors
 ///
 /// If there is a trivial infeasibility (a variable has no feasible values).
-/// TODO: Consider changing this into an "this LP is infeasible" return type
+/// TODO(CORRECTNESS): Consider changing this into an "this LP is infeasible" return type
 fn process_bounds<FI, FO: From<FI> + Zero + One + Ord + Clone>(
     variable_info: &mut Vec<ShiftedVariable<FO>>,
     bounds: Vec<Bound<FI>>,
@@ -197,7 +197,7 @@ fn process_bounds<FI, FO: From<FI> + Zero + One + Ord + Clone>(
 /// # Errors
 ///
 /// Inconsistency error if this variable is no longer be feasible after adding the bound.
-/// TODO: Consider changing this into an "this LP is infeasible" return type
+/// TODO(CORRECTNESS): Consider changing this into an "this LP is infeasible" return type
 fn process_bound<FI, FO: From<FI> + Ord + Zero + One + Clone>(
     bound_type: BoundType<FI>,
     variable: &mut ShiftedVariable<FO>,
@@ -324,8 +324,7 @@ fn compute_constraint_info<FI: Sub<Output=FI> + Abs + Ord + Zero + Display + Clo
         .flat_map(|range| range.values.into_iter())
         .collect::<Vec<_>>();
     // We process them by row.
-    // TODO: Order doesn't matter, use unstable sort?
-    range_rows.sort_by_key(|&(i, _)| i);
+    range_rows.sort_unstable_by_key(|&(i, _)| i);
     let unduplicated_length = range_rows.len();
     range_rows.dedup_by_key(|&mut (i, _)| i);
     if range_rows.len() < unduplicated_length {
@@ -409,7 +408,7 @@ fn compute_constraint_types<F>(
     ranges: &[SparseTuple<F>],
 ) -> Vec<ConstraintType> {
     debug_assert!(ranges.is_sorted_by_key(|&(i, _)| i));
-    // TODO: How about uniqueness?
+    // TODO(CORRECTNESS): How about uniqueness?
     debug_assert!(ranges.iter().all(|&(i, _)| i < rows.len()));
 
     let mut constraint_types = Vec::with_capacity(rows.len() + ranges.len());

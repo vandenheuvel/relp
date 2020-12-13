@@ -24,8 +24,8 @@ use crate::data::number_types::traits::{Field, FieldRef};
 ///
 /// Created once from a `GeneralForm`. Should allow for reasonably quick data access.
 ///
-/// TODO: Is there a faster constraint storage backend possible?
-/// TODO: Should this data structure hold less references?
+/// TODO(ENHANCEMENT): Is there a faster constraint storage backend possible?
+/// TODO(ENHANCEMENT): Should this data structure hold less references?
 ///
 /// The indexing for the variables and constraints is as follows:
 ///
@@ -385,9 +385,10 @@ where
 #[allow(clippy::type_repetition_in_bounds)]
 impl<F> ColumnTrait for Column<F>
 where
-    // TODO: Once GATs are more developed, it could be possible to replace this bound with a where
-    //  clause on the method. Then, the 'static bound doesn't propagate through the entire codebase.
-    //  Once this is done, remove the `clippy::type_repetition_in_bounds` annotation.
+    // TODO(ARCHITECTURE): Once GATs are more developed, it could be possible to replace this bound
+    //  with a where clause on the method. Then, the 'static bound doesn't propagate through the
+    //  entire codebase. Once this is done, remove the `clippy::type_repetition_in_bounds`
+    //  annotation.
     F: 'static,
     F: Field,
 {

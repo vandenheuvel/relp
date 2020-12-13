@@ -154,10 +154,6 @@ pub trait Column {
     /// Type of struct to iterate over this column.
     ///
     /// It should be somewhat cheaply cloneable and as such not be too large.
-    ///
-    /// TODO: We use a Generic Associated Type (GAT) here, and that these are (currently) part
-    /// of an unfinished feature. Keep an eye on <https://github.com/rust-lang/rust/issues/44265>
-    /// for stabilization and possible bugs.
     type Iter<'a>: Iterator<Item = &'a SparseTuple<Self::F>> + Clone;
 
     /// Derive the iterator object.

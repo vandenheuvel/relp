@@ -3,9 +3,6 @@
 //! Reading of `.mps` files, or files of the Mathematical Programming System format.
 //!
 //! See <http://lpsolve.sourceforge.net/5.5/mps-format.htm> for a specification.
-//!
-//! TODO:
-//!     * Support all `BoundType` variants
 use std::fmt::{Display, Formatter};
 use std::fmt;
 

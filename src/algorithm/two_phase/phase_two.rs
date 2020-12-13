@@ -11,7 +11,7 @@ use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 /// - There should be a valid basis (not necessarily optimal <=> dual feasible <=> c >= 0)
 /// - All constraint values need to be positive (primary feasibility)
 ///
-/// TODO: Write debug tests for these requirements
+/// TODO(CORRECTNESS): Write debug tests for these requirements
 ///
 /// # Return value
 ///

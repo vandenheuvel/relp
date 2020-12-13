@@ -18,6 +18,8 @@ use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector, Sparse, Vector};
 use std::cmp::Ordering;
 
+/// The carry matrix represents a basis inverse.
+///
 /// The carry matrix looks like:
 ///
 ///   obj  ||     -pi
@@ -28,12 +30,11 @@ use std::cmp::Ordering;
 ///    |   ||     B^-1
 ///    |   ||
 ///
-/// The `b` (and `minus_pi`) in this struct change continuously; they don't correspond to the `b`
-/// (and `minus_pi`) of the original problem.
+/// The dimensions of the matrix are (m + 1) * (m + 1), where m is the number of rows in the
+/// problem. Every basis change, this basis inverse matrix changes. As such, the `b` (and
+/// `minus_pi`) in this struct don't correspond to the `b` (and `minus_pi`) of the original problem.
 ///
-/// Used in simplex method, inside the loop, in the methods.
-///
-/// TODO: Write better docstring
+/// Used in simplex method, inside the loop, in the methods. Performance critical.
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct Carry<F> {
     /// Negative of the objective function value.
@@ -308,18 +309,19 @@ where
         }
     }
 
-    #[allow(unused_variables)]
     fn from_basis(basis: &[usize], provider: &impl MatrixProvider) -> Self {
-        // TODO: Implement matrix inversion
+        let _columns = basis.iter().map(|&j| provider.column(j)).collect::<Vec<_>>();
+
+        // TODO(ENHANCEMENT): Implement matrix inversion
         unimplemented!()
     }
 
-    #[allow(unused_variables)]
     fn from_basis_pivots(
         basis_columns: &[(usize, usize)],
         provider: &impl MatrixProvider,
     ) -> Self {
-        // TODO: Implement matrix inversion
+        let _columns = basis_columns.iter().map(|&(_, j)| provider.column(j)).collect::<Vec<_>>();
+        // TODO(ENHANCEMENT): Implement matrix inversion
         unimplemented!()
     }
 
@@ -350,13 +352,13 @@ where
         )
     }
 
-    fn from_artificial_remove_rows<'a, MP: Filtered>(
+    fn from_artificial_remove_rows<'provider, MP: Filtered>(
         artificial: Self,
-        rows_removed: &'a MP,
+        rows_removed: &'provider MP,
         basis_indices: &[usize],
     ) -> Self
     where
-        Self::F: ColumnOps<<<MP as MatrixProvider>::Column as Column>::F> + CostOps<MP::Cost<'a>>,
+        Self::F: ColumnOps<<<MP as MatrixProvider>::Column as Column>::F> + CostOps<MP::Cost<'provider>>,
     {
         debug_assert_eq!(basis_indices.len(), rows_removed.nr_rows());
 
@@ -433,7 +435,7 @@ where
     }
 
     fn b(&self) -> Dense<Self::F> {
-        // TODO: Rewrite this method, perhaps also in trait
+        // TODO(ARCHITECTURE): Avoid this clone, perhaps also alter trait
         self.b.clone()
     }
 

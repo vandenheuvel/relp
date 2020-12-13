@@ -28,7 +28,6 @@ pub(super) struct Index<'a, F: Field> {
     pub counters: Counters<'a, F>,
 
     /// We maintain the computed activity bounds.
-    /// TODO(PRECISION): Include counter for recomputation (numerical errors accumulate)
     activity_bounds: Vec<(Option<F>, Option<F>)>,
 
     /// Column major representation of the constraint matrix, borrowed from problem being presolved.
@@ -51,7 +50,8 @@ pub(super) struct Queues {
     /// Constraints to check for activity bound tightening.
     ///
     /// The relevant activity counter (`.0` for `Lower`, `.1` for `Upper`) should be either 0 or 1.
-    /// TODO: Consider tracking which indices are still missing to avoid a scan when count is 1.
+    /// TODO(ENHANCEMENT): Consider tracking which indices are still missing to avoid a scan when
+    ///  count is 1.
     activity: HashSet<(usize, BoundDirection)>,
     /// Variables that are fixed need substitution.
     /// All elements have a single feasible value.
@@ -630,8 +630,8 @@ where
     /// The order of the rules is an estimate of the ratio between how likely a rule yields a useful
     /// result, and how expensive it is to apply the rule.
     ///
-    /// TODO: What is the best order to apply the rules in?
-    /// TODO: Which element should be removed from the queue first?
+    /// TODO(ENHANCEMENT): What is the best order to apply the rules in?
+    /// TODO(ENHANCEMENT): Which element should be removed from the queue first?
     ///
     /// # Arguments
     ///
@@ -812,7 +812,7 @@ where
         // Only coefficient in the problem
         let (constraint, coefficient) = self.counters.iter_active_column(variable_index)
             .next().unwrap();
-        let coefficient = coefficient.clone(); // TODO: Try to avoid this clone
+        let coefficient = coefficient.clone(); // TODO(PERFORMANCE): Try to avoid this clone
 
         let bounds = self.updates.variable_bounds(variable_index);
         let effective_bounds = match Self::direction_from_sign(&coefficient) {
@@ -823,7 +823,7 @@ where
         let (lower_is_none, upper_is_none) = (effective_bounds.0.is_none(), effective_bounds.1.is_none());
 
         if let Some(new_situation) = change {
-            // TODO: Try to avoid this clone
+            // TODO(ARCHITECTURE): Try to avoid this clone
             let new_situation = new_situation.map(|(direction, value)| (direction, value.clone()));
 
             // Variable is a function of others, save and eliminate
@@ -993,7 +993,7 @@ where
             0,
         );
 
-        // TODO: Try to avoid this clone
+        // TODO(ARCHITECTURE): Try to avoid this clone
         let bound = self.compute_activity_bound_if_needed(constraint, direction).clone();
 
         if self.is_infeasible_due_to_activity_bounds(constraint, &bound, direction) {
@@ -1013,7 +1013,7 @@ where
             | (BoundDirection::Upper, ConstraintType::Greater)
         ) {
             let targets = self.counters.iter_active_row(constraint)
-                .map(|(i, v)| (i, v.clone())) // TODO: Avoid this clone
+                .map(|(i, v)| (i, v.clone())) // TODO(ARCHITECTURE): Avoid this clone
                 .collect::<Vec<_>>();
             for (variable, coefficient) in targets {
                 let (direction, change) = self.updates.tighten_variable_bound(
@@ -1245,7 +1245,6 @@ where
                 BoundDirection::Lower => &mut self.activity_bounds[row].0,
                 BoundDirection::Upper => &mut self.activity_bounds[row].1,
             } {
-                // TODO(NUMERICS): See Achterberg (2007), Algorithm 7.1
                 *bound += &by_how_much * coefficient;
                 self.queues.activity.insert((row, bound_to_edit));
             }
@@ -1264,7 +1263,8 @@ where
         direction: BoundDirection,
     ) {
         let constraints_to_check = self.counters.iter_active_column(variable)
-            .map(|(i, v)| (i, v.clone())).collect::<Vec<_>>(); // TODO: Avoid This clone
+            // TODO(ARCHITECTURE): Avoid This clone
+            .map(|(i, v)| (i, v.clone())).collect::<Vec<_>>();
         for (constraint, coefficient) in constraints_to_check {
             let activity_direction = !direction.bitxor(Self::direction_from_sign(&coefficient));
             let counter = match activity_direction {

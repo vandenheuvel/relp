@@ -24,7 +24,7 @@ impl<MP> SolveRelaxation for MP
 where
     MP: MatrixProvider<Column: IdentityColumn + IntoFilteredColumn>,
 {
-    // TODO: Specialize for MatrixProviders that can be filtered directly.
+    // TODO(ENHANCEMENT): Specialize for MatrixProviders that can be filtered directly.
     default fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
         IM: InverseMaintenance<F:
@@ -77,10 +77,8 @@ where
 ///  be provided elsewhere, or the module be renamed?
 impl<MP: FullInitialBasis> SolveRelaxation for MP
 where
-    // TODO: The MP::Column trait bound might not be needed if no rows need to be removed for the
-    //  initial basis.
-    // TODO: The <MP as MatrixProvider>::Column: IdentityColumn bound is needed because of
-    //  limitations of the specialization feature.
+    // TODO(ARCHITECTURE): The <MP as MatrixProvider>::Column: IdentityColumn bound is needed
+    //  because of limitations of the specialization feature; overlap is not (yet) allowed.
     MP: MatrixProvider<Column: IdentityColumn + IntoFilteredColumn>,
 {
     fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>

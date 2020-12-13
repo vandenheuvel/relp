@@ -406,7 +406,6 @@ where
     /// Note that this method is somewhat expensive because it removes columns from a row-major
     /// ordered matrix.
     fn remove_rows_and_columns(&mut self, mut constraints: Vec<usize>, mut variables: Vec<usize>) {
-        // TODO(OPTIMIZATION): Consider unstable sorting
         constraints.sort_unstable();
         variables.sort_unstable();
 

@@ -143,7 +143,7 @@ trait ColumnRetriever<'a> {
 
     /// Try to read two more columns.
     ///
-    /// TODO: Let this fail when there is e.g. only one value?
+    /// TODO(CORRECTNESS): Let this fail when there is e.g. only one value?
     fn five_and_six(line_after_first_four: Self::RestOfLine) -> Option<[&'a str; 2]>;
 
     fn one_through_three(line: &'a str) -> ParseResult<([&str; 3], Self::RestOfLine)>;
@@ -383,7 +383,7 @@ fn parse_column_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item 
                         &mut column_to_be_saved, &mut column_collector, &mut collector, active_variable_type,
                     )?;
 
-                    // TODO: Err when the type doesn't actually change?
+                    // TODO(CORRECTNESS): Err when the type doesn't actually change?
                     let previous_variable_type = active_variable_type;
                     active_variable_type = match marker_text {
                         START_OF_INTEGER => VariableType::Integer,
@@ -626,8 +626,8 @@ fn save_to_group_collector<T: ListedInGroup, const CAN_HAVE_DUPLICATES: bool>(
     if let Some(group_name) = group_to_be_saved.take() {
         let mut values = take(group_collector);
         values.sort_unstable_by_key(|&(i, _)| i);
-        // TODO: The level of defensiveness should be more consistent: why check for duplicates
-        //  here?
+        // TODO(CORRECTNESS): The level of defensiveness should be more consistent: why check for
+        //  duplicates here?
         if !CAN_HAVE_DUPLICATES {
             if let Some(&[(row_id, _), _]) = values.windows(2)
                 .find(|w| w[0].0 == w[1].0) {

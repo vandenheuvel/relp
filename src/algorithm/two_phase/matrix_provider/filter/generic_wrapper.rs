@@ -47,7 +47,7 @@ pub trait IntoFilteredColumn: Column {
 /// Used for deleting duplicate constraints after finding primal feasibility.
 ///
 /// Only constraint rows should be deleted, variable bounds should remain intact.
-/// TODO: Check the above property.
+/// TODO(DOCUMENTATION): Check the above property.
 #[derive(PartialEq, Debug)]
 pub struct RemoveRows<'a, MP> {
     provider: &'a MP,

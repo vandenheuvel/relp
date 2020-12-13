@@ -107,7 +107,7 @@ pub trait InverseMaintenance: Display {
     /// * `artificial`: Indices of rows where an artificial variable is needed.
     /// * `provider`: Original problem representation.
     /// * `basis`: (row index, column index) tuples of given basis variables.
-    // TODO: Specialize this method with the "remove_rows" version below.
+    // TODO(ARCHITECTURE): Specialize this method with the "remove_rows" version below.
     fn from_artificial<'provider, MP: MatrixProvider>(
         artificial: Self,
         provider: &'provider MP,
@@ -194,8 +194,6 @@ pub trait InverseMaintenance: Display {
     ;
 
     /// Clone the latest constraint vector.
-    ///
-    /// TODO: Can this cloning be avoided?
     fn b(&self) -> DenseVector<Self::F>;
 
     /// Get the objective function value for the current basis.
