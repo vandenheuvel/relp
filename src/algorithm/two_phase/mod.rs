@@ -7,9 +7,9 @@ use crate::algorithm::{OptimizationResult, SolveRelaxation};
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
 use crate::algorithm::two_phase::phase_one::{FeasibilityComputeTrait, FullInitialBasis, Rank, RankedFeasibilityResult};
-use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
+use crate::algorithm::two_phase::strategy::pivot_rule::SteepestDescent;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOpsHR, InverseMaintenance};
-use crate::algorithm::two_phase::tableau::kind::artificial::{IdentityColumn, Cost as ArtificialCost};
+use crate::algorithm::two_phase::tableau::kind::artificial::{Cost as ArtificialCost, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -37,7 +37,7 @@ where
         // Default choice
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
-        type NonArtificialPR = FirstProfitable;
+        type NonArtificialPR = SteepestDescent;
 
         match self.compute_bfs_giving_im::<IM>() {
             RankedFeasibilityResult::Feasible {
@@ -91,7 +91,7 @@ where
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
-        type NonArtificialPR = FirstProfitable;
+        type NonArtificialPR = SteepestDescent;
 
         let basis_indices = self.pivot_element_indices();
         // Sorting of identity matrix columns
@@ -110,6 +110,7 @@ where
 mod test {
     use num::FromPrimitive;
 
+    use crate::{R64, RB};
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
     use crate::algorithm::two_phase::{phase_one, phase_two, Rank, RankedFeasibilityResult};
     use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
@@ -122,7 +123,6 @@ mod test {
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::VariableType;
     use crate::data::number_types::rational::{Rational64, RationalBig};
-    use crate::{R64, RB};
     use crate::tests::problem_2::{create_matrix_data_data, matrix_data_form, tableau_form};
 
     #[test]

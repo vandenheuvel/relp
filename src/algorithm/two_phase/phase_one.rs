@@ -3,14 +3,13 @@ use std::collections::HashSet;
 use num::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
-use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
+use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitableWithMemory, PivotRule};
 use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOpsHR, InverseMaintenance};
 use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn};
+use crate::algorithm::two_phase::tableau::kind::artificial::Cost;
 use crate::algorithm::two_phase::tableau::kind::artificial::fully::Fully as FullyArtificial;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially as PartiallyArtificial;
-
-use crate::algorithm::two_phase::tableau::kind::artificial::Cost;
 
 /// Computing a feasible solution: the first phase of the two phase method.
 ///
@@ -40,7 +39,7 @@ where
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
-        type PivotRule = FirstProfitable;
+        type PivotRule = FirstProfitableWithMemory;
 
         let artificial_tableau = Tableau::<_, FullyArtificial<_>>::new(self);
         primal::<_, _, MP, PivotRule>(artificial_tableau)
@@ -77,7 +76,7 @@ where
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
-        type PivotRule = FirstProfitable;
+        type PivotRule = FirstProfitableWithMemory;
 
         let artificial_tableau = Tableau::<_, PartiallyArtificial<_>>::new(self);
         primal::<_, _, MP, PivotRule>(artificial_tableau)
