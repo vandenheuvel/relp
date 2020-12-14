@@ -15,14 +15,6 @@ fn test_25FV47() {
 }
 
 #[test]
-#[ignore = "Too computationally intensive"]
-fn test_80BAU3B() {
-    let result = solve("80BAU3B");
-    let expected = 9.872241924e+05; // Gurobi
-    assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-5)); // Gurobi
-}
-
-#[test]
 fn test_ADLITTLE() {
     let result = solve("ADLITTLE");
     let expected = 2.254949632e+05; // Gurobi
@@ -127,4 +119,51 @@ fn test_SHARE1B() {
     let result = solve("SHARE1B");
     let expected = -0.7658931857918568112797274346007e5; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
+}
+
+#[test]
+fn test_BOEING2() {
+    let result = solve("BOEING2");
+    let expected = -0.31501872801520287870462195913263e3; // Koch - The final Netlib-LP results
+    assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
+}
+
+#[test]
+#[ignore = "Incorrectly determined infeasible."]
+fn test_BORE3D() {
+    let result = solve("BORE3D");
+    let expected = 0.13730803942084927215581987251301e4; // Koch - The final Netlib-LP results
+    assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-2));
+}
+
+#[test]
+#[ignore = "Redundant rows are not correctly removed."]
+fn test_SCORPION() {
+    let result = solve("SCORPION");
+    let expected = 0.18781248227381066296479411763586e4; // Koch - The final Netlib-LP results
+    assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-2));
+}
+
+#[test]
+#[ignore = "Incorrectly determined unbounded."]
+fn test_GREENBEA() {
+    let result = solve("GREENBEA");
+    let expected = -0.72555248129845987457557870574845e8; // Koch - The final Netlib-LP results
+    assert!((result.objective_value - RB!(expected)).abs() < RB!(1e0));
+}
+
+#[test]
+#[ignore = "Incorrectly determined unbounded."]
+fn test_GREENBEB() {
+    let result = solve("GREENBEB");
+    let expected = -0.43022602612065867539213672544432e7; // Koch - The final Netlib-LP results
+    assert!((result.objective_value - RB!(expected)).abs() < RB!(1e1));
+}
+
+#[test]
+#[ignore = "Enters unreachable code."]
+fn test_80BAU3B() {
+    let result = solve("80BAU3B");
+    let expected = 9.872241924e+05; // Gurobi
+    assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-5)); // Gurobi
 }
