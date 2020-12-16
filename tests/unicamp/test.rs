@@ -1,8 +1,8 @@
 use num::FromPrimitive;
 
-use rust_lp::{RB};
 use rust_lp::data::linear_program::solution::Solution;
 use rust_lp::data::number_types::rational::{Rational64, RationalBig};
+use rust_lp::RB;
 
 use crate::unicamp::solve;
 
@@ -79,9 +79,9 @@ fn model_data_3_4() {
     assert_eq!(result, Solution::new(  // GLPK
         RB!(2250),
         vec![
-            ("RAW1".to_string(), RB!(0)),
+            ("RAW1".to_string(), RB!(5)),
             ("RAW2".to_string(), RB!(3)),
-            ("RAW3".to_string(), RB!(9)),
+            ("RAW3".to_string(), RB!(4)),
             ("PRODUCT".to_string(), RB!(500)),
         ],
     ));
@@ -93,9 +93,9 @@ fn model_data_4() {
     assert_eq!(result, Solution::new(  // GLPK
         RB!(7, 1),
         vec![
-            ("COL01".to_string(), RB!(1, 1)),
-            ("COL02".to_string(), RB!(2, 1)),
-            ("COL03".to_string(), RB!(2, 1)),
+            ("COL01".to_string(), RB!(1)),
+            ("COL02".to_string(), RB!(2)),
+            ("COL03".to_string(), RB!(2)),
         ],
     ));
 }

@@ -241,8 +241,8 @@ where
         self.provider.cost_value(j)
     }
 
-    fn constraint_values(&self) -> DenseVector<<Self::Column as Column>::F> {
-        let mut all = self.provider.constraint_values();
+    fn right_hand_side(&self) -> DenseVector<<Self::Column as Column>::F> {
+        let mut all = self.provider.right_hand_side();
         all.remove_indices(&self.rows_to_skip);
         all
     }
@@ -261,10 +261,10 @@ where
     }
 
     /// This implementation assumes that only constraint rows are removed from the `MatrixProvider`.
-    fn nr_bounds(&self) -> usize {
+    fn nr_variable_bounds(&self) -> usize {
         debug_assert!(self.rows_to_skip.iter().all(|&i| i < self.provider.nr_constraints()));
 
-        self.provider.nr_bounds()
+        self.provider.nr_variable_bounds()
     }
 
     fn nr_rows(&self) -> usize {

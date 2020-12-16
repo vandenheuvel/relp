@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, InverseMaintenance};
-use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn, Cost};
+use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Cost, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -184,7 +184,7 @@ where
         let inverse_maintainer = IM::create_for_partially_artificial(
             &artificial,
             &real,
-            provider.constraint_values(),
+            provider.right_hand_side(),
         );
 
         Tableau {

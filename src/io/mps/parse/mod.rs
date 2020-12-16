@@ -7,7 +7,7 @@ use std::mem::take;
 use std::str::FromStr;
 
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
-use crate::data::linear_program::elements::{ConstraintType, VariableType, Objective};
+use crate::data::linear_program::elements::{ConstraintRelation, Objective, VariableType};
 use crate::io::error::{FileLocation, Import as ImportError, Inconsistency, Parse as ParseError, ParseResult};
 use crate::io::mps::{Bound, BoundType, Column, MPS, Range, Rhs, Row};
 use crate::io::mps::number::parse::Parse;
@@ -816,9 +816,9 @@ impl FromStr for RowType {
     fn from_str(word: &str) -> Result<RowType, Self::Err> {
         match &word[0..1] {
             "N" => Ok(RowType::Cost),
-            "L" => Ok(RowType::Constraint(ConstraintType::Less)),
-            "E" => Ok(RowType::Constraint(ConstraintType::Equal)),
-            "G" => Ok(RowType::Constraint(ConstraintType::Greater)),
+            "L" => Ok(RowType::Constraint(ConstraintRelation::Less)),
+            "E" => Ok(RowType::Constraint(ConstraintRelation::Equal)),
+            "G" => Ok(RowType::Constraint(ConstraintRelation::Greater)),
             _ => Err(ParseError::new(format!("Row type \"{}\" unknown.", word))),
         }
     }
@@ -826,7 +826,7 @@ impl FromStr for RowType {
 
 #[cfg(test)]
 mod test {
-    use crate::data::linear_program::elements::ConstraintType;
+    use crate::data::linear_program::elements::ConstraintRelation;
     use crate::io::mps::parse::{check_row_section_consistency, ColumnRetriever, into_lines, parse_program_name, parse_row_section};
     use crate::io::mps::parse::fixed::Fixed;
     use crate::io::mps::parse::free::Free;
@@ -896,15 +896,15 @@ ENDATA";
         assert_eq!(result.ok(), Some((Some("COST".to_string()), vec![
             Row {
                 name: "LIM1".to_string(),
-                constraint_type: ConstraintType::Less,
+                constraint_type: ConstraintRelation::Less,
             },
             Row {
                 name: "LIM2".to_string(),
-                constraint_type: ConstraintType::Greater,
+                constraint_type: ConstraintRelation::Greater,
             },
             Row {
                 name: "MYEQN".to_string(),
-                constraint_type: ConstraintType::Equal,
+                constraint_type: ConstraintRelation::Equal,
             },
         ])));
         assert!(lines.next().unwrap().1.starts_with("    XONE"));
@@ -924,31 +924,31 @@ ENDATA";
         assert!(check_row_section_consistency(Some("a".to_string()), vec![
             Row {
                 name: "a".to_string(),
-                constraint_type: ConstraintType::Equal
+                constraint_type: ConstraintRelation::Equal
             },
             Row {
                 name: "a".to_string(),
-                constraint_type: ConstraintType::Equal
+                constraint_type: ConstraintRelation::Equal
             },
         ]).is_err());
         assert!(check_row_section_consistency(Some("a".to_string()), vec![
             Row {
                 name: "a".to_string(),
-                constraint_type: ConstraintType::Equal
+                constraint_type: ConstraintRelation::Equal
             },
             Row {
                 name: "b".to_string(),
-                constraint_type: ConstraintType::Equal
+                constraint_type: ConstraintRelation::Equal
             },
         ]).is_err());
         assert!(check_row_section_consistency(Some("a".to_string()), vec![
             Row {
                 name: "b".to_string(),
-                constraint_type: ConstraintType::Equal
+                constraint_type: ConstraintRelation::Equal
             },
             Row {
                 name: "c".to_string(),
-                constraint_type: ConstraintType::Equal
+                constraint_type: ConstraintRelation::Equal
             },
         ]).is_ok());
     }

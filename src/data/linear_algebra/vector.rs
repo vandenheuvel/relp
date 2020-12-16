@@ -212,7 +212,6 @@ impl<F: Display> Display for Dense<F> {
 /// `0`.
 ///
 /// TODO(ENHANCEMENT): Consider making this backed by a `HashMap`.
-#[allow(non_snake_case)]
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct Sparse<F, C> {
     data: SparseTupleVec<F>,
@@ -600,7 +599,6 @@ pub mod test {
     impl<F: Field + FromPrimitive> TestVector<F> for Dense<F> {
         /// Create a `DenseVector` from the provided data.
         fn from_test_data<T: ToPrimitive + Zero>(data: Vec<T>) -> Self {
-            let size = data.len();
             Self {
                 data: data.into_iter()
                     .map(|v| F::from_f64(v.to_f64().unwrap()).unwrap())

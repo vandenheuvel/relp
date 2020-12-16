@@ -7,11 +7,11 @@ use std::fmt::{Display, Formatter};
 use std::fmt;
 
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
-use crate::data::linear_program::elements::{ConstraintType, Objective};
+use crate::data::linear_program::elements::{ConstraintRelation, Objective};
 use crate::data::linear_program::elements::VariableType;
 use crate::data::number_types::rational::Rational64;
 use crate::io::error::Import;
-use crate::io::mps::parse::{free, fixed};
+use crate::io::mps::parse::{fixed, free};
 
 #[allow(clippy::type_complexity)]
 mod convert;
@@ -163,7 +163,7 @@ enum RowType {
     /// and it's not clear how they should be parsed.
     Cost,
     /// Other rows are constraints.
-    Constraint(ConstraintType),
+    Constraint(ConstraintRelation),
 }
 
 /// The MPS format defines the `BoundType`s described in this enum.
@@ -203,7 +203,7 @@ pub struct Row {
     /// Each row has a name. Is not really used after parsing, but is stored for writing.
     pub name: String,
     /// Direction of the constraint.
-    pub constraint_type: ConstraintType,
+    pub constraint_type: ConstraintRelation,
 }
 
 /// Is either continuous or integer, and has for some rows a coefficient.
@@ -244,7 +244,7 @@ pub struct Rhs<F> {
 /// E        |     +     |    b    | b + |r|
 /// E        |     -     | b - |r| |   b
 #[derive(Debug, PartialEq)]
-pub struct Range<F> {  // Type parameter naming: can take all values, not just be nonzero
+pub struct Range<F> {
     /// Name of the range. Stored only for writing the problem to disk.
     pub name: String,
     /// Sorted constraint indices and their 'r' value.

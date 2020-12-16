@@ -2,7 +2,7 @@
 //!
 //! Hosted [here](https://www.cenapad.unicamp.br/parque/manuais/OSL/oslweb/features/feat24DT.htm).
 use std::convert::TryInto;
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Sub};
 use std::path::{Path, PathBuf};
 
 use num::{One, Zero};
@@ -11,12 +11,13 @@ use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOps, InternalOpsHR};
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use rust_lp::algorithm::two_phase::tableau::kind::artificial::Cost;
 use rust_lp::data::linear_algebra::traits::Element;
+use rust_lp::data::linear_program::elements::LinearProgramType;
 use rust_lp::data::linear_program::solution::Solution;
 use rust_lp::data::number_types::rational::Rational64;
 use rust_lp::data::number_types::traits::{OrderedField, OrderedFieldRef};
 use rust_lp::io::import;
-use rust_lp::algorithm::two_phase::tableau::kind::artificial::Cost;
 
 /// # Generation and execution
 #[allow(missing_docs)]
@@ -48,15 +49,28 @@ fn solve<
 >(file_name: &str) -> Solution<IMT>
 where
     for<'r> &'r GFT: OrderedFieldRef<GFT>,
-    for<'r> &'r IMT: Add<&'r GFT, Output=IMT>,
+    for<'r> &'r IMT: Add<&'r GFT, Output=IMT> + Sub<&'r IMT, Output=IMT>,
     for<'r> IMT: CostOps<Option<&'r GFT>>,
     for<'r> IMT: CostOps<Cost>,
 {
     let path = get_test_file_path(file_name);
     let mps = import::<GFT>(&path).unwrap();
 
-    let mut general = mps.try_into().ok().unwrap();
-    let data = general.derive_matrix_data().ok().unwrap();
+    let mut general = mps.try_into().unwrap();
+    let data = match general.derive_matrix_data() {
+        Ok(data) => data,
+        Err(LinearProgramType::FiniteOptimum(Solution {
+                                                 objective_value, solution_values,
+                                             })) => {
+            return Solution {
+                objective_value: objective_value.into(),
+                solution_values: solution_values.into_iter()
+                    .map(|(name, value)| (name, value.into()))
+                    .collect(),
+            }
+        },
+        _ => panic!(),
+    };
     let result = data.solve_relaxation::<Carry<IMT>>();
 
     match result {

@@ -18,7 +18,7 @@ use crate::data::number_types::traits::Field;
 /// Indices start at `0`.
 /// TODO(OPTIMIZATION): What data structure is best suited to back this struct? How are allocations
 ///  avoided (e.g. flattening) avoided?
-#[allow(non_snake_case, missing_docs)]
+#[allow(missing_docs)]
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct Sparse<F, C, O: Order> {
     pub data: Vec<SparseTupleVec<F>>,
@@ -262,6 +262,8 @@ where
     ///
     /// * `rows_to_change`: Indices of rows to change the sign of.
     pub fn change_row_signs(&mut self, rows_to_change: &HashSet<usize>) {
+        // TODO(ENHANCEMENT): Consider using a row-major constraint representation to skip a lot of
+        //  columns.
         for column in &mut self.data {
             for (i, value) in column {
                 if rows_to_change.contains(i) {

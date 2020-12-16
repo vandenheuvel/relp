@@ -5,16 +5,16 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::convert::TryInto;
-use std::fmt::Display;
-use std::ops::Sub;
+use std::fmt::{Debug, Display};
+use std::ops::{Add, Neg, Sub};
 
 use num::{One, Zero};
 
-use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order as MatrixOrder, Sparse};
+use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Vector};
-use crate::data::linear_program::elements::{ConstraintType, VariableType};
+use crate::data::linear_program::elements::{ConstraintRelation, RangedConstraintRelation, VariableType};
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::Variable as ShiftedVariable;
 use crate::data::number_types::traits::Abs;
@@ -28,7 +28,9 @@ use crate::io::mps::Row;
 impl<FI, FO: From<FI>> TryInto<GeneralForm<FO>> for MPS<FI>
 where
     FI: Sub<Output=FI> + Abs + Ord + Zero + Display + Clone,
-    FO: Zero + One + Ord + Element,
+    FO: Zero + One + Neg<Output=FO> + Ord + Element,
+    for<'r> FO: Add<&'r FO, Output=FO>,
+    for<'r> &'r FO: Neg<Output=FO>,
 {
     type Error = Inconsistency;
 
@@ -46,15 +48,15 @@ where
     /// 
     /// TODO(DOCUMENTATION): When can errors occur?
     fn try_into(self) -> Result<GeneralForm<FO>, Self::Error> {
-        let (variable_info, variable_values, variable_names) = compute_variable_info(
+        let (variable_info, columns, variable_names) = compute_variable_info(
             self.columns,
             self.cost_values,
             self.bounds,
+            self.rows.len(),
         )?;
-        let (columns, constraint_types, b) = compute_constraint_info(
+        let (constraint_types, b) = compute_constraint_info(
             self.rows,
             self.rhss,
-            variable_values,
             self.ranges,
         )?;
 
@@ -77,6 +79,7 @@ where
 /// * `columns`: MPS columns used to get the name index and cost value from.
 /// * `cost_values`: Coefficients in cost function.
 /// * `bounds`: Variable bounds.
+/// * `nr_rows`: Amount of rows, excluding the cost row, read.
 ///
 /// # Return value
 ///
@@ -85,11 +88,12 @@ where
 /// # Errors
 ///
 /// If there is an inconsistency in bound information, such as a trivial infeasibility.
-fn compute_variable_info<FI, FO: From<FI> + Zero + One + Ord + Clone>(
+fn compute_variable_info<FI, FO: From<FI> + Zero + One + Ord + Display + Debug + Clone>(
     columns: Vec<Column<FI>>,
     cost_values: Vec<SparseTuple<FI>>,
     bounds: Vec<Bound<FI>>,
-) -> Result<(Vec<ShiftedVariable<FO>>, Vec<SparseTupleVec<FO>>, Vec<String>), Inconsistency> {
+    nr_rows: usize,
+) -> Result<(Vec<ShiftedVariable<FO>>, Sparse<FO, FO, ColumnMajor>, Vec<String>), Inconsistency> {
     // Reorder the column names.
     debug_assert_eq!(
         columns.iter().map(|variable| variable.name.as_str()).collect::<HashSet<_>>().len(),
@@ -102,14 +106,8 @@ fn compute_variable_info<FI, FO: From<FI> + Zero + One + Ord + Clone>(
     let (mut info, values_names): (Vec<_>, Vec<_>) = columns.into_iter()
         .enumerate()
         .map(|(j, variable)| {
-            let cost = match cost_values.peek() {
-                None => FO::zero(),
-                Some(&(jj, _)) => if jj == j {
-                    cost_values.next().unwrap().1.into()
-                } else {
-                    FO::zero()
-                },
-            };
+            let cost = cost_values.next_if(|&(jj, _)| jj == j)
+                .map_or(FO::zero(), |(_, v)| v.into());
 
             (ShiftedVariable {
                 variable_type: variable.variable_type,
@@ -127,7 +125,9 @@ fn compute_variable_info<FI, FO: From<FI> + Zero + One + Ord + Clone>(
         })
         .unzip();
 
-    Ok((info, values, names))
+    let columns = ColumnMajor::new(values, nr_rows, names.len());
+
+    Ok((info, columns, names))
 }
 
 /// Modify the variable info bounds to contain the bound information.
@@ -307,17 +307,42 @@ fn fill_in_default_lower_bounds<F: Zero>(
 ///
 /// # Arguments
 ///
-/// * `rhss`: Right-hand sides to be converted into a `b`.
-/// * `columns`: Variables containing the constraint coefficients.
 /// * `rows`: Direction of the constraint (name is not used).
-/// * `range`: Flexibility for constraints.
-fn compute_constraint_info<FI: Sub<Output=FI> + Abs + Ord + Zero + Display + Clone, FO: From<FI> + Zero + PartialOrd + Element + Clone>(
+/// * `rhss`: Right-hand sides to be converted into a `b`.
+/// * `ranges`: Ranges read (will be flattened, grouping does not matter).
+// TODO(ARCHITECTURE): Simplify these trait bounds
+fn compute_constraint_info<
+    FI: Sub<Output=FI> + Abs + Ord + Zero + Display + Clone,
+    FO: From<FI> + Zero + Ord + Abs + Element + Clone,
+>(
     rows: Vec<Row>,
     rhss: Vec<Rhs<FI>>,
-    columns: Vec<SparseTupleVec<FO>>,
     ranges: Vec<Range<FI>>,
-) -> Result<(Sparse<FO, FO, ColumnMajor>, Vec<ConstraintType>, DenseVector<FO>), Inconsistency> {
-    let original_nr_rows = rows.len();
+) -> Result<(Vec<RangedConstraintRelation<FO>>, DenseVector<FO>), Inconsistency>
+where
+    for<'r> FO: Add<&'r FO, Output=FO>,
+    for<'r> &'r FO: Neg<Output=FO>,
+{
+    let ranges = compute_ranges(&rhss, ranges, rows.len())?;
+    let mut constraint_types = compute_constraint_types(&rows, ranges);
+    let b = compute_b(rhss, &mut constraint_types, &rows, rows.len())?;
+
+    Ok((constraint_types, b))
+}
+
+/// Flatten the ranges and ensure consistency related to them.
+///
+/// Consistency: e.g. there should be at most one range per row, and if there is one, there should
+/// be only one right hand side (or they should be equal).
+fn compute_ranges<F: PartialEq>(
+    rhss: &[Rhs<F>],
+    ranges: Vec<Range<F>>,
+    nr_rows: usize,
+) -> Result<Vec<(usize, F)>, Inconsistency> {
+    // If there are no ranges, this is not an issue anyway
+    if ranges.is_empty() {
+        return Ok(Vec::with_capacity(0))
+    }
 
     // Flatten, we don't care about the different range names
     let mut range_rows = ranges.into_iter()
@@ -331,65 +356,34 @@ fn compute_constraint_info<FI: Sub<Output=FI> + Abs + Ord + Zero + Display + Clo
         return Err(Inconsistency::new("Only one range per row can be specified."));
     }
 
-    let columns = compute_columns(columns, original_nr_rows, &range_rows);
-    let constraint_types = compute_constraint_types(&rows, &range_rows);
-    let b = compute_b(rhss, &constraint_types, &rows, original_nr_rows, range_rows)?;
-
-    Ok((columns, constraint_types, b))
-}
-
-/// Duplicate values within the columns when necessary according to the ranges.
-///
-/// # Arguments
-///
-/// * `columns`: MPS variables with sparse (row index, value) tuples.
-/// * `original_nr_rows`: Number of rows when discarding the ranges.
-/// * `ranges`: Tuples with (row index, r value) indicating where an extra range constraint should
-/// be created.
-///
-/// # Return value
-///
-/// Column-major sparse matrix of constraint coefficients.
-fn compute_columns<FI, FO: Element + Clone>(
-    columns: Vec<SparseTupleVec<FO>>,
-    original_nr_rows: usize,
-    ranges: &[SparseTuple<FI>],
-) -> Sparse<FO, FO, ColumnMajor> {
-    debug_assert!(ranges.is_sorted_by_key(|&(i, _)| i));
-    debug_assert_eq!(ranges.iter().map(|&(i, _)| i).collect::<HashSet<_>>().len(), ranges.len());
-    debug_assert!(columns.iter().all(|variable| {
-        variable.is_sorted_by_key(|&(i, _)| i)
-    }));
-    debug_assert!(columns.iter().all(|variable| {
-        variable.iter().all(|&(i, _)| i < original_nr_rows)
-    }));
-    debug_assert!(columns.iter().all(|variable| {
-        variable.iter().map(|&(i, _)| i).collect::<HashSet<_>>().len() == variable.len()
-    }));
-    let nr_columns = columns.len();
-
-    let mut new_columns = vec![Vec::new(); columns.len()];
-    for (j, column) in columns.into_iter().enumerate() {
-        let mut extra_done = 0;
-        for (i, value) in column {
-            while extra_done < ranges.len() && ranges[extra_done].0 < i {
-                extra_done += 1;
-            }
-            new_columns[j].push((i + extra_done, value));
-
-            if extra_done < ranges.len() && ranges[extra_done].0 == i {
-                extra_done += 1;
-                let value_copy = new_columns[j].last().unwrap().1.clone();
-                new_columns[j].push((i + extra_done, value_copy));
+    let mut already_seen = vec![false; nr_rows];
+    // It's very unlikely that this code path is necessary
+    let mut duplicates = Vec::with_capacity(0);
+    for rhs in rhss {
+        for &(i, _) in &rhs.values {
+            if already_seen[i] {
+                duplicates.push(i);
+            } else {
+                already_seen[i] = true;
             }
         }
     }
 
-    ColumnMajor::new(
-        new_columns,
-        original_nr_rows + ranges.len(),
-        nr_columns,
-    )
+    // See if any of the duplicate value have a range
+    for duplicate in duplicates {
+        if range_rows.iter().any(|&(i, _)| i == duplicate) {
+            let values = rhss.iter().flat_map(|rhs| rhs.values.iter())
+                .filter_map(|(i, v)| if *i == duplicate { Some(v) } else { None })
+                .collect::<Vec<_>>();
+            if let Some(first) = values.first() {
+                if values.iter().any(|v| v != first) {
+                    return Err(Inconsistency::new("Multiple rhs values for a constraint with a range"));
+                }
+            }
+        }
+    }
+
+    Ok(range_rows)
 }
 
 /// Compute the constraint types by integrating bounds.
@@ -403,41 +397,40 @@ fn compute_columns<FI, FO: Element + Clone>(
 /// # Return value
 ///
 /// Extended constraint types. See the documentation of the `UnstructuredRange` for more.
-fn compute_constraint_types<F>(
+fn compute_constraint_types<FI: Zero + PartialEq, FO: From<FI>>(
     rows: &[Row],
-    ranges: &[SparseTuple<F>],
-) -> Vec<ConstraintType> {
-    debug_assert!(ranges.is_sorted_by_key(|&(i, _)| i));
-    // TODO(CORRECTNESS): How about uniqueness?
+    ranges: Vec<SparseTuple<FI>>,
+) -> Vec<RangedConstraintRelation<FO>> {
+    // Sorted and unique
+    debug_assert!(ranges.windows(2).all(|w| w[0].0 < w[1].0));
     debug_assert!(ranges.iter().all(|&(i, _)| i < rows.len()));
 
-    let mut constraint_types = Vec::with_capacity(rows.len() + ranges.len());
-    let mut extra_done = 0;
-    for (i, constraint) in rows.iter().enumerate() {
-        if extra_done < ranges.len() && ranges[extra_done].0 == i {
-            while extra_done < ranges.len() && ranges[extra_done].0 == i {
-                constraint_types.push(ConstraintType::Greater);
-                constraint_types.push(ConstraintType::Less);
-                extra_done += 1;
+    let mut ranges = ranges.into_iter().peekable();
+    rows.iter().enumerate()
+        .map(|(i, row)| {
+            if let Some((_, r)) = ranges.next_if(|&(ii, _)| ii == i) {
+                if r == FI::zero() {
+                    RangedConstraintRelation::Equal
+                } else {
+                    RangedConstraintRelation::Range(r.into())
+                }
+            } else {
+                row.constraint_type.into()
             }
-        } else {
-            constraint_types.push(constraint.constraint_type);
-        }
-    }
-
-    constraint_types
+        })
+        .collect()
 }
 
 /// Combine all constraint values.
 ///
+/// We mostly just take the tightest bound and process the ranges.
+///
 /// # Arguments
 ///
 /// * `rhss`: Right hand sides (often only one), b's values.
-/// * `constraints`: Constraint directions (relevant for ranges).
-/// * `rows`: Original constraint types.
-/// * `original_nr_rows`: Number of constraints without ranges.
-/// * `ranges`: Tuples with (row index, r value) indicating where an extra range constraint should
-/// be created.
+/// * `constraints`: Constraint directions.
+/// * `rows`: Original constraint types (used for processing ranges).
+/// * `nr_rows`: Number of constraints without ranges.
 ///
 /// # Return value
 ///
@@ -448,65 +441,70 @@ fn compute_constraint_types<F>(
 /// When there is a trivial infeasibility due to multiple equality bounds being specified with
 /// different values.
 #[allow(unreachable_patterns)]
-fn compute_b<OFI: Sub<Output = OFI> + Abs + Ord + Zero + Clone, OFO: From<OFI> + Zero + PartialOrd + Element>(
+fn compute_b<
+    OFI: Sub<Output = OFI> + Abs + PartialOrd + Zero + Clone,
+    OFO: From<OFI> + Zero + Abs + PartialOrd + Element + Display,
+>(
     rhss: Vec<Rhs<OFI>>,
-    constraints: &[ConstraintType],
+    constraints: &mut [RangedConstraintRelation<OFO>],
     rows: &[Row],
-    original_nr_rows: usize,
-    ranges: Vec<SparseTuple<OFI>>,
-) -> Result<DenseVector<OFO>, Inconsistency> {
-    let new_nr_rows = original_nr_rows + ranges.len();
+    nr_rows: usize,
+) -> Result<DenseVector<OFO>, Inconsistency>
+where
+    for<'r> OFO: Add<&'r OFO, Output=OFO>,
+    for<'r> &'r OFO: Neg<Output=OFO>,
+{
     debug_assert!(rhss.iter().all(|rhs| rhs.values.is_sorted_by_key(|&(i, _)| i)));
-    debug_assert!(rhss.iter().all(|rhs| rhs.values.iter().all(|&(i, _)| i < original_nr_rows)));
+    debug_assert!(rhss.iter().all(|rhs| rhs.values.iter().all(|&(i, _)| i < nr_rows)));
+    // Assumption: if there are multiple rhs values for a row with a range, all these values are
+    // equal
 
-    // We fill be with options, and then explicitly substitute the default value later.
-    let mut b: Vec<Option<OFO>> = vec![None; new_nr_rows];
-    for rhs in rhss {
-        let mut extra_done = 0;
-        for (i, value) in rhs.values {
-            while extra_done < ranges.len() && ranges[extra_done].0 < i {
-                extra_done += 1;
+    // We fill b with options, and then explicitly substitute the default value later.
+    let mut b: Vec<Option<OFO>> = vec![None; rows.len()];
+    for (i, value) in rhss.into_iter().flat_map(|rhs| rhs.values.into_iter()) {
+        match &mut b[i] {
+            None => match &mut constraints[i] {
+                RangedConstraintRelation::Range(range) => {
+                    let range_sign = range.cmp(&&mut OFO::zero());
+                    if range < &mut OFO::zero() {
+                        *range = -&*range;
+                    }
+                    let value = value.into();
+                    let bound  = match (rows[i].constraint_type, range_sign) {
+                        (ConstraintRelation::Greater, _) => value + &*range,
+                        (ConstraintRelation::Less, _) => value,
+                        (ConstraintRelation::Equal, Ordering::Greater | Ordering::Equal) => value + &*range,
+                        (ConstraintRelation::Equal, Ordering::Less | Ordering::Equal) => value,
+                    };
+                    b[i] = Some(bound);
+                },
+                _ => b[i] = Some(value.into()),
             }
-            if extra_done < ranges.len() && ranges[extra_done].0 == i {
-                let r = &ranges[extra_done].1;
-                // See the documentation of `UnstructuredRhs` for the below logic.
-                let r_abs = r.clone().abs();
-                let (h, u) = match (rows[i].constraint_type, r.cmp(&OFI::zero())) {
-                    (ConstraintType::Greater, _) => (value.clone(), value + r_abs),
-                    (ConstraintType::Less, _) => (value.clone() - r_abs, value),
-                    (ConstraintType::Equal, Ordering::Greater | Ordering::Equal) => (value.clone(), value + r_abs),
-                    (ConstraintType::Equal, Ordering::Less | Ordering::Equal) => (value.clone() - r_abs, value),
-                };
+            Some(current) => {
+                // There can be at most one rhs value for each row that has a range.
+                debug_assert!(!matches!(constraints[i], RangedConstraintRelation::Range(_)));
 
-                b[i + extra_done] = Some(h.into());
-                extra_done += 1;
-                b[i + extra_done] = Some(u.into());
-            } else if let Some(current) = &mut b[i + extra_done] {
                 let converted: OFO = value.into();
-                match constraints[i + extra_done] {
-                    ConstraintType::Equal => if converted != *current {
+                match rows[i].constraint_type {
+                    ConstraintRelation::Equal => if &converted != current {
                         return Err(Inconsistency::new(
                             format!("Trivial infeasibility: a constraint can't equal both {} and {}", current, converted),
                         ))
                     },
-                    ConstraintType::Greater => if converted > *current {
+                    ConstraintRelation::Greater => if &converted > current {
                         *current = converted;
                     },
-                    ConstraintType::Less => if converted < *current {
+                    ConstraintRelation::Less => if &converted < current {
                         *current = converted;
                     },
                 }
-            } else {
-                b[i + extra_done] = Some(value.into());
             }
         }
     }
 
     // Substitute the default value.
-    Ok(DenseVector::new(
-        b.into_iter().map(|value| value.unwrap_or_else(OFO::zero)).collect(),
-        original_nr_rows + ranges.len(),
-    ))
+    let b = b.into_iter().map(|value| value.unwrap_or_else(OFO::zero)).collect();
+    Ok(DenseVector::new(b, nr_rows))
 }
 
 #[cfg(test)]
@@ -514,84 +512,31 @@ fn compute_b<OFI: Sub<Output = OFI> + Abs + Ord + Zero + Clone, OFO: From<OFI> +
 mod test {
     use num::FromPrimitive;
 
-    use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
     use crate::data::linear_algebra::vector::{Dense, Vector};
-    use crate::data::linear_program::elements::ConstraintType;
+    use crate::data::linear_program::elements::{ConstraintRelation, RangedConstraintRelation};
     use crate::data::number_types::rational::Rational32;
     use crate::io::mps::{Rhs, Row};
-    use crate::io::mps::convert::{compute_b, compute_columns};
+    use crate::io::mps::convert::compute_b;
     use crate::R32;
 
     type T = Rational32;
 
     #[test]
-    fn test_compute_columns() {
-        // No ranges, no values
-        let columns = vec![vec![]];
-        let original_nr_rows = 0;
-        let ranges = vec![];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
-        assert_eq!(columns, ColumnMajor::new(vec![vec![]], 0, 1));
-
-        // No ranges, some values
-        let columns = vec![vec![(0, R32!(123))]];
-        let original_nr_rows = 2;
-        let ranges = vec![];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
-        assert_eq!(columns, ColumnMajor::new(vec![vec![(0, R32!(123))]], 2, 1));
-        let columns = vec![vec![(1, R32!(123))]];
-        let original_nr_rows = 2;
-        let ranges = vec![];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
-        assert_eq!(columns, ColumnMajor::new(vec![vec![(1, R32!(123))]], 2, 1));
-
-        // One range, no values
-        let columns = vec![vec![]];
-        let original_nr_rows = 1;
-        let ranges = vec![(0, R32!(1))];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
-        assert_eq!(columns, ColumnMajor::new(vec![vec![]], 2, 1));
-
-        // One range, some values
-        let columns = vec![vec![(0, R32!(1))]];
-        let original_nr_rows = 1;
-        let ranges = vec![(0, R32!(1))];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
-        assert_eq!(columns, ColumnMajor::new(vec![vec![(0, R32!(1)), (1, R32!(1))]], 2, 1));
-
-        // One range, value before range row
-        let columns = vec![vec![(0, R32!(1))]];
-        let original_nr_rows = 2;
-        let ranges = vec![(1, R32!(1))];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
-        assert_eq!(columns, ColumnMajor::new(vec![vec![(0, R32!(1))]], 3, 1));
-
-        // One range, value after range row
-        let columns = vec![vec![(1, R32!(1))]];
-        let original_nr_rows = 2;
-        let ranges = vec![(0, R32!(1))];
-        let columns = compute_columns::<T, T>(columns, original_nr_rows, &ranges);
-        assert_eq!(columns, ColumnMajor::new(vec![vec![(2, R32!(1))]], 3, 1));
-    }
-
-    #[test]
     fn test_compute_b() {
         // No ranges, no data
         let rhss: Vec<Rhs<Rational32>> = vec![];
-        let constraints = vec![];
+        let mut constraints = vec![];
         let rows = vec![];
         let original_nr_rows = 0;
-        let ranges = vec![];
-        let b = compute_b(rhss, &constraints, &rows, original_nr_rows, ranges);
+        let b = compute_b(rhss, &mut constraints, &rows, original_nr_rows);
         assert_eq!(b, Ok(Dense::<T>::new(vec![], 0)));
 
         // No ranges, one rhs
         let rhss = vec![Rhs { name: "R".to_string(), values: vec![(0, R32!(1))], }];
-        let constraints = vec![ConstraintType::Equal];
-        let rows = vec![Row { name: "".to_string(), constraint_type: ConstraintType::Equal}];
+        let mut constraints = vec![RangedConstraintRelation::Equal];
+        let rows = vec![Row { name: "".to_string(), constraint_type: ConstraintRelation::Equal}];
         let original_nr_rows = 1;
-        let ranges = vec![];
-        let b = compute_b(rhss, &constraints, &rows, original_nr_rows, ranges);
+        let b = compute_b(rhss, &mut constraints, &rows, original_nr_rows);
         assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1)], 1)));
 
         // No ranges, two rhses
@@ -599,45 +544,42 @@ mod test {
             Rhs { name: "R1".to_string(), values: vec![(0, R32!(1))], },
             Rhs { name: "R2".to_string(), values: vec![(0, R32!(2))], },
         ];
-        let constraints = vec![ConstraintType::Greater];
-        let rows = vec![Row { name: "".to_string(), constraint_type: ConstraintType::Greater}];
+        let mut constraints = vec![RangedConstraintRelation::Greater];
+        let rows = vec![Row { name: "".to_string(), constraint_type: ConstraintRelation::Greater}];
         let original_nr_rows = 1;
-        let ranges = vec![];
-        let b = compute_b(rhss, &constraints, &rows, original_nr_rows, ranges);
+        let b = compute_b(rhss, &mut constraints, &rows, original_nr_rows);
         assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(2)], 1)));
 
         // One range with data before
         let rhss = vec![
             Rhs { name: "R".to_string(), values: vec![(0, R32!(1)), (1, R32!(5))], },
         ];
-        let constraints = vec![
-            ConstraintType::Greater,
-            ConstraintType::Equal,
+        let mut constraints = vec![
+            RangedConstraintRelation::Greater,
+            RangedConstraintRelation::Equal,
         ];
         let rows = vec![
-            Row { name: "".to_string(), constraint_type: ConstraintType::Greater,},
-            Row { name: "".to_string(), constraint_type: ConstraintType::Equal,},
+            Row { name: "".to_string(), constraint_type: ConstraintRelation::Greater,},
+            Row { name: "".to_string(), constraint_type: ConstraintRelation::Equal,},
         ];
         let original_nr_rows = 2;
-        let ranges = vec![(1, R32!(2))];
-        let b = compute_b(rhss, &constraints, &rows, original_nr_rows, ranges);
-        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1), R32!(5), R32!(7)], 3)));
+        let b = compute_b(rhss, &mut constraints, &rows, original_nr_rows);
+        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1), R32!(5)], 2)));
 
         // One range with data after
         let rhss = vec![
             Rhs { name: "R".to_string(), values: vec![(0, R32!(1)), (1, R32!(5))], },
         ];
-        let constraints = vec![
-            ConstraintType::Greater,
-            ConstraintType::Equal,
+        let mut constraints = vec![
+            RangedConstraintRelation::Greater,
+            RangedConstraintRelation::Equal,
         ];
         let rows = vec![
-            Row { name: "".to_string(), constraint_type: ConstraintType::Greater,},
-            Row { name: "".to_string(), constraint_type: ConstraintType::Equal,},
+            Row { name: "".to_string(), constraint_type: ConstraintRelation::Greater,},
+            Row { name: "".to_string(), constraint_type: ConstraintRelation::Equal,},
         ];
         let original_nr_rows = 2;
-        let ranges = vec![(0, R32!(2))];
-        let b = compute_b(rhss, &constraints, &rows, original_nr_rows, ranges);
-        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1), R32!(3), R32!(5)], 3)));
+        let b = compute_b(rhss, &mut constraints, &rows, original_nr_rows);
+        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1), R32!(5)], 2)));
     }
 }

@@ -75,7 +75,7 @@ where
         &self.cost[j]
     }
 
-    fn constraint_values(&self) -> DenseVector<F> {
+    fn right_hand_side(&self) -> DenseVector<F> {
         let mut b = DenseVector::constant(F::zero(), self.nr_rows());
         let t_index = if self.t < self.s { self.t } else { self.t - 1 };
         b[t_index] = F::one();
@@ -95,7 +95,7 @@ where
         self.nr_vertices() - 1
     }
 
-    fn nr_bounds(&self) -> usize {
+    fn nr_variable_bounds(&self) -> usize {
         0
     }
 

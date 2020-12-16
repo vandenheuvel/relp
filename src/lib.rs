@@ -16,6 +16,7 @@
 #![feature(trait_alias)]
 #![feature(generic_associated_types)]
 #![feature(const_generics)]
+#![feature(peekable_next_if)]
 
 extern crate daggy;
 extern crate num;

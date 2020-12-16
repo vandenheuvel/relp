@@ -82,10 +82,11 @@ where
             Self::Column::Sparse {
                 constraint_values: self.arc_incidence_matrix.column(j),
                 // TODO(ENHANCEMENT): Avoid this `F::one()` constant.
-                slack: Some((self.nr_constraints() + j, F::one())),
+                slack: Some([(self.nr_constraints() + j, F::one())]),
+                mock_array: [],
             }
         } else {
-            Self::Column::Slack((self.nr_constraints() + j - self.nr_edges(), F::one()), [])
+            Self::Column::Slack([(self.nr_constraints() + j - self.nr_edges(), F::one())], [])
         }
     }
 
@@ -99,7 +100,7 @@ where
         }
     }
 
-    fn constraint_values(&self) -> Dense<F> {
+    fn right_hand_side(&self) -> Dense<F> {
         let mut b = DenseVector::constant(F::zero(), self.nr_constraints());
         b.extend_with_values(self.capacity.data.clone());
         b
@@ -122,7 +123,7 @@ where
         self.nr_vertices() - 2
     }
 
-    fn nr_bounds(&self) -> usize {
+    fn nr_variable_bounds(&self) -> usize {
         self.nr_edges()
     }
 

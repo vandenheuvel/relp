@@ -23,7 +23,6 @@ pub mod kind;
 ///
 /// It holds only a reference to the (immutable) problem it solves, but owns the data structures
 /// that describe the current solution basis.
-#[allow(non_snake_case)]
 #[derive(Eq, PartialEq, Debug)]
 pub struct Tableau<IM, K> {
     /// Represents a matrix of size (m + 1) x (m + 1) (includes -pi, objective value, constraints).
@@ -381,7 +380,6 @@ mod test {
 
     use num::FromPrimitive;
 
-    use crate::{RB};
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
@@ -390,6 +388,7 @@ mod test {
     use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::number_types::rational::{Rational64, RationalBig};
+    use crate::RB;
     use crate::tests::problem_2::{artificial_tableau_form, create_matrix_data_data, matrix_data_form};
 
     type T = Rational64;
@@ -425,8 +424,8 @@ mod test {
 
     #[test]
     fn cost() {
-        let (constraints, b) = create_matrix_data_data();
-        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let (constraints, b, variables) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
         let artificial_tableau = artificial_tableau_form(&matrix_data_form);
         assert_eq!(artificial_tableau.objective_function_value(), RB!(8));
 
@@ -436,8 +435,8 @@ mod test {
 
     #[test]
     fn relative_cost() {
-        let (constraints, b) = create_matrix_data_data();
-        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let (constraints, b, variables) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
         let artificial_tableau = artificial_tableau_form(&matrix_data_form);
         assert_eq!(artificial_tableau.relative_cost(0), RB!(0));
 
@@ -454,8 +453,8 @@ mod test {
 
     #[test]
     fn generate_column() {
-        let (constraints, b) = create_matrix_data_data();
-        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let (constraints, b, variables) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
         let artificial_tableau = artificial_tableau_form(&matrix_data_form);
 
         let index_to_test = artificial_tableau.nr_artificial_variables() + 0;
@@ -476,8 +475,8 @@ mod test {
 
     #[test]
     fn bring_into_basis() {
-        let (constraints, b) = create_matrix_data_data();
-        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let (constraints, b, variables) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
         let mut artificial_tableau = artificial_tableau_form(&matrix_data_form);
         let column = artificial_tableau.nr_artificial_variables() + 0;
         let column_data = artificial_tableau.generate_column(column);
@@ -531,8 +530,8 @@ mod test {
 
     #[test]
     fn create_tableau() {
-        let (constraints, b) = create_matrix_data_data();
-        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let (constraints, b, variables) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
         let bfs_tableau = bfs_tableau(&matrix_data_form);
         let mut rule = <FirstProfitable as PivotRule>::new();
         assert!(rule.select_primal_pivot_column(&bfs_tableau).is_none());

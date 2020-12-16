@@ -113,7 +113,7 @@ mod test {
     use crate::{R64, RB};
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
     use crate::algorithm::two_phase::{phase_one, phase_two, Rank, RankedFeasibilityResult};
-    use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
+    use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
     use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
@@ -122,6 +122,7 @@ mod test {
     use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::VariableType;
+    use crate::data::linear_program::general_form::Variable;
     use crate::data::number_types::rational::{Rational64, RationalBig};
     use crate::tests::problem_2::{create_matrix_data_data, matrix_data_form, tableau_form};
 
@@ -129,8 +130,8 @@ mod test {
     fn simplex() {
         type T = Rational64;
 
-        let (constraints, b) = create_matrix_data_data::<T>();
-        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let (constraints, b, variables) = create_matrix_data_data::<T>();
+        let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
         let mut tableau = tableau_form(&matrix_data_form);
         let result = phase_two::primal::<_, _, FirstProfitable>(&mut tableau);
         assert!(matches!(result, OptimizationResult::FiniteOptimum(_)));
@@ -142,8 +143,8 @@ mod test {
         type T = Rational64;
         type S = RationalBig;
 
-        let (constraints, b) = create_matrix_data_data();
-        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let (constraints, b, variables) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
         let tableau = Tableau::<Carry<S>, Partially<_>>::new(&matrix_data_form);
         assert!(matches!(
             phase_one::primal::<_, _, MatrixData<T>, FirstProfitable>(tableau),
@@ -155,8 +156,8 @@ mod test {
     fn solve_matrix() {
         type S = RationalBig;
 
-        let (constraints, b) = create_matrix_data_data();
-        let matrix_data_form = matrix_data_form(&constraints, &b);
+        let (constraints, b, variables) = create_matrix_data_data();
+        let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
 
         let result = SolveRelaxation::solve_relaxation::<Carry<S>>(&matrix_data_form);
         //  Optimal value: R64!(4.5)
@@ -183,17 +184,32 @@ mod test {
         let variables = vec![
             Variable {
                 cost: R64!(-2),
+                lower_bound: Some(R64!(0)),
                 upper_bound: None,
+                shift: R64!(0),
                 variable_type: VariableType::Integer,
+                flipped: false,
             },
             Variable {
                 cost: R64!(-1),
+                lower_bound: Some(R64!(0)),
                 upper_bound: None,
+                shift: R64!(0),
                 variable_type: VariableType::Integer,
+                flipped: false,
             },
         ];
 
-        let data = MatrixData::new(&constraints, &b, 0, 2, 0, variables);
+        let data = MatrixData::new(
+            &constraints,
+            &b,
+            vec![],
+            0,
+            0,
+            2,
+            0,
+            &variables,
+        );
 
         let result = data.solve_relaxation::<Carry<S>>();
         assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![

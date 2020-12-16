@@ -80,7 +80,7 @@ pub trait MatrixProvider {
     /// # Return value
     ///
     /// A dense vector of constraint values, often called `b` in mathematical notation.
-    fn constraint_values(&self) -> Dense<<Self::Column as Column>::F>;
+    fn right_hand_side(&self) -> Dense<<Self::Column as Column>::F>;
 
     /// Index of the row of a virtual bound, if any.
     ///
@@ -102,11 +102,11 @@ pub trait MatrixProvider {
 
     /// The number of simple variable bounds in the problem. This excludes more complicated
     /// constraints.
-    fn nr_bounds(&self) -> usize;
+    fn nr_variable_bounds(&self) -> usize;
 
     /// The total number of rows in the provided virtual matrix.
     fn nr_rows(&self) -> usize {
-        self.nr_constraints() + self.nr_bounds()
+        self.nr_constraints() + self.nr_variable_bounds()
     }
 
     /// The total number of columns in the provided virtual matrix. This does not include artificial

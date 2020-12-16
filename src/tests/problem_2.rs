@@ -4,7 +4,7 @@ use num::FromPrimitive;
 
 use crate::algorithm::OptimizationResult;
 use crate::algorithm::two_phase::{phase_one, phase_two};
-use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable};
+use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
@@ -15,9 +15,9 @@ use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::VariableType;
+use crate::data::linear_program::general_form::Variable;
 use crate::data::number_types::rational::{Rational64, RationalBig};
-use crate::data::number_types::traits::{Field};
-use crate::R64;
+use crate::data::number_types::traits::Field;
 use crate::RB;
 
 type T = Rational64;
@@ -25,8 +25,8 @@ type S = RationalBig;
 
 #[test]
 fn conversion_pipeline() {
-    let (constraints, b) = create_matrix_data_data::<T>();
-    let matrix_data_form = matrix_data_form(&constraints, &b);
+    let (constraints, b, variables) = create_matrix_data_data::<T>();
+    let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
 
     // Artificial tableau form
     let artificial_tableau_form_computed = Tableau::<_, Partially<_>>::new(&matrix_data_form);
@@ -64,7 +64,8 @@ fn conversion_pipeline() {
     ], 5)));
 }
 
-pub fn create_matrix_data_data<T: Field + FromPrimitive>() -> (Sparse<T, T, ColumnMajor>, Dense<T>) {
+pub fn create_matrix_data_data<T: Field + FromPrimitive>(
+) -> (Sparse<T, T, ColumnMajor>, Dense<T>, Vec<Variable<T>>) {
     let constraints = ColumnMajor::from_test_data(
         &vec![
             vec![3, 2, 1, 0, 0],
@@ -80,28 +81,34 @@ pub fn create_matrix_data_data<T: Field + FromPrimitive>() -> (Sparse<T, T, Colu
         4,
     ]);
 
-    (constraints, b)
+    let variables = vec![
+        Variable {
+            cost: T::from_i32(1).unwrap(),
+            lower_bound: Some(T::from_i32(0)).unwrap(),
+            upper_bound: None,
+            shift: T::from_i32(0).unwrap(),
+            variable_type: VariableType::Continuous,
+            flipped: false,
+        }; 5
+    ];
+
+    (constraints, b, variables)
 }
 
 pub fn matrix_data_form<'a>(
     constraints: &'a Sparse<T, T, ColumnMajor>,
     b: &'a Dense<T>,
+    variables: &'a Vec<Variable<T>>,
 ) -> MatrixData<'a, T> {
-    let variables = vec![
-        Variable {
-            cost: R64!(1),
-            upper_bound: None,
-            variable_type: VariableType::Continuous
-        }; 5
-    ];
-
     MatrixData::new(
         &constraints,
         &b,
+        Vec::with_capacity(0),
         3,
         0,
         0,
-        variables,
+        0,
+        &variables,
     )
 }
 

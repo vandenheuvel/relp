@@ -8,7 +8,7 @@ use num::FromPrimitive;
 use crate::algorithm::OptimizationResult;
 use crate::algorithm::two_phase::{phase_one, phase_two};
 use crate::algorithm::two_phase::matrix_provider::{Column as ColumnTrait, MatrixProvider};
-use crate::algorithm::two_phase::matrix_provider::matrix_data::{MatrixData, Variable as MatrixDataVariable};
+use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
@@ -19,8 +19,8 @@ use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
 use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
-use crate::data::linear_program::elements::{ConstraintType, Objective, VariableType};
-use crate::data::linear_program::general_form::GeneralForm;
+use crate::data::linear_program::elements::{ConstraintRelation, Objective, RangedConstraintRelation, VariableType};
+use crate::data::linear_program::general_form::{GeneralForm, Variable};
 use crate::data::linear_program::general_form::Variable as GeneralFormVariable;
 use crate::data::number_types::rational::{Rational64, RationalBig};
 use crate::io::mps::{Bound, BoundType, Column, MPS, Rhs, Row};
@@ -55,13 +55,14 @@ fn conversion_pipeline() {
     let result = general_form_computed.derive_matrix_data();
     assert!(result.is_ok());
 
-    let (constraints, b) = create_matrix_data_data();
+    let (constraints, b, variables) = create_matrix_data_data();
     let matrix_data_form_computed = result.unwrap();
-    assert_eq!(matrix_data_form_computed, matrix_data_form(&constraints, &b));
+    let matrix_data_form_expected = matrix_data_form(&constraints, &b, &variables);
+    assert_eq!(matrix_data_form_computed, matrix_data_form_expected);
 
     // Artificial tableau form
     let artificial_tableau_form_computed = Tableau::<_, Partially<_>>::new(&matrix_data_form_computed);
-    assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form(&constraints, &b)));
+    assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form_expected));
 
     // Get to a basic feasible solution
     let feasibility_result = phase_one::primal::<_, _, MatrixData<T>, FirstProfitable>(artificial_tableau_form_computed);
@@ -84,15 +85,24 @@ fn conversion_pipeline() {
     };
 
     // Non-artificial tableau form
-    assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form(&constraints, &b)));
+    assert_eq!(tableau_form_computed, tableau_form(&matrix_data_form_expected));
 
     // Get to a basic feasible solution
     let result = phase_two::primal::<_, _, FirstProfitable>(&mut tableau_form_computed);
     assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
-        (0, 2),
+        (0, 4),
+        (2, 6),
         (5, 2),
-        (6, 2),
-    ], 7)));
+    ], 6)));
+
+    match result {
+        OptimizationResult::FiniteOptimum(vector) => {
+            let reconstructed = matrix_data_form_computed.reconstruct_solution(vector);
+            let solution = general_form_computed.compute_full_solution_with_reduced_solution(reconstructed);
+            assert_eq!(solution.objective_value, R64!(54));
+        }
+        _ => assert!(false),
+    }
 }
 
 const MPS_LITERAL_STRING: &str = "NAME          TESTPROB
@@ -125,9 +135,9 @@ pub fn mps() -> MPS<T> {
     let cost_row_name = "COST".to_string();
     let cost_values = vec![(0, R64!(1)), (1, R64!(4)), (2, R64!(9))];
     let rows = vec![
-        Row { name: "LIM1".to_string(), constraint_type: ConstraintType::Less },
-        Row { name: "LIM2".to_string(), constraint_type: ConstraintType::Greater },
-        Row { name: "MYEQN".to_string(), constraint_type: ConstraintType::Equal },
+        Row { name: "LIM1".to_string(), constraint_type: ConstraintRelation::Less },
+        Row { name: "LIM2".to_string(), constraint_type: ConstraintRelation::Greater },
+        Row { name: "MYEQN".to_string(), constraint_type: ConstraintRelation::Equal },
     ];
     let columns = vec![
         Column {
@@ -196,9 +206,9 @@ pub fn general_form() -> GeneralForm<T> {
     let rows = ColumnMajor::from_test_data(&data, 3);
 
     let constraints = vec![
-        ConstraintType::Less,
-        ConstraintType::Greater,
-        ConstraintType::Equal,
+        RangedConstraintRelation::Less,
+        RangedConstraintRelation::Greater,
+        RangedConstraintRelation::Equal,
     ];
 
     let b = Dense::from_test_data(vec![
@@ -254,13 +264,13 @@ pub fn general_form_standardized() -> GeneralForm<T> {
     let constraints = ColumnMajor::from_test_data(&data, 3);
 
     let constraint_types = vec![
-        ConstraintType::Greater,
-        ConstraintType::Equal,
+        RangedConstraintRelation::Greater,
+        RangedConstraintRelation::Equal,
     ];
 
     let b = Dense::from_test_data(vec![
-        2,
-        0,
+        10,
+        6,
     ]);
 
     let variables = vec![
@@ -268,9 +278,9 @@ pub fn general_form_standardized() -> GeneralForm<T> {
             variable_type: VariableType::Continuous,
             cost: R64!(1),
             lower_bound: Some(R64!(0)),
-            upper_bound: Some(R64!(2)),
-            shift: R64!(-2),
-            flipped: false
+            upper_bound: Some(R64!(4)),
+            shift: R64!(0),
+            flipped: false,
         },
         GeneralFormVariable {
             variable_type: VariableType::Integer,
@@ -278,15 +288,15 @@ pub fn general_form_standardized() -> GeneralForm<T> {
             lower_bound: Some(R64!(0)),
             upper_bound: Some(R64!(2)),
             shift: R64!(1),
-            flipped: false
+            flipped: false,
         },
         GeneralFormVariable {
             variable_type: VariableType::Continuous,
             cost: R64!(9),
             lower_bound: Some(R64!(0)),
-            upper_bound: Some(R64!(2)),
-            shift: R64!(-6),
-            flipped: false
+            upper_bound: None,
+            shift: R64!(0),
+            flipped: false,
         },
     ];
     let variable_names = vec!["XONE".to_string(), "YTWO".to_string(), "ZTHREE".to_string()];
@@ -298,11 +308,11 @@ pub fn general_form_standardized() -> GeneralForm<T> {
         b,
         variables,
         variable_names,
-        -R64!(-2 * 1) - R64!(1 * 4) - R64!(-6 * 9),
+        -R64!(1 * 4),
     )
 }
 
-pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, Dense<T>) {
+pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, Dense<T>, Vec<Variable<T>>) {
     let constraints = ColumnMajor::from_test_data(
         &vec![
             vec![0, -1, 1],
@@ -311,38 +321,50 @@ pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, Dense<T>) {
         3,
     );
     let b = Dense::from_test_data(vec![
-        0,
-        2,
+        6,
+        10,
     ]);
+    let variables = vec![
+        Variable {
+            cost: R64!(1),
+            lower_bound: Some(R64!(0)),
+            upper_bound: Some(R64!(4)),
+            shift: R64!(0),
+            variable_type: VariableType::Continuous,
+            flipped: false,
+        },
+        Variable {
+            cost: R64!(4),
+            lower_bound: Some(R64!(0)),
+            upper_bound: Some(R64!(2)),
+            shift: R64!(1),
+            variable_type: VariableType::Integer,
+            flipped: false,
+        },
+        Variable {
+            cost: R64!(9),
+            lower_bound: Some(R64!(0)),
+            upper_bound: None,
+            shift: R64!(0),
+            variable_type: VariableType::Continuous,
+            flipped: false,
+        },
+    ];
 
-    (constraints, b)
+    (constraints, b, variables)
 }
 
 pub fn matrix_data_form<'a>(
     constraints: &'a Sparse<T, T, ColumnMajor>,
     b: &'a Dense<T>,
+    variables: &'a Vec<Variable<T>>,
 ) -> MatrixData<'a, T> {
-    let variables = vec![
-        MatrixDataVariable {
-            cost: R64!(1),
-            upper_bound: Some(R64!(2)),
-            variable_type: VariableType::Continuous,
-        },
-        MatrixDataVariable {
-            cost: R64!(4),
-            upper_bound: Some(R64!(2)),
-            variable_type: VariableType::Integer,
-        },
-        MatrixDataVariable {
-            cost: R64!(9),
-            upper_bound: Some(R64!(2)),
-            variable_type: VariableType::Continuous,
-        },
-    ];
     MatrixData::new(
         constraints,
         b,
+        vec![],
         1,
+        0,
         0,
         1,
         variables,
@@ -352,11 +374,11 @@ pub fn matrix_data_form<'a>(
 pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
     provider: &MP,
 ) -> Tableau<Carry<S>, Partially<MP>> {
-    let m = 5;
+    let m = 4;
     let carry = {
-        let minus_objective = RB!(-2);
-        let minus_pi = Dense::from_test_data(vec![-1, -1, 0, 0, 0]);
-        let b = Dense::from_test_data(vec![0, 2, 2, 2, 2]);
+        let minus_objective = RB!(-16);
+        let minus_pi = Dense::from_test_data(vec![-1, -1, 0, 0]);
+        let b = Dense::from_test_data(vec![6, 10, 4, 2]);
         let basis_inverse_rows = (0..m)
             .map(|i| SparseVector::standard_basis_vector(i, m))
             .collect();
@@ -364,7 +386,7 @@ pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
     };
     let artificials = vec![0, 1];
     let mut basis_indices = artificials.clone();
-    basis_indices.extend(vec![2 + 4, 2 + 5, 2 + 6]);
+    basis_indices.extend(vec![2 + 4, 2 + 5]);
     let basis_columns = basis_indices.iter().copied().collect();
 
     Tableau::<_, Partially<_>>::new_with_basis(
@@ -383,19 +405,18 @@ where
     for<'a> S: CostOps<MP::Cost<'a>>,
 {
     let carry = {
-        let minus_objective = RB!(-2);
-        let minus_pi = Dense::from_test_data(vec![-8, -1, 0, 0, 0]);
-        let b = Dense::from_test_data(vec![0, 2, 0, 2, 2]);
+        let minus_objective = RB!(-58);
+        let minus_pi = Dense::from_test_data(vec![4, -13, 12, 0]);
+        let b = Dense::from_test_data(vec![6, 0, 4, 2]);
         let basis_inverse_rows = vec![
-            SparseVector::from_test_data(vec![1, 0, 0, 0, 0]),
-            SparseVector::from_test_data(vec![-1, 1, 0, 0, 0]),
-            SparseVector::from_test_data(vec![1, -1, 1, 0, 0]),
-            SparseVector::from_test_data(vec![0, 0, 0, 1, 0]),
-            SparseVector::from_test_data(vec![-1, 0, 0, 0, 1]),
+            SparseVector::from_test_data(vec![0, 1, -1, 0]),
+            SparseVector::from_test_data(vec![-1, 1, -1, 0]),
+            SparseVector::from_test_data(vec![0, 0, 1, 0]),
+            SparseVector::from_test_data(vec![1, -1, 1, 1]),
         ];
         Carry::new(minus_objective, minus_pi, b, basis_inverse_rows)
     };
-    let basis_indices = vec![2, 0, 4, 5, 6];
+    let basis_indices = vec![2, 1, 0, 5];
     let basis_columns = basis_indices.iter().copied().collect();
 
     Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(

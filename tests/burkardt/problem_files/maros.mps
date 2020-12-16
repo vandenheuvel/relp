@@ -56,7 +56,8 @@ RHS
     RHS1      RES2              30.0
     RHS1      BALANCE           95.0
 RANGES
-    RANGE1    BALANCE           10.0
+* The row here was changed from `BALANCE` to `RES2` because that is consistent with the problem description at the start of the file.
+    RANGE1    RES2              10.0
 BOUNDS
  LO BOUND1    VOL3             -10.0
  UP BOUND1    VOL3              20.0

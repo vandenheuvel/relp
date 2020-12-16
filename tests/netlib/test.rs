@@ -7,14 +7,6 @@ use rust_lp::RB;
 use crate::netlib::solve;
 
 #[test]
-#[ignore = "Incorrectly determined infeasible during presolving."]
-fn test_25FV47() {
-    let result = solve("25FV47");
-    let expected = 5.5018459e+03; // Gurobi
-    assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-5));
-}
-
-#[test]
 fn test_ADLITTLE() {
     let result = solve("ADLITTLE");
     let expected = 2.254949632e+05; // Gurobi
@@ -71,7 +63,6 @@ fn test_BLEND() {
 }
 
 #[test]
-#[ignore = "Incorrect optimum."]
 fn test_SCAGR7() {
     let result = solve("SCAGR7");
     let expected = -2.331389824e+06; // GLPK 4.65
@@ -107,7 +98,6 @@ fn test_LOTFI() {
 }
 
 #[test]
-#[ignore = "Incorrectly determined infeasible during presolving."]
 fn test_VTP_BASE() {
     let result = solve("VTP-BASE");
     let expected = 0.1298314624613613657395984384889e6; // Koch - The final Netlib-LP results
@@ -129,7 +119,6 @@ fn test_BOEING2() {
 }
 
 #[test]
-#[ignore = "Incorrectly determined infeasible."]
 fn test_BORE3D() {
     let result = solve("BORE3D");
     let expected = 0.13730803942084927215581987251301e4; // Koch - The final Netlib-LP results
@@ -137,7 +126,7 @@ fn test_BORE3D() {
 }
 
 #[test]
-#[ignore = "Redundant rows are not correctly removed."]
+#[ignore = "Incorrect optimal value."]
 fn test_SCORPION() {
     let result = solve("SCORPION");
     let expected = 0.18781248227381066296479411763586e4; // Koch - The final Netlib-LP results
@@ -145,7 +134,7 @@ fn test_SCORPION() {
 }
 
 #[test]
-#[ignore = "Incorrectly determined unbounded."]
+#[ignore = "Too computationally intensive."]
 fn test_GREENBEA() {
     let result = solve("GREENBEA");
     let expected = -0.72555248129845987457557870574845e8; // Koch - The final Netlib-LP results
@@ -153,7 +142,7 @@ fn test_GREENBEA() {
 }
 
 #[test]
-#[ignore = "Incorrectly determined unbounded."]
+#[ignore = "Too computationally intensive."]
 fn test_GREENBEB() {
     let result = solve("GREENBEB");
     let expected = -0.43022602612065867539213672544432e7; // Koch - The final Netlib-LP results
@@ -161,7 +150,15 @@ fn test_GREENBEB() {
 }
 
 #[test]
-#[ignore = "Enters unreachable code."]
+#[ignore = "Too computationally intensive."]
+fn test_25FV47() {
+    let result = solve("25FV47");
+    let expected = 5.5018459e+03; // Gurobi
+    assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-5));
+}
+
+#[test]
+#[ignore = "Too computationally intensive, perhaps underflows in `compute_full_solution_with_reduced_solution`."]
 fn test_80BAU3B() {
     let result = solve("80BAU3B");
     let expected = 9.872241924e+05; // Gurobi

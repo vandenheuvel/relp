@@ -136,8 +136,8 @@ mod test {
 
     #[test]
     fn find_profitable_column() {
-        let (constraints, b) = problem_2::create_matrix_data_data();
-        let matrix_data = problem_2::matrix_data_form(&constraints, &b);
+        let (constraints, b, variables) = problem_2::create_matrix_data_data();
+        let matrix_data = problem_2::matrix_data_form(&constraints, &b, &variables);
         let artificial_tableau = problem_2::artificial_tableau_form(&matrix_data);
         let mut rule = <FirstProfitable as PivotRule>::new();
         assert!(matches!(rule.select_primal_pivot_column(&artificial_tableau), Some((3, _))));
@@ -149,8 +149,8 @@ mod test {
 
     #[test]
     fn find_pivot_row() {
-        let (constraints, b) = problem_2::create_matrix_data_data();
-        let matrix_data = problem_2::matrix_data_form(&constraints, &b);
+        let (constraints, b, variables) = problem_2::create_matrix_data_data();
+        let matrix_data = problem_2::matrix_data_form(&constraints, &b, &variables);
         let artificial_tableau = problem_2::artificial_tableau_form(&matrix_data);
         let column = SparseVector::from_test_data(vec![3, 5, 2]);
         assert_eq!(artificial_tableau.select_primal_pivot_row(&column), Some(0));

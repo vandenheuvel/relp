@@ -6,7 +6,7 @@ fn test_50v() {
 }  // GLPK
 
 #[test]
-#[ignore = "Incorrectly determined infeasible"]
+#[ignore = "Incorrect optimum."]
 fn test_30n() {
     test("30n20b8", 43.33557298f64, 1e-3);
 }  // GLPK

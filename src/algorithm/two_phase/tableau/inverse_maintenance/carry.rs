@@ -2,6 +2,7 @@
 //!
 //! A sparse row major basis inverse with a dense representation of the latest b and -pi (see
 //! Papadimitriou's Combinatorial Optimization).
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fmt;
@@ -16,7 +17,6 @@ use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{Dense as DenseVector, Dense, Sparse as SparseVector, Sparse, Vector};
-use std::cmp::Ordering;
 
 /// The carry matrix represents a basis inverse.
 ///

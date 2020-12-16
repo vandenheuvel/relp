@@ -1,18 +1,141 @@
 //! # Building blocks to describe linear programs.
-use std::ops::{BitXor, Neg};
+use std::cmp::Ordering;
+use std::fmt;
+use std::ops::Mul;
 use std::ops::Not;
 
-use num::One;
+use num::Zero;
 
 use crate::data::linear_program::solution::Solution;
 
-/// A `Constraint` is a type of (in)equality.
+/// When a constraint can not be an equality constraint.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum InequalityRelation {
+    /// <a, x> <= b
+    Less,
+    /// <a, x> >= b
+    Greater,
+}
+
+impl From<InequalityRelation> for ConstraintRelation {
+    fn from(relation: InequalityRelation) -> Self {
+        match relation {
+            InequalityRelation::Less => Self::Less,
+            InequalityRelation::Greater => Self::Greater
+        }
+    }
+}
+
+/// A constraint type describes the bound an equation implies.
+///
+/// Can be equality, but not a range.
 #[allow(missing_docs)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum ConstraintType {
-    Equal,
-    Greater,
+pub enum ConstraintRelation {
+    /// <a, x> <= b
     Less,
+    /// <a, x> == b
+    Equal,
+    /// <a, x> >= b
+    Greater,
+}
+
+/// Constraint relation which can be a range.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum RangedConstraintRelation<F> {
+    /// <a, x> == b
+    Equal,
+    /// Given as the size of the range.
+    ///
+    /// The constraint is of the form `l <= <a, x> <= u`. This is typically represented with
+    /// `<a, x> + s == b` and `0 <= s <= u_s`, with `b = u` and `u_s = u - l =: r`. We have
+    /// `r >= 0`. The `r` is stored in this variant.
+    ///
+    /// TODO(CORRECTNESS): Should the value stored be strictly positive?
+    Range(F),
+    /// <a, x> <= b
+    Less,
+    /// <a, x> >= b
+    Greater,
+}
+
+impl<F> From<InequalityRelation> for RangedConstraintRelation<F> {
+    fn from(relation: InequalityRelation) -> Self {
+        match relation {
+            InequalityRelation::Less => Self::Less,
+            InequalityRelation::Greater => Self::Greater,
+        }
+    }
+}
+
+impl<F> From<ConstraintRelation> for RangedConstraintRelation<F> {
+    fn from(relation: ConstraintRelation) -> Self {
+        match relation {
+            ConstraintRelation::Less => Self::Less,
+            ConstraintRelation::Equal => Self::Equal,
+            ConstraintRelation::Greater => Self::Greater,
+        }
+    }
+}
+
+impl<F: fmt::Display> fmt::Display for RangedConstraintRelation<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RangedConstraintRelation::Less => f.write_str("<="),
+            RangedConstraintRelation::Equal => f.write_str("=="),
+            RangedConstraintRelation::Greater => f.write_str(">="),
+            RangedConstraintRelation::Range(r) => write!(f, "={}=", r),
+        }
+    }
+}
+
+/// Constraint relation which can be a range.
+///
+/// This is essentially the `RangedConstraintRelation` enum, but without the range value stored such
+/// that it can be cheaply copied.
+pub enum RangedConstraintRelationKind {
+    /// <a, x> == b
+    Equal,
+    /// b_l <= <a, x> <= b_u
+    Range,
+    /// <a, x> <= b
+    Less,
+    /// <a, x> >= b
+    Greater,
+}
+
+impl<F> From<&RangedConstraintRelation<F>> for RangedConstraintRelationKind {
+    fn from(constraint: &RangedConstraintRelation<F>) -> Self {
+        match constraint {
+            RangedConstraintRelation::Equal => Self::Equal,
+            RangedConstraintRelation::Range(_) => Self::Range,
+            RangedConstraintRelation::Less => Self::Less,
+            RangedConstraintRelation::Greater => Self::Greater,
+        }
+    }
+}
+
+/// Sign of a value that is not zero.
+///
+/// When working with values that can't be zero, it is often annoying to have to include a match
+/// case that handles the case where a value is equal to zero (to let it panic).
+#[derive(Clone, Copy)]
+pub enum NonZeroSign {
+    /// x > 0
+    Positive,
+    /// x < 0
+    Negative,
+}
+
+// TODO(CORRECTNESS): NotZero trait?
+impl<OF: Zero + Ord> From<&OF> for NonZeroSign {
+    fn from(value: &OF) -> Self {
+        match value.cmp(&OF::zero()) {
+            Ordering::Greater => NonZeroSign::Positive,
+            Ordering::Less => NonZeroSign::Negative,
+            Ordering::Equal => unreachable!("Value should not be zero at this point."),
+        }
+    }
 }
 
 /// Direction of a bound.
@@ -28,19 +151,6 @@ pub enum BoundDirection {
     Upper,
 }
 
-impl BoundDirection {
-    /// Convert a bound direction into a positive or negative one.
-    /// 
-    /// Upper bounds needs positive slacks, lower bounds need negative slacks.
-    #[must_use]
-    pub fn into<F: One + Neg<Output = F>>(self) -> F {
-        match self {
-            BoundDirection::Lower => -F::one(),
-            BoundDirection::Upper => F::one(),
-        }
-    }
-}
-
 impl Not for BoundDirection {
     type Output = Self;
 
@@ -52,16 +162,21 @@ impl Not for BoundDirection {
     }
 }
 
-/// Analogue to multiplying signs of values.
+/// This is like multiplying an equation with -1.
 ///
-/// Used mostly in presolving.
-impl BitXor for BoundDirection {
+/// If the sign of a coefficient is negative, you need to often flip a bound.
+///
+/// Example:
+///
+/// * `3 x >= 2 <=> x >= 2 / 3`
+/// * `-3 x >= -2 <=> x <= 2 / 3`
+impl Mul<NonZeroSign> for BoundDirection {
     type Output = Self;
 
-    fn bitxor(self, other: Self) -> Self::Output {
+    fn mul(self, other: NonZeroSign) -> Self::Output {
         match (self, other) {
-            (Self::Lower, Self::Upper) | (Self::Upper, Self::Lower) => Self::Upper,
-            (Self::Lower, Self::Lower) | (Self::Upper, Self::Upper) => Self::Lower,
+            (Self::Upper, NonZeroSign::Positive) | (Self::Lower, NonZeroSign::Negative) => Self::Upper,
+            (Self::Lower, NonZeroSign::Positive) | (Self::Upper, NonZeroSign::Negative) => Self::Lower,
         }
     }
 }

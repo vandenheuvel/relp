@@ -4,7 +4,7 @@
 //! partially artificial tableau kind.
 use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, InverseMaintenance};
-use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, IdentityColumn, Cost};
+use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Cost, IdentityColumn};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -47,7 +47,7 @@ where
     }
 
     fn nr_columns(&self) -> usize {
-        self.provider.nr_columns() + self.nr_rows()
+        self.nr_rows() + self.provider.nr_columns()
     }
 }
 
@@ -87,7 +87,7 @@ where
         let m = provider.nr_rows();
 
         Tableau {
-            inverse_maintainer: IM::create_for_fully_artificial(provider.constraint_values()),
+            inverse_maintainer: IM::create_for_fully_artificial(provider.right_hand_side()),
             basis_indices: (0..m).collect(),
             basis_columns: (0..m).collect(),
 

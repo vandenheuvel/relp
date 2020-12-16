@@ -1,6 +1,7 @@
 use std::convert::TryInto;
+use std::ops::{Add, Neg};
 
-use num::{FromPrimitive, One, Zero};
+use num::{One, Zero};
 
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -15,13 +16,17 @@ use rust_lp::RB;
 
 use super::get_test_file_path;
 
-fn to_general_form<T: From<Rational64> + Zero + One + Ord + Element>(
+fn to_general_form<T: From<Rational64> + Zero + One + Ord + Element + Neg<Output=T>>(
     file_name: &str,
-) -> GeneralForm<T> {
+) -> GeneralForm<T>
+where
+    for<'r> T: Add<&'r T, Output=T>,
+    for<'r> &'r T: Neg<Output=T>,
+{
     let path = get_test_file_path(file_name);
     let result = import(&path).unwrap();
 
-    result.try_into().ok().unwrap()
+    result.try_into().unwrap()
 }
 
 #[test]
@@ -32,8 +37,8 @@ fn adlittle() {
     let path = get_test_file_path("adlittle");
     let result = import::<T>(&path).unwrap();
 
-    let mut general = result.try_into().ok().unwrap();
-    let data = general.derive_matrix_data().ok().unwrap();
+    let mut general = result.try_into().unwrap();
+    let data = general.derive_matrix_data().unwrap();
     let result = data.solve_relaxation::<Carry<S>>();
 
     match result {
@@ -52,7 +57,7 @@ fn afiro() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("afiro");
-    let data = general.derive_matrix_data().ok().unwrap();
+    let data = general.derive_matrix_data().unwrap();
     let result = data.solve_relaxation::<Carry<_>>();
 
     match result {
@@ -118,7 +123,7 @@ fn maros() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("maros");
-    let data = general.derive_matrix_data().ok().unwrap();
+    let data = general.derive_matrix_data().unwrap();
     let result = data.solve_relaxation::<Carry<S>>();
 
     match result {
@@ -140,51 +145,14 @@ fn maros() {
 }
 
 #[test]
-fn nazareth_bigint() {
-    type T = Rational64;
-    type S = RationalBig;
-
-    let mut general = to_general_form::<T>("nazareth");
-    let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<S>>();
-    assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
-}
-
-#[test]
 fn nazareth() {
     type T = Rational64;
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("nazareth");
-    let data = general.derive_matrix_data().ok().unwrap();
+    let data = general.derive_matrix_data().unwrap();
     let result = data.solve_relaxation::<Carry<S>>();
     assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
-}
-
-#[test]
-fn testprob_bigint() {
-    type T = Rational64;
-    type S = RationalBig;
-
-    let mut general = to_general_form::<T>("testprob");
-    let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<S>>();
-
-    match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let reconstructed = data.reconstruct_solution(vector);
-            let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
-            assert_eq!(solution, Solution::new(
-                RB!(54),  // GLPK
-                vec![
-                    ("X1".to_string(), RB!(4)),
-                    ("X2".to_string(), RB!(-1)),
-                    ("X3".to_string(), RB!(6)),
-                ],
-            ));
-        },
-        _ => assert!(false),
-    }
 }
 
 #[test]
@@ -193,7 +161,7 @@ fn testprob() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("testprob");
-    let data = general.derive_matrix_data().ok().unwrap();
+    let data = general.derive_matrix_data().unwrap();
     let result = data.solve_relaxation::<Carry<S>>();
 
     match result {
