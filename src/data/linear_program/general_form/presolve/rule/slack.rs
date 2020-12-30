@@ -2,6 +2,7 @@
 //!
 //! Triggered when there is only a single constraint in a variable and it does not appear in the
 //! objective function.
+use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, NonZeroSign};
 use crate::data::linear_program::elements::RangedConstraintRelation;
 use crate::data::linear_program::general_form::presolve::Index;
@@ -10,7 +11,7 @@ use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 impl<'a, OF> Index<'a, OF>
 where
-    OF: OrderedField,
+    OF: OrderedField + SparseElement<OF>,
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {
     /// Try to remove a variable that appears in exactly one constraint.
@@ -85,10 +86,6 @@ where
         // We see whether these are `None` here already such that `bounds` can be moved in the match
         let bounds_is_none = (lower.is_none(), upper.is_none());
         let coefficient_sign = NonZeroSign::from(&coefficient);
-
-        if variable == 4722 {
-            println!("here")
-        }
 
         // Patterns are ordered left to right, top to bottom and then by coefficient (positive to
         // negative)

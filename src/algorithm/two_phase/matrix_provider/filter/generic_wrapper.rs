@@ -10,15 +10,14 @@ use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fmt;
 
-use itertools::repeat_n;
-
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::{Filtered, ToFiltered};
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::variable::FeasibilityLogic;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 use crate::algorithm::utilities::remove_sparse_indices;
-use crate::data::linear_algebra::traits::Element;
-use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector, Vector};
+use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
+use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use crate::data::linear_program::elements::BoundDirection;
 
 /// Remove a set of rows from a column.
@@ -228,6 +227,7 @@ where
 {
     type Column = <MP::Column as IntoFilteredColumn>::Filtered;
     type Cost<'a> = MP::Cost<'a>;
+    type Rhs = MP::Rhs;
 
     fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
@@ -241,7 +241,7 @@ where
         self.provider.cost_value(j)
     }
 
-    fn right_hand_side(&self) -> DenseVector<<Self::Column as Column>::F> {
+    fn right_hand_side(&self) -> DenseVector<Self::Rhs> {
         let mut all = self.provider.right_hand_side();
         all.remove_indices(&self.rows_to_skip);
         all
@@ -275,7 +275,10 @@ where
         self.provider.nr_columns()
     }
 
-    fn reconstruct_solution<G: Element>(&self, column_values: SparseVector<G, G>) -> SparseVector<G, G> {
+    fn reconstruct_solution<G>(&self, column_values: SparseVector<G, G>) -> SparseVector<G, G>
+    where
+        G: SparseElement<G> + SparseComparator,
+    {
         self.provider.reconstruct_solution(column_values)
     }
 }
@@ -325,12 +328,12 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 8;
 
-        write!(f, "{}", repeat_n(" ", width).collect::<Vec<_>>().concat())?;
+        f.write_str(&" ".repeat(width))?;
         for column in 0..self.nr_columns() {
             write!(f, "{:^width$}", column, width = width)?;
         }
         writeln!(f)?;
-        writeln!(f, "{}", repeat_n("-",(1 + self.nr_columns()) * width).collect::<String>())?;
+        f.write_str(&"-".repeat((1 + self.nr_columns()) * width))?;
 
         for row in 0..self.nr_rows() {
             write!(f, "{:>width$}", format!("{} |", row), width = width)?;

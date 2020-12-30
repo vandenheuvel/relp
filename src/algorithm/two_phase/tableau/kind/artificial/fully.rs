@@ -2,9 +2,11 @@
 //!
 //! When no initial pivots can be derived, this module is used. It is slightly quicker than the
 //! partially artificial tableau kind.
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, InverseMaintenance};
-use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Cost, IdentityColumn};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Cost};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -68,7 +70,7 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, Fully<'provider, MP>>
 where
-    IM: InverseMaintenance<F: ColumnOps<<MP::Column as Column>::F>>,
+    IM: InverseMaintener<F: im_ops::Rhs<MP::Rhs>>,
     MP: MatrixProvider,
 {
     /// Create a `Tableau` augmented with artificial variables.
@@ -88,7 +90,6 @@ where
 
         Tableau {
             inverse_maintainer: IM::create_for_fully_artificial(provider.right_hand_side()),
-            basis_indices: (0..m).collect(),
             basis_columns: (0..m).collect(),
 
             kind: Fully { provider },

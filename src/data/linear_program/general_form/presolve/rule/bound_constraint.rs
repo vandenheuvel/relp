@@ -1,6 +1,7 @@
 //! # Remove a constraint that is a bound on a variable.
 //!
 //! Triggered when there is only a single variable in a constraint.
+use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, RangedConstraintRelation};
 use crate::data::linear_program::elements::NonZeroSign;
 use crate::data::linear_program::general_form::presolve::Index;
@@ -9,7 +10,7 @@ use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 impl<'a, OF> Index<'a, OF>
 where
-    OF: OrderedField,
+    OF: OrderedField + SparseElement<OF>,
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {
     /// Remove a constraint that is a bound on a variable.

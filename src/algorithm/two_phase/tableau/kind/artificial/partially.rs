@@ -4,10 +4,11 @@
 //! solution is found quicker. Less variables need to be driven out of the basis.
 use std::collections::HashSet;
 
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, InverseMaintenance};
-use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Cost, IdentityColumn};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Column, Cost};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -103,7 +104,10 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, Partially<'provider, MP>>
 where
-    IM: InverseMaintenance<F: ColumnOps<<MP::Column as Column>::F>>,
+    IM: InverseMaintener<F:
+        im_ops::Column<<MP::Column as Column>::F> +
+        im_ops::Rhs<MP::Rhs> +
+    >,
     MP: MatrixProvider,
 {
     /// Create a `Tableau` augmented with artificial variables.
@@ -185,11 +189,11 @@ where
             &artificial,
             &real,
             provider.right_hand_side(),
+            basis_indices,
         );
 
         Tableau {
             inverse_maintainer,
-            basis_indices,
             basis_columns,
 
             kind: Partially {
@@ -216,15 +220,13 @@ where
     pub(crate) fn new_with_basis(
         provider: &'provider MP,
         inverse_maintainer: IM,
-        basis_indices: Vec<usize>,
         basis_columns: HashSet<usize>,
         column_to_row_artificials: Vec<usize>,
     ) -> Self {
-        debug_assert!(column_to_row_artificials.iter().all(|i| basis_indices.contains(&i)));
+        debug_assert!(column_to_row_artificials.iter().all(|i| basis_columns.contains(&i)));
 
         Tableau {
             inverse_maintainer,
-            basis_indices,
             basis_columns,
 
             kind: Partially {

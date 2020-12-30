@@ -7,17 +7,19 @@ use num::FromPrimitive;
 
 use crate::algorithm::OptimizationResult;
 use crate::algorithm::two_phase::{phase_one, phase_two};
-use crate::algorithm::two_phase::matrix_provider::{Column as ColumnTrait, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::column::Column as ColumnTrait;
 use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::CostOps;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, Carry};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
-use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
+use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{ConstraintRelation, Objective, RangedConstraintRelation, VariableType};
 use crate::data::linear_program::general_form::{GeneralForm, Variable};
@@ -211,7 +213,7 @@ pub fn general_form() -> GeneralForm<T> {
         RangedConstraintRelation::Equal,
     ];
 
-    let b = Dense::from_test_data(vec![
+    let b = DenseVector::from_test_data(vec![
         5,
         10,
         7,
@@ -268,7 +270,7 @@ pub fn general_form_standardized() -> GeneralForm<T> {
         RangedConstraintRelation::Equal,
     ];
 
-    let b = Dense::from_test_data(vec![
+    let b = DenseVector::from_test_data(vec![
         10,
         6,
     ]);
@@ -312,7 +314,7 @@ pub fn general_form_standardized() -> GeneralForm<T> {
     )
 }
 
-pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, Dense<T>, Vec<Variable<T>>) {
+pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, DenseVector<T>, Vec<Variable<T>>) {
     let constraints = ColumnMajor::from_test_data(
         &vec![
             vec![0, -1, 1],
@@ -320,7 +322,7 @@ pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, Dense<T>, Vec<Va
         ],
         3,
     );
-    let b = Dense::from_test_data(vec![
+    let b = DenseVector::from_test_data(vec![
         6,
         10,
     ]);
@@ -356,7 +358,7 @@ pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, Dense<T>, Vec<Va
 
 pub fn matrix_data_form<'a>(
     constraints: &'a Sparse<T, T, ColumnMajor>,
-    b: &'a Dense<T>,
+    b: &'a DenseVector<T>,
     variables: &'a Vec<Variable<T>>,
 ) -> MatrixData<'a, T> {
     MatrixData::new(
@@ -371,28 +373,30 @@ pub fn matrix_data_form<'a>(
     )
 }
 
-pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
+pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>, Rhs=T>>(
     provider: &MP,
-) -> Tableau<Carry<S>, Partially<MP>> {
+) -> Tableau<Carry<S, BasisInverseRows<S>>, Partially<MP>> {
     let m = 4;
+    let artificials = vec![0, 1];
     let carry = {
         let minus_objective = RB!(-16);
-        let minus_pi = Dense::from_test_data(vec![-1, -1, 0, 0]);
-        let b = Dense::from_test_data(vec![6, 10, 4, 2]);
-        let basis_inverse_rows = (0..m)
-            .map(|i| SparseVector::standard_basis_vector(i, m))
-            .collect();
-        Carry::new(minus_objective, minus_pi, b, basis_inverse_rows)
+
+        let minus_pi = DenseVector::from_test_data(vec![-1, -1, 0, 0]);
+
+        let b = DenseVector::from_test_data(vec![6, 10, 4, 2]);
+
+        let mut basis_indices = artificials.clone();
+        basis_indices.extend(vec![2 + 4, 2 + 5]);
+
+        let basis_inverse_rows = BasisInverseRows::identity(m);
+
+        Carry::new(minus_objective, minus_pi, b, basis_indices, basis_inverse_rows)
     };
-    let artificials = vec![0, 1];
-    let mut basis_indices = artificials.clone();
-    basis_indices.extend(vec![2 + 4, 2 + 5]);
-    let basis_columns = basis_indices.iter().copied().collect();
+    let basis_columns = (0..m).map(|i| carry.basis_column_index_for_row(i)).collect();
 
     Tableau::<_, Partially<_>>::new_with_basis(
         provider,
         carry,
-        basis_indices,
         basis_columns,
         artificials,
     )
@@ -400,29 +404,28 @@ pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
 
 pub fn tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
     provider: &MP,
-) -> Tableau<Carry<S>, NonArtificial<MP>>
+) -> Tableau<Carry<S, BasisInverseRows<S>>, NonArtificial<MP>>
 where
-    for<'a> S: CostOps<MP::Cost<'a>>,
+    for<'a> S: im_ops::Cost<MP::Cost<'a>>,
 {
     let carry = {
         let minus_objective = RB!(-58);
-        let minus_pi = Dense::from_test_data(vec![4, -13, 12, 0]);
-        let b = Dense::from_test_data(vec![6, 0, 4, 2]);
-        let basis_inverse_rows = vec![
+        let minus_pi = DenseVector::from_test_data(vec![4, -13, 12, 0]);
+        let b = DenseVector::from_test_data(vec![6, 0, 4, 2]);
+        let basis_indices = vec![2, 1, 0, 5];
+        let basis_inverse_rows = BasisInverseRows::new(vec![
             SparseVector::from_test_data(vec![0, 1, -1, 0]),
             SparseVector::from_test_data(vec![-1, 1, -1, 0]),
             SparseVector::from_test_data(vec![0, 0, 1, 0]),
             SparseVector::from_test_data(vec![1, -1, 1, 1]),
-        ];
-        Carry::new(minus_objective, minus_pi, b, basis_inverse_rows)
+        ]);
+        Carry::new(minus_objective, minus_pi, b, basis_indices, basis_inverse_rows)
     };
-    let basis_indices = vec![2, 1, 0, 5];
-    let basis_columns = basis_indices.iter().copied().collect();
+    let basis_columns = (0..4).map(|i| carry.basis_column_index_for_row(i)).collect();
 
     Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
         provider,
         carry,
-        basis_indices,
         basis_columns,
     )
 }

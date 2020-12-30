@@ -1,9 +1,10 @@
 //! # Algorithms
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOpsHR};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintenance;
+use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintener;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::ops as im_ops;
 use crate::algorithm::two_phase::tableau::kind::artificial::Cost as ArtificialCost;
-use crate::data::linear_algebra::vector::Sparse;
+use crate::data::linear_algebra::vector::SparseVector;
 
 pub mod two_phase;
 pub mod criss_cross;
@@ -26,12 +27,13 @@ pub trait SolveRelaxation: MatrixProvider {
     /// Whether the problem is feasible, and if so, a solution if the problem is bounded.
     fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintenance<F:
-            InternalOpsHR +
-            ColumnOps<<Self::Column as Column>::F> +
-            CostOps<ArtificialCost>
+        IM: InverseMaintener<F:
+            im_ops::InternalHR +
+            im_ops::Column<<Self::Column as Column>::F> +
+            im_ops::Cost<ArtificialCost> +
+            im_ops::Rhs<Self::Rhs> +
         >,
-        for<'r> IM::F: CostOps<Self::Cost<'r>>,
+        for<'r> IM::F: im_ops::Cost<Self::Cost<'r>>,
     ;
 }
 
@@ -42,6 +44,6 @@ pub trait SolveRelaxation: MatrixProvider {
 #[derive(Eq, PartialEq, Debug)]
 pub enum OptimizationResult<F> {
     Infeasible,
-    FiniteOptimum(Sparse<F, F>),
+    FiniteOptimum(SparseVector<F, F>),
     Unbounded,
 }

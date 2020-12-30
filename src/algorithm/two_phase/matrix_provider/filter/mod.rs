@@ -2,7 +2,8 @@
 //!
 //! If a problem turns out to have redundant constraints after the first phase, we need to remove
 //! those rows from the problem for the rest of the implementation to work.
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 
 pub mod generic_wrapper;
 

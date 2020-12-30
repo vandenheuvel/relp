@@ -6,6 +6,7 @@ use clap::Clap;
 
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use rust_lp::data::linear_program::elements::LinearProgramType;
 use rust_lp::data::linear_program::general_form::GeneralForm;
@@ -44,7 +45,7 @@ fn main() {
     };
 
     println!("Solving relaxation...");
-    let result = data.solve_relaxation::<Carry<RationalBig>>();
+    let result = data.solve_relaxation::<Carry<RationalBig, BasisInverseRows<_>>>();
 
     println!("Solution computed.");
     match result {
