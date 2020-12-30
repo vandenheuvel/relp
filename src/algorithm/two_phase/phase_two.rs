@@ -1,8 +1,9 @@
 use crate::algorithm::OptimizationResult;
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::strategy::pivot_rule::PivotRule;
 use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOpsHR, InverseMaintenance};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 
 /// Reduces the cost of the basic feasible solution to the minimum.
@@ -21,8 +22,8 @@ pub(crate) fn primal<IM, MP, PR>(
     tableau: &mut Tableau<IM, NonArtificial<MP>>,
 ) -> OptimizationResult<IM::F>
 where
-    IM: InverseMaintenance<F: InternalOpsHR + ColumnOps<<MP::Column as Column>::F>>,
-    for<'r> IM::F: CostOps<MP::Cost<'r>>,
+    IM: InverseMaintener<F: im_ops::InternalHR + im_ops::Column<<MP::Column as Column>::F>>,
+    for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     MP: MatrixProvider,
     PR: PivotRule,
 {
@@ -33,11 +34,11 @@ where
         match rule.select_primal_pivot_column(tableau) {
             Some((column_index, cost)) => {
                 let column = tableau.generate_column(column_index);
-                match tableau.select_primal_pivot_row(&column) {
+                match tableau.select_primal_pivot_row(column.column()) {
                     Some(row_index) => tableau.bring_into_basis(
                         column_index,
                         row_index,
-                        &column,
+                        column,
                         cost,
                     ),
                     None => break OptimizationResult::Unbounded,

@@ -8,28 +8,34 @@
 //!
 //! TODO(ENHANCEMENT): A better inverse maintenance algorithm. Start with factorization?
 use std::fmt::{Debug, Display};
-use std::iter::Sum;
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, Neg, SubAssign};
 
-use num::{One, Zero};
-
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
-use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
+use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 
 pub mod carry;
+pub mod ops;
 
 /// Maintain a basis inverse.
 ///
-/// Should facilitate quick solving of a linear system.
-pub trait InverseMaintenance: Display {
+/// Facilitates quick solving of a linear system.
+///
+/// TODO(ARCHITECTURE): Consider making this trait generic over `MatrixProvider`'s associated types.
+///  See issue #14.
+pub trait InverseMaintener: Display + Sized {
     /// Type used for computations inside the instance.
     ///
     /// Because the algorithm works with results from this object, many other parts of the code use
     /// the same number type. Examples are the tableau and pivot rules.
-    type F: InternalOps;
+    type F: ops::Internal;
+
+    /// Contains the computed column and potentially other information that can be reused from that
+    /// process.
+    type ColumnComputationInfo: ColumnComputationInfo<Self::F>;
 
     /// Create a `Carry` for a tableau with only artificial variables.
     ///
@@ -43,9 +49,9 @@ pub trait InverseMaintenance: Display {
     /// # Return value
     ///
     /// `Carry` with a `minus_pi` equal to -1's and the standard basis.
-    fn create_for_fully_artificial<G: Element>(b: DenseVector<G>) -> Self
+    fn create_for_fully_artificial<Rhs: Element>(rhs: DenseVector<Rhs>) -> Self
     where
-        Self::F: ColumnOps<G>,
+        Self::F: ops::Rhs<Rhs>,
     ;
 
     /// Create a `Carry` for a tableau with some artificial variables.
@@ -66,9 +72,10 @@ pub trait InverseMaintenance: Display {
         artificial: &[usize],
         basis: &[(usize, usize)],
         b: DenseVector<G>,
+        basis_indices: Vec<usize>,
     ) -> Self
     where
-        Self::F: ColumnOps<G>,
+        Self::F: ops::Rhs<G>,
     ;
 
     /// Create a basis inverse when only the basis indices are known.
@@ -81,7 +88,10 @@ pub trait InverseMaintenance: Display {
     /// * `basis`: Indices of columns that are to be in the basis. Should match the number of rows
     /// of the provider. Values should be unique, could have been a set.
     /// * `provider`: Problem representation.
-    fn from_basis(basis: &[usize], provider: &impl MatrixProvider) -> Self;
+    fn from_basis<MP: MatrixProvider>(basis: &[usize], provider: &MP) -> Self
+    where
+        Self::F: ops::Column<<MP::Column as Column>::F>,
+    ;
 
     /// Create a basis inverse when the basis indices and their pivot rows are known.
     ///
@@ -93,10 +103,7 @@ pub trait InverseMaintenance: Display {
     /// * `basis`: Indices of columns that are to be in the basis. Should match the number of rows
     /// of the provider. Values should be unique, could have been a set.
     /// * `provider`: Problem representation.
-    fn from_basis_pivots(
-        basis: &[(usize, usize)],
-        provider: &impl MatrixProvider,
-    ) -> Self;
+    fn from_basis_pivots(basis: &[(usize, usize)], provider: &impl MatrixProvider) -> Self;
 
     /// When a previous basis inverse representation was used to find a basic feasible solution.
     ///
@@ -111,10 +118,10 @@ pub trait InverseMaintenance: Display {
     fn from_artificial<'provider, MP: MatrixProvider>(
         artificial: Self,
         provider: &'provider MP,
-        basis: &[usize],
+        nr_artificial: usize,
     ) -> Self
     where
-        Self::F: InternalOpsHR + ColumnOps<<MP::Column as Column>::F> + CostOps<MP::Cost<'provider>>,
+        Self::F: ops::InternalHR + ops::Column<<MP::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>,
     ;
 
     /// When a previous basis inverse representation was used to find a basic feasible solution.
@@ -129,10 +136,10 @@ pub trait InverseMaintenance: Display {
     fn from_artificial_remove_rows<'a, MP: Filtered>(
         artificial: Self,
         rows_removed: &'a MP,
-        basis_indices: &[usize],
+        nr_artificial: usize,
     ) -> Self
     where
-        Self::F: ColumnOps<<<MP as MatrixProvider>::Column as Column>::F> + CostOps<MP::Cost<'a>>,
+        Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F> + ops::Cost<MP::Cost<'a>>,
     ;
 
     /// Update the basis by representing one row reduction operation.
@@ -148,7 +155,17 @@ pub trait InverseMaintenance: Display {
     /// * `column`: Column relative to the current basis to be entered into that basis.
     /// * `cost`: Relative cost of that column. The objective function value will change by this
     /// amount.
-    fn change_basis(&mut self, pivot_row_index: usize, column: &SparseVector<Self::F, Self::F>, cost: Self::F);
+    ///
+    /// # Return value
+    ///
+    /// The index of the column being removed from the basis.
+    fn change_basis(
+        &mut self,
+        pivot_row_index: usize,
+        pivot_column_index: usize,
+        column: Self::ColumnComputationInfo,
+        cost: Self::F,
+    ) -> usize;
 
     /// Calculates the cost difference `c_j`.
     ///
@@ -157,7 +174,7 @@ pub trait InverseMaintenance: Display {
     //  it.
     fn cost_difference<G, C: Column<F=G> + OrderedColumn>(&self, original_column: &C) -> Self::F
     where
-        Self::F: ColumnOps<G>,
+        Self::F: ops::Column<G>,
     ;
 
     /// Multiplies the submatrix consisting of `minus_pi` and B^-1 by an `original_column`.
@@ -171,9 +188,12 @@ pub trait InverseMaintenance: Display {
     /// A `SparseVector<T>` of length `m`.
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
-    fn generate_column<G, C: Column<F=G> + OrderedColumn>(&self, original_column: C) -> SparseVector<Self::F, Self::F>
+    fn generate_column<G, C: Column<F=G> + OrderedColumn>(
+        &self,
+        original_column: C,
+    ) -> Self::ColumnComputationInfo
     where
-        Self::F: ColumnOps<G>,
+        Self::F: ops::Column<G>,
     ;
 
     /// Generate a single element in the tableau with respect to the current basis.
@@ -184,14 +204,30 @@ pub trait InverseMaintenance: Display {
     /// * `original_column`: Column with respect to the original basis.
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
-    fn generate_element<'a, G: 'a, I: Iterator<Item=&'a SparseTuple<G>>>(
+    fn generate_element<C: Column + OrderedColumn>(
         &self,
         i: usize,
-        original_column: I,
-    ) -> Self::F
+        original_column: C,
+    ) -> Option<Self::F>
     where
-        Self::F: ColumnOps<G>,
+        Self::F: ops::Column<C::F>,
     ;
+
+    /// Housekeeping that needs to happen after a basis change.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind`: Provides access to the matrix being solved, can be used to retrieve columns.
+    fn after_basis_change<K: Kind>(&mut self, kind: &K)
+    where
+        Self::F: ops::Column<<<K as Kind>::Column as Column>::F>,
+    ;
+
+    /// Extract the current basic feasible solution.
+    fn current_bfs(&self) -> Vec<SparseTuple<Self::F>>;
+
+    /// Which basis column has a pivot in the provided row index?
+    fn basis_column_index_for_row(&self, row: usize) -> usize;
 
     /// Clone the latest constraint vector.
     fn b(&self) -> DenseVector<Self::F>;
@@ -215,51 +251,10 @@ pub trait InverseMaintenance: Display {
     fn get_constraint_value(&self, i: usize) -> &Self::F;
 }
 
-/// Operations done by the number type within the inverse maintenance algorithm.
-pub trait InternalOps =
-    Zero +
-    One +
-
-    Neg<Output = Self> +
-
-    AddAssign +
-    for<'r> AddAssign<&'r Self> +
-    SubAssign +
-    for<'r> DivAssign<&'r Self> +
-
-    Sum +
-
-    PartialEq +
-    PartialOrd +
-
-    Clone +
-    Debug +
-    Display +
-;
-
-// TODO(ARCHITECTURE): Once HRTB are propagated like normal associated type trait bounds, remove
-//  this trait by integrating the requirements into `InverseMaintenance::F`'s trait bounds.
-#[allow(clippy::type_repetition_in_bounds)]
-pub trait InternalOpsHR =
-where
-    for<'r> &'r Self: Neg<Output = Self>,
-    for<'r> &'r Self: Mul<&'r Self, Output = Self>,
-    for<'r> &'r Self: Div<&'r Self, Output = Self>,
-;
-
-/// Operations done with the values in the inverse maintenance algorithm while interacting with
-/// values from a matrix provider.
-pub trait ColumnOps<Rhs> =
-    for<'r> AddAssign<&'r Rhs> +
-    for<'r> Add<&'r Rhs, Output = Self> +
-
-    From<Rhs> +
-where
-    for<'r> &'r Self: Mul<&'r Rhs, Output = Self>,
-;
-
-pub trait CostOps<Rhs> =
-    Add<Rhs, Output = Self> +
-where
-    for<'r> &'r Self: Mul<Rhs, Output = Self>,
-;
+/// Allows additional values to be computed when the column is computed.
+pub trait ColumnComputationInfo<F>: Debug {
+    /// Get a reference to the column.
+    fn column(&self) -> &SparseVector<F, F>;
+    /// Consume this value, leaving only the inner column.
+    fn into_column(self) -> SparseVector<F, F>;
+}

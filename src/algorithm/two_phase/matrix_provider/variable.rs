@@ -2,7 +2,8 @@
 //!
 //! If this project is ever extended to a branch and bound framework, we can generalize variables
 //! as the trait in this module specifies.
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 
 /// Logic for testing whether variables are feasible.
 ///

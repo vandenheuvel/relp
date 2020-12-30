@@ -5,6 +5,7 @@ use num::FromPrimitive;
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use rust_lp::data::linear_program::general_form::GeneralForm;
 use rust_lp::data::number_types::rational::{Rational64, RationalBig};
 use rust_lp::data::number_types::traits::Abs;
@@ -22,7 +23,7 @@ fn small_example() {
     let mut general: GeneralForm<Rational64> = result.try_into().ok().unwrap();
 
     let data = general.derive_matrix_data().ok().unwrap();
-    let result = data.solve_relaxation::<Carry<RationalBig>>();
+    let result = data.solve_relaxation::<Carry<RationalBig, LUDecomposition<_>>>();
 
     match result {
         OptimizationResult::FiniteOptimum(solution) => {

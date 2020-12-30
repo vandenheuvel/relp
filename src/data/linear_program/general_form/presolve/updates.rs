@@ -5,6 +5,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
+use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, Objective, RangedConstraintRelation};
 use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable};
 use crate::data::linear_program::general_form::presolve::counters::Counters;
@@ -84,7 +85,7 @@ pub (super) enum BoundChange<F> {
 
 impl<'a, OF> Updates<'a, OF>
 where
-    OF: OrderedField,
+    OF: OrderedField + SparseElement<OF>,
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {
     /// Create a new instance.

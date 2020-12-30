@@ -1,19 +1,23 @@
 //! # Shortest path problem
 use std::fmt::{Display, Formatter, Result as FormatResult};
+use std::fmt;
+use std::ops::{Add, AddAssign};
 
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
-use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
+use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::network::representation::ArcIncidenceColumn;
 use crate::data::linear_program::network::representation::ArcIncidenceMatrix;
+use crate::data::number_types::rational::RationalBig;
 use crate::data::number_types::traits::Field;
 
 /// Solving a shortest path problem as a linear program.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Primal<F> {
+struct Primal<F> {
     /// For each edge, two values indicating from which value the arc leaves, and where it goes to.
-    arc_incidence_matrix: ArcIncidenceMatrix<F>,
+    arc_incidence_matrix: ArcIncidenceMatrix,
     /// Length of the arc.
     cost: DenseVector<F>,
     /// Source node index.
@@ -60,8 +64,9 @@ impl<F: 'static> MatrixProvider for Primal<F>
 where
     F: Field,
 {
-    type Column = ArcIncidenceColumn<F>;
+    type Column = ArcIncidenceColumn;
     type Cost<'a> = &'a F;
+    type Rhs = Binary;
 
     fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_edges());
@@ -75,10 +80,10 @@ where
         &self.cost[j]
     }
 
-    fn right_hand_side(&self) -> DenseVector<F> {
-        let mut b = DenseVector::constant(F::zero(), self.nr_rows());
+    fn right_hand_side(&self) -> DenseVector<Self::Rhs> {
+        let mut b = DenseVector::constant(Binary::Zero, self.nr_rows());
         let t_index = if self.t < self.s { self.t } else { self.t - 1 };
-        b[t_index] = F::one();
+        b[t_index] = Binary::One;
 
         b
     }
@@ -103,8 +108,52 @@ where
         self.nr_edges()
     }
 
-    fn reconstruct_solution<G>(&self, column_values: SparseVector<G, G>) -> SparseVector<G, G> {
+    fn reconstruct_solution<H>(&self, column_values: SparseVector<H, H>) -> SparseVector<H, H> {
         unimplemented!()
+    }
+}
+
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+enum Binary {
+    Zero,
+    One,
+}
+
+impl fmt::Display for Binary {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Binary::Zero => "0",
+            Binary::One => "1",
+        })
+    }
+}
+
+impl From<Binary> for RationalBig {
+    fn from(from: Binary) -> Self {
+        match from {
+            Binary::Zero => Self::zero(),
+            Binary::One => Self::one(),
+        }
+    }
+}
+
+impl Add<&Binary> for RationalBig {
+    type Output = RationalBig;
+
+    fn add(self, rhs: &Binary) -> Self::Output {
+        match rhs {
+            Binary::Zero => self,
+            Binary::One => self + Self::one(),
+        }
+    }
+}
+
+impl AddAssign<&Binary> for RationalBig {
+    fn add_assign(&mut self, rhs: &Binary) {
+        match rhs {
+            Binary::Zero => {}
+            Binary::One => *self += RationalBig::one(),
+        }
     }
 }
 
@@ -141,9 +190,10 @@ where
 #[cfg(test)]
 mod test {
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
-    use crate::data::linear_algebra::vector::Sparse as SparseVector;
+    use crate::data::linear_algebra::vector::SparseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::network::shortest_path::Primal;
     use crate::data::number_types::rational::{Rational64, RationalBig};
@@ -164,7 +214,7 @@ mod test {
         ], 4);
         let problem = Primal::new(data, 0, 3);
         debug_assert_eq!(
-            problem.solve_relaxation::<Carry<S>>(),
+            problem.solve_relaxation::<Carry<S, BasisInverseRows<S>>>(),
             OptimizationResult::FiniteOptimum(SparseVector::from_test_data(
                 vec![0, 1, 0, 0, 1]
             )),

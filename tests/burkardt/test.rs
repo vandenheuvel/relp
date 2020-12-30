@@ -5,6 +5,7 @@ use num::{One, Zero};
 
 use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use rust_lp::data::linear_algebra::traits::Element;
 use rust_lp::data::linear_program::general_form::GeneralForm;
@@ -15,6 +16,7 @@ use rust_lp::io::import;
 use rust_lp::RB;
 
 use super::get_test_file_path;
+use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 
 fn to_general_form<T: From<Rational64> + Zero + One + Ord + Element + Neg<Output=T>>(
     file_name: &str,
@@ -39,7 +41,7 @@ fn adlittle() {
 
     let mut general = result.try_into().unwrap();
     let data = general.derive_matrix_data().unwrap();
-    let result = data.solve_relaxation::<Carry<S>>();
+    let result = data.solve_relaxation::<Carry<S, BasisInverseRows<_>>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -53,19 +55,19 @@ fn adlittle() {
 
 #[test]
 fn afiro() {
-    type T = RationalBig;
+    type T = Rational64;
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("afiro");
     let data = general.derive_matrix_data().unwrap();
-    let result = data.solve_relaxation::<Carry<_>>();
+    let result = data.solve_relaxation::<Carry<_, LUDecomposition<S>>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             let expected = Solution::new(
-                RB!(-406659, 875),  // GLPK
+                RB!(-406_659, 875),  // GLPK
                 vec![
                     ("X01".to_string(), RB!(80, 1)),
                     ("X02".to_string(), RB!(51, 2)),
@@ -124,7 +126,7 @@ fn maros() {
 
     let mut general = to_general_form::<T>("maros");
     let data = general.derive_matrix_data().unwrap();
-    let result = data.solve_relaxation::<Carry<S>>();
+    let result = data.solve_relaxation::<Carry<S, LUDecomposition<_>>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
@@ -151,7 +153,7 @@ fn nazareth() {
 
     let mut general = to_general_form::<T>("nazareth");
     let data = general.derive_matrix_data().unwrap();
-    let result = data.solve_relaxation::<Carry<S>>();
+    let result = data.solve_relaxation::<Carry<S, LUDecomposition<_>>>();
     assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
 }
 
@@ -162,7 +164,7 @@ fn testprob() {
 
     let mut general = to_general_form::<T>("testprob");
     let data = general.derive_matrix_data().unwrap();
-    let result = data.solve_relaxation::<Carry<S>>();
+    let result = data.solve_relaxation::<Carry<S, LUDecomposition<_>>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {

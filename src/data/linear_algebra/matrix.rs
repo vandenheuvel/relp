@@ -8,11 +8,11 @@ use std::collections::HashSet;
 use std::iter::Iterator;
 use std::marker::PhantomData;
 
-use num::{FromPrimitive, ToPrimitive, Zero};
+use num::{FromPrimitive, ToPrimitive};
 
 use crate::algorithm::utilities::{remove_indices, remove_sparse_indices};
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
-use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
+use crate::data::linear_algebra::traits::{NotZero, SparseComparator, SparseElement};
 use crate::data::number_types::traits::Field;
 
 /// Indices start at `0`.
@@ -49,12 +49,12 @@ pub trait Order: Sized {
     ///
     /// Note that the numerics might not be exact due to intermediate casting to floats, for
     /// convenience in other places of the code base.
-    fn from_test_data<F: FromPrimitive, C, IT: ToPrimitive + Zero>(
+    fn from_test_data<F: FromPrimitive, C, IT: ToPrimitive + NotZero>(
         rows: &[Vec<IT>],
         nr_columns: usize,
     ) -> Sparse<F, C, Self>
     where
-        F: Field + Borrow<C>,
+        F: SparseElement<C>,
         C: SparseComparator,
     ;
 
@@ -62,7 +62,7 @@ pub trait Order: Sized {
     #[must_use]
     fn identity<F, C>(n: usize) -> Sparse<F, C, Self>
     where
-        F: Field + Borrow<C>,
+        F: Field + Borrow<C> + SparseElement<C>,
         C: SparseComparator,
     {
         Sparse::identity(n)
@@ -88,12 +88,12 @@ impl Order for RowMajor {
         Sparse::from_major_ordered_tuples(rows, nr_rows, nr_columns)
     }
 
-    fn from_test_data<F: FromPrimitive, C, IT: ToPrimitive + Zero>(
+    fn from_test_data<F: FromPrimitive, C, IT: ToPrimitive + NotZero>(
         rows: &[Vec<IT>],
         nr_columns: usize,
     ) -> Sparse<F, C, Self>
     where
-        F: SparseElement<C>,
+        F: Borrow<C>,
         C: SparseComparator,
     {
         debug_assert!(rows.iter().all(|v| v.len() == nr_columns));
@@ -103,7 +103,7 @@ impl Order for RowMajor {
         let mut data: Vec<_> = rows.iter().map(Vec::len).map(Vec::with_capacity).collect();
         for (row_index, row) in rows.iter().enumerate() {
             for (column_index, value) in row.iter().enumerate() {
-                if !value.is_zero() {
+                if value.is_not_zero() {
                     let new_value = F::from_f64(value.to_f64().unwrap()).unwrap();
                     data[row_index].push((column_index, new_value));
                 }
@@ -134,7 +134,7 @@ impl Order for ColumnMajor {
         Sparse::from_major_ordered_tuples(columns, nr_columns, nr_rows)
     }
 
-    fn from_test_data<F: FromPrimitive, C, IT: ToPrimitive + Zero>(
+    fn from_test_data<F: FromPrimitive, C, IT: ToPrimitive + NotZero>(
         rows: &[Vec<IT>],
         nr_columns: usize,
     ) -> Sparse<F, C, Self>
@@ -149,7 +149,7 @@ impl Order for ColumnMajor {
         let mut data = vec![vec![]; nr_columns];
         for (row_index, row) in rows.iter().enumerate() {
             for (column_index, value) in row.iter().enumerate() {
-                if !value.is_zero() {
+                if value.is_not_zero() {
                     let new_value = F::from_f64(value.to_f64().unwrap()).unwrap();
                     data[column_index].push((row_index, new_value));
                 }
@@ -169,7 +169,7 @@ impl Order for ColumnMajor {
 
 impl<F> Sparse<F, F, RowMajor>
 where
-    F: SparseElement<F>,
+    F: SparseElement<F> + SparseComparator,
 {
     /// A copy in a different ordering by reference.
     #[must_use]
@@ -290,7 +290,10 @@ impl<F: SparseElement<C>, C: SparseComparator> Sparse<F, C, ColumnMajor> {
     pub fn from_row_ordered_tuples_although_this_is_expensive(
         rows: &[SparseTupleVec<F>],
         current_nr_columns: usize,
-    ) -> Sparse<&F, F, ColumnMajor> {
+    ) -> Sparse<&F, F, ColumnMajor>
+    where
+        F: SparseComparator,
+    {
         Sparse::from_minor_ordered_tuples(rows, current_nr_columns)
     }
 
@@ -378,8 +381,8 @@ impl<F: SparseElement<C>, C: SparseComparator, MO: Order> Sparse<F, C, MO> {
     ///
     /// # Arguments
     ///
-    /// * `columns`: Column-major data of `(row_index, value)` tuples that should already be filtered
-    /// for non-zero values.
+    /// * `data`: Collection of `(minor_index, value)` tuples that should already be filtered for
+    /// non-zero values.
     /// * `nr_rows`: Number of rows this matrix is large. Couldn't be derived from `columns`,
     /// because the final row(s) might be zero, so no column would have a value in that row.
     /// * `nr_columns`: Number of columns this matrix is large. Could be derived from `columns`,
@@ -395,6 +398,7 @@ impl<F: SparseElement<C>, C: SparseComparator, MO: Order> Sparse<F, C, MO> {
         debug_assert!(data.iter()
             .map(|c| c.iter().map(|&(i, _)| i).max())
             .all(|m| m.map_or(true, |max_minor_index| max_minor_index < minor_dimension_size)));
+        debug_assert!(data.iter().all(|minor| minor.iter().all(|(_, v)| v.borrow().is_not_zero())));
 
         Sparse {
             data,

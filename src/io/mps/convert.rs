@@ -12,8 +12,8 @@ use num::{One, Zero};
 
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order as MatrixOrder, Sparse};
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::Element;
-use crate::data::linear_algebra::vector::{Dense as DenseVector, Vector};
+use crate::data::linear_algebra::traits::{Element, NotZero};
+use crate::data::linear_algebra::vector::{DenseVector, Vector};
 use crate::data::linear_program::elements::{ConstraintRelation, RangedConstraintRelation, VariableType};
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::Variable as ShiftedVariable;
@@ -28,7 +28,7 @@ use crate::io::mps::Row;
 impl<FI, FO: From<FI>> TryInto<GeneralForm<FO>> for MPS<FI>
 where
     FI: Sub<Output=FI> + Abs + Ord + Zero + Display + Clone,
-    FO: Zero + One + Neg<Output=FO> + Ord + Element,
+    FO: NotZero + Zero + One + Neg<Output=FO> + Ord + Element,
     for<'r> FO: Add<&'r FO, Output=FO>,
     for<'r> &'r FO: Neg<Output=FO>,
 {
@@ -88,7 +88,7 @@ where
 /// # Errors
 ///
 /// If there is an inconsistency in bound information, such as a trivial infeasibility.
-fn compute_variable_info<FI, FO: From<FI> + Zero + One + Ord + Display + Debug + Clone>(
+fn compute_variable_info<FI, FO: From<FI> + NotZero + Zero + One + Ord + Display + Debug + Clone>(
     columns: Vec<Column<FI>>,
     cost_values: Vec<SparseTuple<FI>>,
     bounds: Vec<Bound<FI>>,
@@ -442,7 +442,7 @@ fn compute_constraint_types<FI: Zero + PartialEq, FO: From<FI>>(
 /// different values.
 #[allow(unreachable_patterns)]
 fn compute_b<
-    OFI: Sub<Output = OFI> + Abs + PartialOrd + Zero + Clone,
+    OFI: Sub<Output=OFI> + Abs + PartialOrd + Zero + Clone,
     OFO: From<OFI> + Zero + Abs + PartialOrd + Element + Display,
 >(
     rhss: Vec<Rhs<OFI>>,
@@ -512,7 +512,7 @@ where
 mod test {
     use num::FromPrimitive;
 
-    use crate::data::linear_algebra::vector::{Dense, Vector};
+    use crate::data::linear_algebra::vector::{DenseVector, Vector};
     use crate::data::linear_program::elements::{ConstraintRelation, RangedConstraintRelation};
     use crate::data::number_types::rational::Rational32;
     use crate::io::mps::{Rhs, Row};
@@ -529,7 +529,7 @@ mod test {
         let rows = vec![];
         let original_nr_rows = 0;
         let b = compute_b(rhss, &mut constraints, &rows, original_nr_rows);
-        assert_eq!(b, Ok(Dense::<T>::new(vec![], 0)));
+        assert_eq!(b, Ok(DenseVector::<T>::new(vec![], 0)));
 
         // No ranges, one rhs
         let rhss = vec![Rhs { name: "R".to_string(), values: vec![(0, R32!(1))], }];
@@ -537,7 +537,7 @@ mod test {
         let rows = vec![Row { name: "".to_string(), constraint_type: ConstraintRelation::Equal}];
         let original_nr_rows = 1;
         let b = compute_b(rhss, &mut constraints, &rows, original_nr_rows);
-        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1)], 1)));
+        assert_eq!(b, Ok(DenseVector::<T>::new(vec![R32!(1)], 1)));
 
         // No ranges, two rhses
         let rhss = vec![
@@ -548,7 +548,7 @@ mod test {
         let rows = vec![Row { name: "".to_string(), constraint_type: ConstraintRelation::Greater}];
         let original_nr_rows = 1;
         let b = compute_b(rhss, &mut constraints, &rows, original_nr_rows);
-        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(2)], 1)));
+        assert_eq!(b, Ok(DenseVector::<T>::new(vec![R32!(2)], 1)));
 
         // One range with data before
         let rhss = vec![
@@ -564,7 +564,7 @@ mod test {
         ];
         let original_nr_rows = 2;
         let b = compute_b(rhss, &mut constraints, &rows, original_nr_rows);
-        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1), R32!(5)], 2)));
+        assert_eq!(b, Ok(DenseVector::<T>::new(vec![R32!(1), R32!(5)], 2)));
 
         // One range with data after
         let rhss = vec![
@@ -580,6 +580,6 @@ mod test {
         ];
         let original_nr_rows = 2;
         let b = compute_b(rhss, &mut constraints, &rows, original_nr_rows);
-        assert_eq!(b, Ok(Dense::<T>::new(vec![R32!(1), R32!(5)], 2)));
+        assert_eq!(b, Ok(DenseVector::<T>::new(vec![R32!(1), R32!(5)], 2)));
     }
 }

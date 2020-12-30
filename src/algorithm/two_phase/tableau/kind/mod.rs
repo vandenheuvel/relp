@@ -5,7 +5,8 @@
 //!
 //! The `Tableau` type and algorithm logic in the parent modules is independent or whether a tableau
 //! contains artificial variables, or not. This module enables those abstractions.
-use crate::algorithm::two_phase::matrix_provider::{Column, OrderedColumn};
+
+use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
 
 pub mod artificial;
 pub mod non_artificial;

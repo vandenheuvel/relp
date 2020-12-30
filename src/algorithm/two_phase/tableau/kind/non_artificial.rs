@@ -4,12 +4,12 @@
 //! `Tableau` logic that is only relevant in the second phase.
 use std::collections::HashSet;
 
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOpsHR, InverseMaintenance};
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
-use crate::algorithm::utilities::remove_indices;
 
 /// The `TableauType` in case the `Tableau` does not contain any artificial variables.
 ///
@@ -72,7 +72,11 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintenance<F: InternalOpsHR + ColumnOps<<MP::Column as Column>::F> + CostOps<MP::Cost<'provider>>>,
+    IM: InverseMaintener<F:
+        im_ops::InternalHR +
+        im_ops::Column<<MP::Column as Column>::F> +
+        im_ops::Cost<MP::Cost<'provider>> +
+    >,
     MP: MatrixProvider,
 {
     /// Creates a Simplex tableau with a specific basis.
@@ -91,12 +95,10 @@ where
     pub(crate) fn new_with_inverse_maintainer(
         provider: &'provider MP,
         inverse_maintainer: IM,
-        basis_indices: Vec<usize>,
         basis_columns: HashSet<usize>,
     ) -> Self {
         Tableau {
             inverse_maintainer,
-            basis_indices,
             basis_columns,
 
             kind: NonArtificial {
@@ -125,7 +127,6 @@ where
 
         Tableau {
             inverse_maintainer: IM::from_basis(&arbitrary_order, provider),
-            basis_indices: arbitrary_order,
             basis_columns: basis.clone(),
 
             kind: NonArtificial {
@@ -146,23 +147,17 @@ where
     pub fn from_artificial(
         inverse_maintainer: IM,
         nr_artificial: usize,
-        basis: (Vec<usize>, HashSet<usize>),
+        basis_indices: HashSet<usize>,
         provider: &'provider MP,
     ) -> Self {
-        let (mut basis_indices, basis_columns) = basis;
-
-        // Shift the basis column indices back
-        basis_indices.iter_mut().for_each(|column| *column -= nr_artificial);
-
         Tableau {
             inverse_maintainer: IM::from_artificial(
                 inverse_maintainer,
                 provider,
-                // TODO(CORRECTNESS): Should these be shifted?
-                &basis_indices,
+                nr_artificial,
             ),
-            basis_indices,
-            basis_columns: basis_columns.into_iter()
+            // Shift the basis column indices back
+            basis_columns: basis_indices.into_iter()
                 .map(|column| column - nr_artificial)
                 .collect(),
 
@@ -175,7 +170,7 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintenance<F: InternalOpsHR + ColumnOps<<MP::Column as Column>::F> + CostOps<MP::Cost<'provider>>>,
+    IM: InverseMaintener<F: im_ops::InternalHR + im_ops::Column<<MP::Column as Column>::F> + im_ops::Cost<MP::Cost<'provider>>>,
     MP: Filtered,
 {
     /// Create a `Tableau` from an artificial tableau while removing some rows.
@@ -192,31 +187,26 @@ where
     pub fn from_artificial_removing_rows(
         inverse_maintainer: IM,
         nr_artificial: usize,
-        basis: (Vec<usize>, HashSet<usize>),
+        mut basis: HashSet<usize>,
         provider: &'provider MP,
     ) -> Self {
-        debug_assert!(basis.0.iter().all(|&v| v >= nr_artificial || provider.filtered_rows().contains(&v)));
+        debug_assert!(basis.iter().all(|&v| v >= nr_artificial || provider.filtered_rows().contains(&v)));
 
-        let (mut basis_indices, mut basis_columns) = basis;
         for &row in provider.filtered_rows() {
-            let was_there = basis_columns.remove(&basis_indices[row]);
+            let was_there = basis.remove(&inverse_maintainer.basis_column_index_for_row(row));
             debug_assert!(was_there);
         }
-        let basis_columns = basis_columns.into_iter().map(|j| j - nr_artificial).collect();
-
-        remove_indices(&mut basis_indices, provider.filtered_rows());
-        basis_indices.iter_mut().for_each(|index| *index -= nr_artificial);
+        let basis_columns = basis.into_iter().map(|j| j - nr_artificial).collect();
 
         // Remove same row and column from carry matrix
         let inverse_maintainer = IM::from_artificial_remove_rows(
             inverse_maintainer,
             provider,
-            &basis_indices,
+            nr_artificial,
         );
 
         Tableau {
             inverse_maintainer,
-            basis_indices,
             basis_columns,
 
             kind: NonArtificial {

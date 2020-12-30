@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use num::FromPrimitive;
 
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
-use crate::data::linear_algebra::vector::{Dense, Vector};
+use crate::data::linear_algebra::vector::{DenseVector, Vector};
 use crate::data::linear_program::elements::{Objective, VariableType};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::elements::LinearProgramType;
@@ -33,7 +33,7 @@ fn no_changes() {
             RangedConstraintRelation::Less,
             RangedConstraintRelation::Less,
         ],
-        Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+        DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
         vec![Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(1),
@@ -82,7 +82,7 @@ mod initialization {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -124,7 +124,7 @@ mod initialization {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -169,7 +169,7 @@ mod initialization {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -222,7 +222,7 @@ mod initialization {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Equal,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5), R32!(123)], 4),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5), R32!(123)], 4),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -259,7 +259,7 @@ mod initialization {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5), R32!(-123)], 4),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5), R32!(-123)], 4),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -300,7 +300,7 @@ mod initialization {
                     RangedConstraintRelation::Greater,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![
+                DenseVector::new(vec![
                     R32!(1),
                     R32!(6, 5),
                     R32!(0),
@@ -357,7 +357,7 @@ mod initialization {
                     RangedConstraintRelation::Greater,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![
+                DenseVector::new(vec![
                     R32!(1),
                     R32!(6, 5),
                     R32!(0),
@@ -407,7 +407,7 @@ mod fixed_variable {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -461,7 +461,7 @@ mod fixed_variable {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -515,7 +515,7 @@ mod fixed_variable {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(-20), R32!(1), R32!(6, 5), R32!(6, 5)], 4),
+                DenseVector::new(vec![R32!(-20), R32!(1), R32!(6, 5), R32!(6, 5)], 4),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -574,7 +574,7 @@ mod fixed_variable {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(1), R32!(6, 5), R32!(6, 5)], 4),
+                DenseVector::new(vec![R32!(1), R32!(1), R32!(6, 5), R32!(6, 5)], 4),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(-12),
@@ -638,7 +638,7 @@ mod bound_constraint {
                 RangedConstraintRelation::Less,
                 RangedConstraintRelation::Less,
             ],
-            Dense::new(vec![R32!(1), R32!(6, 5), R32!(3, 4), R32!(6, 5)], 4),
+            DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(3, 4), R32!(6, 5)], 4),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(-2),
@@ -686,7 +686,7 @@ mod bound_constraint {
                 RangedConstraintRelation::Less,
                 RangedConstraintRelation::Less,
             ],
-            Dense::new(vec![R32!(1), R32!(6, 5), -R32!(3, 4), R32!(6, 5)], 4),
+            DenseVector::new(vec![R32!(1), R32!(6, 5), -R32!(3, 4), R32!(6, 5)], 4),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(-2),
@@ -735,7 +735,7 @@ mod bound_constraint {
                 RangedConstraintRelation::Equal,
                 RangedConstraintRelation::Less,
             ],
-            Dense::new(vec![R32!(1), R32!(6, 5), R32!(10), R32!(6, 5)], 4),
+            DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(10), R32!(6, 5)], 4),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(2),
@@ -779,7 +779,7 @@ mod bound_constraint {
                 RangedConstraintRelation::Equal,
                 RangedConstraintRelation::Less,
             ],
-            Dense::new(vec![R32!(1), R32!(6, 5), -R32!(3), R32!(6, 5)], 4),
+            DenseVector::new(vec![R32!(1), R32!(6, 5), -R32!(3), R32!(6, 5)], 4),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(2),
@@ -827,7 +827,7 @@ mod bound_constraint {
                 RangedConstraintRelation::Equal,
                 RangedConstraintRelation::Less,
             ],
-            Dense::new(vec![R32!(1), R32!(6, 5), R32!(3, 4), R32!(6, 5)], 4),
+            DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(3, 4), R32!(6, 5)], 4),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(2),
@@ -875,7 +875,7 @@ mod bound_constraint {
                     RangedConstraintRelation::Greater,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), -R32!(3), R32!(6, 5)], 4),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), -R32!(3), R32!(6, 5)], 4),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(-3),
@@ -923,7 +923,7 @@ mod bound_constraint {
                     RangedConstraintRelation::Greater,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(2), R32!(6, 5), R32!(1), R32!(6, 5)], 4),
+                DenseVector::new(vec![R32!(2), R32!(6, 5), R32!(1), R32!(6, 5)], 4),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(-3),
@@ -981,7 +981,7 @@ mod slack_variable {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -1031,7 +1031,7 @@ mod slack_variable {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -1080,7 +1080,7 @@ mod slack_variable {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(1),
@@ -1131,7 +1131,7 @@ mod slack_variable {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(14),
@@ -1184,7 +1184,7 @@ mod slack_variable {
                 RangedConstraintRelation::Less,
                 RangedConstraintRelation::Less,
             ],
-            Dense::new(vec![R32!(1), R32!(1), R32!(6, 5), R32!(6, 5)], 4),
+            DenseVector::new(vec![R32!(1), R32!(1), R32!(6, 5), R32!(6, 5)], 4),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(1),
@@ -1239,7 +1239,7 @@ mod domain_propagation {
                 RangedConstraintRelation::Less,
                 RangedConstraintRelation::Less,
             ],
-            Dense::new(vec![R32!(3, 2), R32!(6, 5), R32!(6, 5)], 3),
+            DenseVector::new(vec![R32!(3, 2), R32!(6, 5), R32!(6, 5)], 3),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(1),
@@ -1282,7 +1282,7 @@ mod domain_propagation {
                     RangedConstraintRelation::Less,
                     RangedConstraintRelation::Less,
                 ],
-                Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+                DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
                 vec![Variable {
                     variable_type: VariableType::Continuous,
                     cost: R32!(14),
@@ -1320,7 +1320,7 @@ mod domain_propagation {
                 RangedConstraintRelation::Less,
                 RangedConstraintRelation::Less,
             ],
-            Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+            DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(14),
@@ -1366,7 +1366,7 @@ mod domain_propagation {
                 RangedConstraintRelation::Less,
                 RangedConstraintRelation::Less,
             ],
-            Dense::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
+            DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(14),
@@ -1402,7 +1402,7 @@ mod domain_propagation {
                 RangedConstraintRelation::Less,
                 RangedConstraintRelation::Less,
             ],
-            Dense::new(vec![R32!(3, 2), R32!(6, 5), R32!(6, 5)], 3),
+            DenseVector::new(vec![R32!(3, 2), R32!(6, 5), R32!(6, 5)], 3),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(1),

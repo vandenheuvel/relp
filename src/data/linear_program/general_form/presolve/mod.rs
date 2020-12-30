@@ -4,6 +4,7 @@
 //! applying the changes proposed. This module contains data structures and logic for presolving.
 use std::iter::Iterator;
 
+use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, NonZeroSign, RangedConstraintRelation};
 use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable};
 use crate::data::linear_program::general_form::presolve::counters::Counters;
@@ -15,7 +16,6 @@ mod rule;
 mod queues;
 pub(super) mod updates;
 mod counters;
-
 
 /// Container data structure to keep track of presolve status.
 ///
@@ -53,7 +53,7 @@ pub(super) enum Change {
 
 impl<'a, OF> Index<'a, OF>
 where
-    OF: OrderedField,
+    OF: OrderedField + SparseElement<OF>,
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {
     /// Create a new instance.

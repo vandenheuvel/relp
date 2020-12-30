@@ -3,10 +3,12 @@
 //! A set of counters that makes searching during presolving unnecessary.
 use crate::data::linear_algebra::matrix::{RowMajor, Sparse};
 use crate::data::linear_algebra::SparseTuple;
+use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::presolve::NonZeroSign;
 use crate::data::number_types::traits::{Field, OrderedField, OrderedFieldRef};
 
+/// Avoiding searching during presolving.
 pub(super) struct Counters<'a, F: Field> {
     /// Amount of meaningful elements still in the column or row.
     /// The elements should at least be considered when the counter drops below 2. This also
@@ -27,7 +29,7 @@ pub(super) struct Counters<'a, F: Field> {
 
 impl<'a, OF> Counters<'a, OF>
 where
-    OF: OrderedField,
+    OF: OrderedField + SparseElement<OF>,
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {
     /// Create a new instance.

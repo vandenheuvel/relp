@@ -44,7 +44,6 @@ impl<F: PartialEq + Clone> Solution<F> {
     ///
     /// * `other`: `Solution` to compare to.
     /// * `min_equal`: Minimum fraction of solution values that are equal across all variables.
-    #[allow(clippy::nonminimal_bool)]
     pub fn is_probably_equal_to(&self, other: &Self, min_equal: f64) -> bool {
         if !(self.objective_value == other.objective_value) {
             return false;

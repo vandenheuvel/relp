@@ -4,12 +4,14 @@
 //! algorithm is implemented as described in chapters 2 and 4 of Combinatorial Optimization, a book
 //! by Christos H. Papadimitriou and Kenneth Steiglitz.
 use crate::algorithm::{OptimizationResult, SolveRelaxation};
-use crate::algorithm::two_phase::matrix_provider::{Column, MatrixProvider};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::{FeasibilityComputeTrait, FullInitialBasis, Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::SteepestDescent;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InternalOpsHR, InverseMaintenance};
-use crate::algorithm::two_phase::tableau::kind::artificial::{Cost as ArtificialCost, IdentityColumn};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::kind::artificial::Cost as ArtificialCost;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -27,12 +29,13 @@ where
     // TODO(ENHANCEMENT): Specialize for MatrixProviders that can be filtered directly.
     default fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintenance<F:
-            InternalOpsHR +
-            ColumnOps<<<Self as MatrixProvider>::Column as Column>::F> +
-            CostOps<ArtificialCost> +
+        IM: InverseMaintener<F:
+            im_ops::InternalHR +
+            im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
+            im_ops::Cost<ArtificialCost> +
+            im_ops::Rhs<MP::Rhs> +
         >,
-        for<'r> IM::F: CostOps<MP::Cost<'r>>,
+        for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     {
         // Default choice
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
@@ -83,11 +86,12 @@ where
 {
     fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintenance<F:
-            InternalOpsHR +
-            ColumnOps<<<Self as MatrixProvider>::Column as Column>::F> +
+        IM: InverseMaintener<F:
+            im_ops::InternalHR +
+            im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
+            im_ops::Rhs<Self::Rhs> +
         >,
-        for<'r> IM::F: CostOps<MP::Cost<'r>>,
+        for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     {
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -97,10 +101,9 @@ where
         // Sorting of identity matrix columns
         let inverse_maintainer = IM::from_basis_pivots(&basis_indices, self);
 
-        let basis_indices: Vec<usize> = basis_indices.into_iter().map(|(_row, column)| column).collect();
-        let basis_columns = basis_indices.iter().copied().collect();
+        let basis_indices = basis_indices.into_iter().map(|(_row, column)| column).collect();
         let mut tableau = Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
-            self, inverse_maintainer, basis_indices, basis_columns,
+            self, inverse_maintainer, basis_indices,
         );
         phase_two::primal::<_, _, NonArtificialPR>(&mut tableau)
     }
@@ -112,14 +115,13 @@ mod test {
 
     use crate::{R64, RB};
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
-    use crate::algorithm::two_phase::{phase_one, phase_two, Rank, RankedFeasibilityResult};
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
+    use crate::algorithm::two_phase::phase_two;
     use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-    use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
-    use crate::algorithm::two_phase::tableau::Tableau;
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
-    use crate::data::linear_algebra::vector::{Dense as DenseVector, Sparse as SparseVector};
+    use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::VariableType;
     use crate::data::linear_program::general_form::Variable;
@@ -139,27 +141,13 @@ mod test {
     }
 
     #[test]
-    fn finding_bfs() {
-        type T = Rational64;
-        type S = RationalBig;
-
-        let (constraints, b, variables) = create_matrix_data_data();
-        let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
-        let tableau = Tableau::<Carry<S>, Partially<_>>::new(&matrix_data_form);
-        assert!(matches!(
-            phase_one::primal::<_, _, MatrixData<T>, FirstProfitable>(tableau),
-            RankedFeasibilityResult::Feasible { rank: Rank::Full, .. }
-        ));
-    }
-
-    #[test]
     fn solve_matrix() {
         type S = RationalBig;
 
         let (constraints, b, variables) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
 
-        let result = SolveRelaxation::solve_relaxation::<Carry<S>>(&matrix_data_form);
+        let result = SolveRelaxation::solve_relaxation::<Carry<S, LUDecomposition<S>>>(&matrix_data_form);
         //  Optimal value: R64!(4.5)
         assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
             (1, 0.5f64),
@@ -173,7 +161,7 @@ mod test {
         type T = Rational64;
         type S = RationalBig;
 
-        let constraints = ColumnMajor::from_test_data::<T, _, _>(&vec![
+        let constraints = ColumnMajor::from_test_data::<T, _, _>(&[
             vec![1, 0],
             vec![1, 1],
         ], 2);
@@ -211,7 +199,7 @@ mod test {
             &variables,
         );
 
-        let result = data.solve_relaxation::<Carry<S>>();
+        let result = data.solve_relaxation::<Carry<S, LUDecomposition<S>>>();
         assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
             (0, 3f64 / 2f64),
             (1, 1f64),
