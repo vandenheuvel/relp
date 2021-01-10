@@ -17,8 +17,8 @@ use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
 use crate::data::linear_algebra::matrix::Sparse;
 use crate::data::linear_algebra::SparseTupleVec;
-use crate::data::linear_algebra::traits::Element as LinearAlgebraElement;
-use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
+use crate::data::linear_algebra::traits::{SparseComparator, SparseElement as LinearAlgebraElement};
+use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, Objective, RangedConstraintRelation, RangedConstraintRelationKind, VariableType};
 use crate::data::linear_program::general_form::presolve::{Change, Index as PresolveIndex};
 use crate::data::linear_program::general_form::presolve::updates::Changes;
@@ -58,7 +58,7 @@ pub struct GeneralForm<F> {
     /// * When a constraint is `ConstraintType::Greater`, the equation is `<a, x> >= b`
     constraint_types: Vec<RangedConstraintRelation<F>>,
     /// All right-hands sides of equations.
-    b: Dense<F>,
+    b: DenseVector<F>,
 
     // Variable related
     /// Information about all *active* variables, that is, variables that are not yet presolved.
@@ -133,8 +133,7 @@ pub enum RemovedVariable<F> {
 ///
 /// This method might be expensive, use it in debugging only. It can be viewed as a piece of
 /// documentation on the requirements of a `GeneralForm` struct.
-#[allow(clippy::nonminimal_bool)]
-fn is_consistent<F: LinearAlgebraElement>(general_form: &GeneralForm<F>) -> bool {
+fn is_consistent<F: LinearAlgebraElement<F> + SparseComparator>(general_form: &GeneralForm<F>) -> bool {
     // Reference values
     let nr_active_constraints = general_form.nr_active_constraints();
     let nr_active_variables = general_form.nr_active_variables();
@@ -202,7 +201,7 @@ fn is_consistent<F: LinearAlgebraElement>(general_form: &GeneralForm<F>) -> bool
 }
 
 
-impl<F: LinearAlgebraElement> GeneralForm<F> {
+impl<F: LinearAlgebraElement<F> + SparseComparator> GeneralForm<F> {
     /// Create a new linear program in general form.
     ///
     /// Simple constructor except for two indices that get created.
@@ -210,7 +209,7 @@ impl<F: LinearAlgebraElement> GeneralForm<F> {
         objective: Objective,
         constraints: Sparse<F, F, ColumnMajor>,
         constraint_types: Vec<RangedConstraintRelation<F>>,
-        b: Dense<F>,
+        b: DenseVector<F>,
         variables: Vec<Variable<F>>,
         variable_names: Vec<String>,
         fixed_cost: F,
@@ -237,7 +236,7 @@ impl<F: LinearAlgebraElement> GeneralForm<F> {
 
 impl<OF: 'static> GeneralForm<OF>
 where
-    OF: OrderedField,
+    OF: OrderedField + LinearAlgebraElement<OF>,
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {
     /// Modify this linear problem such that it is representable by a `MatrixData` structure.
@@ -683,7 +682,7 @@ where
             // TODO(ARCHITECTURE): Avoid this mem::replace
             new_b[get_destination(i)] = Some(mem::replace(&mut self.b[i], OF::zero()));
         }
-        self.b = Dense::new(new_b.into_iter().collect::<Option<Vec<_>>>().unwrap(), self.b.len());
+        self.b = DenseVector::new(new_b.into_iter().collect::<Option<Vec<_>>>().unwrap(), self.b.len());
 
         for column in &mut self.constraints.data {
             for (i, _) in column.iter_mut() {
@@ -816,9 +815,7 @@ where
     /// the "original variables" of this problem.
     pub fn reshift_solution<G>(&self, reduced_solution: &mut SparseVector<G, G>)
     where
-        G: LinearAlgebraElement + PartialEq<OF> + AddAssign<OF> + From<OF>,
-        // TODO(CORRECTNESS): Why would this trait bound be needed here?
-        G: Zero,
+        G: LinearAlgebraElement<G> + SparseComparator + PartialEq<OF> + AddAssign<OF> + From<OF>,
         for<'r> &'r OF: Neg<Output=OF>,
         for<'r> &'r G: Neg<Output=G>,
     {
@@ -854,7 +851,7 @@ where
     ) -> Solution<G>
     where
         // TODO: Find a suitable trait alias to avoid this many trait bounds.
-        G: Sum + Neg<Output=G> + AddAssign<OF> + PartialEq<OF> + LinearAlgebraElement + From<OF> + Eq + Ord + Zero,
+        G: Sum + Neg<Output=G> + AddAssign<OF> + PartialEq<OF> + LinearAlgebraElement<G> + From<OF> + Eq + Ord + Zero,
         for<'r> G: Add<&'r OF, Output=G>,
         for<'r> &'r G: Neg<Output=G> + Mul<&'r OF, Output=G> + Add<&'r OF, Output=G> + Sub<&'r G, Output=G>,
     {
@@ -904,7 +901,7 @@ where
         reduced_solution: &SparseVector<G, G>,
     ) -> &'a G
     where
-        G: LinearAlgebraElement + Zero + From<OF> + Sum + Neg<Output=G>,
+        G: LinearAlgebraElement<G> + Zero + From<OF> + Sum + Neg<Output=G>,
         for<'r> G: Add<&'r OF, Output=G>,
         for<'r> &'r G: Neg<Output=G> + Mul<&'r OF, Output=G> + Add<&'r OF, Output=G> + Sub<&'r G, Output=G>,
     {
@@ -946,7 +943,7 @@ where
 
 impl<OF> GeneralForm<OF>
 where
-    OF: LinearAlgebraElement,
+    OF: LinearAlgebraElement<OF> + SparseComparator,
 {
     /// Number of constraints that have not been eliminated after a presolving operation.
     /// 
@@ -1133,7 +1130,7 @@ mod test {
     use num::FromPrimitive;
 
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
-    use crate::data::linear_algebra::vector::Dense;
+    use crate::data::linear_algebra::vector::DenseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::{Objective, RangedConstraintRelation, VariableType};
     use crate::data::linear_program::general_form::{GeneralForm, OriginalVariable, Variable};
@@ -1152,7 +1149,7 @@ mod test {
             vec![2, 1],
         ];
         let constraints = ColumnMajor::from_test_data::<T, T, _>(&data, 2);
-        let b = Dense::from_test_data(vec![
+        let b = DenseVector::from_test_data(vec![
             2,
             8,
         ]);
@@ -1198,7 +1195,7 @@ mod test {
                 RangedConstraintRelation::Greater,
                 RangedConstraintRelation::Less,
             ],
-            b: Dense::from_test_data(vec![
+            b: DenseVector::from_test_data(vec![
                 2f64 - bound_value * 0f64,
                 8f64 - bound_value * 1f64,
             ]),
@@ -1243,7 +1240,7 @@ mod test {
         type T = Rational32;
 
         let rows = ColumnMajor::from_test_data::<T, T, _>(&[vec![2]], 1);
-        let b = Dense::from_test_data(vec![-1]);
+        let b = DenseVector::from_test_data(vec![-1]);
         let variables = vec![
             Variable {
                 variable_type: VariableType::Continuous,
@@ -1268,7 +1265,7 @@ mod test {
         result.make_b_non_negative();
 
         let data = ColumnMajor::from_test_data(&[vec![-2]], 1);
-        let b = Dense::from_test_data(vec![1]);
+        let b = DenseVector::from_test_data(vec![1]);
         let constraints = vec![RangedConstraintRelation::Equal];
         let variables = vec![Variable {
             variable_type: VariableType::Continuous,

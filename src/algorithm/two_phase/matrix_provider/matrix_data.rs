@@ -4,28 +4,32 @@
 use std::fmt::{Display, Formatter};
 use std::fmt;
 
-use itertools::repeat_n;
-
-use crate::algorithm::two_phase::matrix_provider::{Column as ColumnTrait, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
-use crate::algorithm::two_phase::tableau::kind::artificial::IdentityColumn;
 use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::{Element, SparseElement};
-use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector, Vector};
+use crate::data::linear_algebra::traits::{Element, SparseComparator, SparseElement};
+use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::general_form::Variable;
 use crate::data::number_types::traits::{Field, FieldRef};
 
+/// The `MatrixData` struct represents variables in 6 different categories.
+///
+/// They are sorted and grouped together in their representation. This constant is used to define
+/// the size of an array the contains all the indices at the boundaries of the groups, to be able to
+/// search quickly what type a variable is by index.
 const NR_VARIABLE_TYPES: usize = 6;
 
 /// Describes a linear program using a combination of a sparse matrix of constraints, and a vector
 /// with simple variable bounds.
 ///
-/// Created once from a `GeneralForm`. Should allow for reasonably quick data access.
+/// Created once from a `GeneralForm`. Should allow for reasonably quick data access, given that
+/// we're reading directly from the underlying `GeneralForm`.
 ///
 /// TODO(ENHANCEMENT): Is there a faster constraint storage backend possible?
 /// TODO(ENHANCEMENT): Should this data structure hold less references?
@@ -53,7 +57,7 @@ pub struct MatrixData<'a, F> {
     /// This should not contain variable bounds.
     constraints: &'a SparseMatrix<F, F, ColumnMajor>,
     /// Constraint values for the constraints, excludes the simple bounds.
-    b: &'a Dense<F>,
+    b: &'a DenseVector<F>,
 
     /// Ranges for the range constraints.
     ///
@@ -61,9 +65,13 @@ pub struct MatrixData<'a, F> {
     ranges: Vec<&'a F>,
 
     /// How many of which constraint do we have?
+    /// ==
     nr_equality_constraints: usize,
+    /// =r=
     nr_range_constraints: usize,
+    /// <=
     nr_upper_bounded_constraints: usize,
+    /// >=
     nr_lower_bounded_constraints: usize,
 
     /// Used to read the variable upper bounds, see `*b*` in the matrix in the struct documentation.
@@ -140,7 +148,7 @@ where
     #[must_use]
     pub fn new(
         constraints: &'a SparseMatrix<F, F, ColumnMajor>,
-        b: &'a Dense<F>,
+        b: &'a DenseVector<F>,
         ranges: Vec<&'a F>,
         nr_equality_constraints: usize,
         nr_range_constraints: usize,
@@ -290,11 +298,12 @@ where
 
 impl<'data, F: 'static> MatrixProvider for MatrixData<'data, F>
 where
-    F: Field,
+    F: Field + SparseElement<F>,
     for<'r> &'r F: FieldRef<F>,
 {
     type Column = Column<F>;
     type Cost<'a> = Option<&'a <Self::Column as ColumnTrait>::F>;
+    type Rhs = F;
 
     fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
@@ -347,7 +356,7 @@ where
         }
     }
 
-    fn right_hand_side(&self) -> Dense<F> {
+    fn right_hand_side(&self) -> DenseVector<Self::Rhs> {
         // TODO(ENHANCEMENT): Avoid this cloning
 
         let mut values = self.b.clone();
@@ -403,7 +412,10 @@ where
             + self.nr_variable_bounds()
     }
 
-    fn reconstruct_solution<G: Element>(&self, mut column_values: SparseVector<G, G>) -> SparseVector<G, G> {
+    fn reconstruct_solution<G>(&self, mut column_values: SparseVector<G, G>) -> SparseVector<G, G>
+    where
+        G: SparseElement<G> + SparseComparator,
+    {
         debug_assert_eq!(column_values.len(), self.nr_columns());
 
         let to_remove = (self.nr_normal_variables()..self.nr_columns()).collect::<Vec<_>>();
@@ -450,7 +462,7 @@ where
 /// represented.
 ///
 /// TODO(ARCHITECTURE): Can this type be simplified?
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub enum Column<F> {
     /// The case where there is at least one constraint value and possibly a slack.
     Sparse {
@@ -604,7 +616,7 @@ where
 
 impl<'a, F: 'static> Display for MatrixData<'a, F>
 where
-    F: Field + 'a,
+    F: Field + SparseElement<F> + 'a,
     for<'r> &'r F: FieldRef<F>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -619,7 +631,7 @@ where
             write!(f, "{:^width$}", column, width = width)?;
         }
         writeln!(f)?;
-        writeln!(f, "{}", repeat_n("=",separator_width).collect::<String>())?;
+        f.write_str(&"=".repeat(separator_width))?;
         write!(f, "{:>width$}", "cost |", width = width)?;
         for column in 0..self.nr_columns() {
             if self.get_variable_separating_indices().contains(&column) {
@@ -629,12 +641,12 @@ where
             write!(f, "{:^width$}", cost, width = width)?;
         }
         writeln!(f)?;
-        writeln!(f, "{}", repeat_n("=",separator_width).collect::<String>())?;
+        f.write_str(&"=".repeat(separator_width))?;
 
         for row in 0..self.nr_rows() {
             if row == 0 || self.constraint_group_start_indices().contains(&row) {
                 // Start of new section
-                writeln!(f, "{}", repeat_n("-",separator_width).collect::<String>())?;
+                f.write_str(&"-".repeat(separator_width))?;
             }
             write!(f, "{:>width$}", format!("{} |", row), width = width)?;
             for column in 0..self.nr_columns() {
@@ -658,7 +670,7 @@ mod test {
 
     use crate::algorithm::two_phase::matrix_provider::matrix_data::Column;
     use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
-    use crate::data::linear_algebra::vector::Dense;
+    use crate::data::linear_algebra::vector::DenseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::BoundDirection;
     use crate::data::number_types::rational::Rational64;
@@ -717,7 +729,7 @@ mod test {
 
         assert_eq!(
             matrix_data.right_hand_side(),
-            Dense::from_test_data(vec![6, 10, 4, 2]),
+            DenseVector::from_test_data(vec![6, 10, 4, 2]),
         );
 
         assert_eq!(matrix_data.bound_row_index(0, BoundDirection::Upper), Some(2));

@@ -12,8 +12,8 @@ pub trait Field =
     Zero +
     One +
 
-    Neg<Output = Self> +
-    Sub<Output = Self> +
+    Neg<Output=Self> +
+    Sub<Output=Self> +
     Abs +
 
     Eq +

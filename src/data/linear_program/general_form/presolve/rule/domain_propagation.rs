@@ -4,6 +4,7 @@
 //! constraints to derive variable bounds.
 use std::cmp::Ordering;
 
+use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::elements::{BoundDirection, InequalityRelation, LinearProgramType};
 use crate::data::linear_program::elements::{NonZeroSign, RangedConstraintRelation};
 use crate::data::linear_program::general_form::presolve::{Change, Index};
@@ -12,7 +13,7 @@ use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 impl<'a, OF> Index<'a, OF>
 where
-    OF: OrderedField,
+    OF: OrderedField + SparseElement<OF>,
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {
     /// Attempt to tighten bounds using activity bounds.

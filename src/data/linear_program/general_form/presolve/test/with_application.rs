@@ -1,7 +1,7 @@
 use num::FromPrimitive;
 
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
-use crate::data::linear_algebra::vector::Dense;
+use crate::data::linear_algebra::vector::DenseVector;
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{LinearProgramType, Objective, VariableType};
 use crate::data::linear_program::general_form::{GeneralForm, RangedConstraintRelation, Variable};
@@ -33,7 +33,7 @@ fn presolve() {
         vec![17, 19, 23, 0, 29, 31], // Removal by variable bounds
     ];
     let constraints = ColumnMajor::from_test_data::<T, T, _>(&data, 6);
-    let b = Dense::from_test_data(vec![
+    let b = DenseVector::from_test_data(vec![
         101,
         103,
         107,

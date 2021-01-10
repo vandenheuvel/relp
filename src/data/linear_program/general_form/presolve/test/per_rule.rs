@@ -2,7 +2,7 @@ use num::traits::FromPrimitive;
 
 use crate::data::linear_algebra::matrix::ColumnMajor;
 use crate::data::linear_algebra::matrix::Order;
-use crate::data::linear_algebra::vector::{Dense, Vector};
+use crate::data::linear_algebra::vector::{DenseVector, Vector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, Objective, VariableType};
 use crate::data::linear_program::general_form::{GeneralForm, RangedConstraintRelation, RemovedVariable, Variable};
@@ -18,7 +18,7 @@ fn presolve_fixed_variable_feasible() {
         Objective::Minimize,
         ColumnMajor::from_test_data(&[vec![1], vec![2]], 1),
         vec![RangedConstraintRelation::Equal, RangedConstraintRelation::Greater],
-        Dense::from_test_data(vec![1; 2]),
+        DenseVector::from_test_data(vec![1; 2]),
         vec![Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(1),
@@ -49,7 +49,7 @@ fn presolve_fixed_variable_infeasible() {
         Objective::Minimize,
         ColumnMajor::from_test_data(&[vec![1], vec![2]], 1),
         vec![RangedConstraintRelation::Equal; 2],
-        Dense::from_test_data(vec![1; 2]),
+        DenseVector::from_test_data(vec![1; 2]),
         vec![Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(1),
@@ -72,7 +72,7 @@ fn presolve_simple_bound_constraint() {
         Objective::Minimize,
         ColumnMajor::from_test_data(&vec![vec![1]; 2], 1),
         vec![RangedConstraintRelation::Equal; 2],
-        Dense::from_test_data(vec![2; 2]),
+        DenseVector::from_test_data(vec![2; 2]),
         vec![Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(1),
@@ -94,7 +94,7 @@ fn presolve_simple_bound_constraint() {
     assert_eq!(index.updates.bounds.get(&(0, BoundDirection::Lower)), Some(&R32!(2)));
     assert_eq!(index.updates.bounds.get(&(0, BoundDirection::Upper)), Some(&R32!(2)));
     assert!(!index.queues.are_empty());
-    assert_eq!(initial.b, Dense::from_test_data(vec![2; 2]));
+    assert_eq!(initial.b, DenseVector::from_test_data(vec![2; 2]));
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn presolve_constraint_if_slack_with_suitable_bounds() {
             Objective::Minimize,
             ColumnMajor::from_test_data(&[vec![2; nr_variables]], nr_variables),
             vec![constraint_type],
-            Dense::from_test_data(vec![3]),
+            DenseVector::from_test_data(vec![3]),
             vec![Variable {
                 variable_type: VariableType::Continuous,
                 cost: R32!(0),

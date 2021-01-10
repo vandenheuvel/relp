@@ -3,12 +3,12 @@
 //! The Simplex method algorithms work on a tableau. Because this tableau is very sparse in
 //! practice, we store in a matrix that describes the current basis together with the original
 //! (also sparse) matrix data. This module contains structures that can provide a matrix.
-use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::Element;
-use crate::data::linear_algebra::vector::{Dense, Sparse as SparseVector};
+use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
+use crate::data::linear_algebra::traits::{Element, SparseComparator, SparseElement};
+use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
-use crate::data::number_types::traits::Field;
 
+pub mod column;
 pub mod matrix_data;
 pub mod filter;
 pub mod variable;
@@ -48,6 +48,9 @@ pub trait MatrixProvider {
     /// inner type would never be zero in that case.
     type Cost<'a>;
 
+    /// Right hand side type.
+    type Rhs: Element;
+
     /// Column of the problem.
     ///
     /// # Arguments
@@ -80,7 +83,7 @@ pub trait MatrixProvider {
     /// # Return value
     ///
     /// A dense vector of constraint values, often called `b` in mathematical notation.
-    fn right_hand_side(&self) -> Dense<<Self::Column as Column>::F>;
+    fn right_hand_side(&self) -> DenseVector<Self::Rhs>;
 
     /// Index of the row of a virtual bound, if any.
     ///
@@ -125,56 +128,8 @@ pub trait MatrixProvider {
     /// # Return value
     ///
     /// A solution that might be smaller than the number of variables in this problem.
-    fn reconstruct_solution<G: Element>(
-        &self,
-        column_values: SparseVector<G, G>,
-    ) -> SparseVector<G, G>;
+    fn reconstruct_solution<G>(&self, column_values: SparseVector<G, G>) -> SparseVector<G, G>
+    where
+        G: SparseElement<G> + SparseComparator,
+    ;
 }
-
-/// Columns represent part of a (virtual) data matrix.
-///
-/// This column is sparse.
-///
-/// A column might be expensive to compute. It can store computed values and once GATs work
-/// (better), also references to items stored in the matrix provider that yields instances of this
-/// trait.
-///
-/// It can't necessarily be iterated over directly. That needs to happen many times, for example
-/// when computing many inner products with a data matrix. The trait has an associated type to be
-/// used for iteration, that should be cheaply cloneable and probably not store any values itself.
-/// Rather, it should describe how this column should be iterated over.
-// TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
-pub trait Column {
-    /// Input data type.
-    ///
-    /// Items of this type get read and used in additions and multiplications often.
-    // TODO(ENHANCEMENT): Don't work with a field type directly, but an `Into<F>` type to separate.
-    type F: 'static + Field;
-
-    /// Type of struct to iterate over this column.
-    ///
-    /// It should be somewhat cheaply cloneable and as such not be too large.
-    type Iter<'a>: Iterator<Item = &'a SparseTuple<Self::F>> + Clone;
-
-    /// Derive the iterator object.
-    ///
-    /// Because this column might need to be iterated over many times, it doesn't consume the
-    /// column but instead produces a struct that might keep references to this column.
-    fn iter(&self) -> Self::Iter<'_>;
-
-    /// Format an index of the column.
-    ///
-    /// Note that this index might not be explicitly stored due to the column being sparse.
-    fn index_to_string(&self, i: usize) -> String;
-}
-
-/// Column that can be iterated over in-order.
-///
-/// This trait is simply a marker trait to be used in specialization.
-///
-/// TODO(ENHANCEMENT): At the time of writing, it is not possible to specialize the generic
-///  arguments of trait methods. That is why this trait and the standard `Column` trait are
-///  currently both needed.
-///
-// TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
-pub trait OrderedColumn: Column {}

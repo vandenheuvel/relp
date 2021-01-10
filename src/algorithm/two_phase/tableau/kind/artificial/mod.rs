@@ -5,8 +5,9 @@
 //! artificial variables out of the basis.
 use std::collections::HashSet;
 
-use crate::algorithm::two_phase::matrix_provider::Column;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnOps, CostOps, InverseMaintenance};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -55,27 +56,13 @@ pub trait Artificial: Kind<Column: IdentityColumn, Cost=Cost> {
     fn pivot_row_from_artificial(&self, artificial_index: usize) -> usize;
 }
 
-/// Identity columns are needed for artificial matrices.
-///
-/// When a matrix provider is to be used in the first phase, it should be possible to represent
-/// identity columns.
-pub trait IdentityColumn: Column {
-    /// Create an identity column, placing a "1" at a certain index and "0"'s otherwise.
-    ///
-    /// # Arguments
-    ///
-    /// * `i`: Index at which the "1" should be placed.
-    /// * `len`: Length of the column. Might not be used in an actual implementation.
-    fn identity(i: usize, len: usize) -> Self;
-}
-
 /// Functionality needed only, and for all, artificial tableaus.
 ///
 /// Most of these functions get called in the artificial simplex method, or the method that removes
 /// artificial variables from the problem at zero level.
 impl<'provider, IM, A> Tableau<IM, A>
 where
-    IM: InverseMaintenance<F: ColumnOps<<A::Column as Column>::F> + CostOps<A::Cost>>,
+    IM: InverseMaintener<F: im_ops::Column<<A::Column as Column>::F> + im_ops::Cost<A::Cost>>,
     A: Artificial,
 {
     /// Whether there are any artificial variables in the basis.
@@ -123,8 +110,8 @@ where
     /// the lowest indices), and a tuple of which the first element maps rows of the problem (before
     /// any rows were removed, if necessary) to the columns holding the pivots from the current
     /// basis, as well as a set copy of those columns.
-    pub fn into_basis(self) -> (IM, usize, (Vec<usize>, HashSet<usize>)) {
+    pub fn into_basis(self) -> (IM, usize, HashSet<usize>) {
         let nr_artificial = self.nr_artificial_variables();
-        (self.inverse_maintainer, nr_artificial, (self.basis_indices, self.basis_columns))
+        (self.inverse_maintainer, nr_artificial, self.basis_columns)
     }
 }
