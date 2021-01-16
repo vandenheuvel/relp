@@ -16,6 +16,7 @@ use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
+use crate::algorithm::two_phase::matrix_provider::column::identity::{IdentityColumnStruct, One};
 
 pub mod basis_inverse_rows;
 pub mod lower_upper;
@@ -219,10 +220,21 @@ where
         debug_assert_eq!(provider.nr_rows(), m);
         debug_assert_eq!(basis.len(), m);
 
+        let b_inverse_columns = (0..m)
+            .map(|i| IdentityColumnStruct((i, One)))
+            .map(|column| basis_inverse.generate_column(column))
+            .map(BI::ColumnComputationInfo::into_column)
+            .map(SparseVector::into_iter);
+        let mut b_inverse_rows = vec![Vec::new(); m];
+        for (j, column) in b_inverse_columns.enumerate() {
+            for (i, v) in column {
+                b_inverse_rows[i].push((j, v));
+            }
+        }
+
         let mut pi = vec![F::zero(); m];
-        for (row, &basis_column) in basis.iter().enumerate() {
-            let basis_inverse_row = basis_inverse.iter_basis_inverse_row(row);
-            for (j, value) in basis_inverse_row.iter_values() {
+        for (i, &basis_column) in basis.iter().enumerate() {
+            for (j, value) in &b_inverse_rows[i] {
                 pi[*j] += value * provider.cost_value(basis_column);
             }
         }
