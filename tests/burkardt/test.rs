@@ -7,6 +7,7 @@ use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
 use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use rust_lp::data::linear_algebra::traits::Element;
 use rust_lp::data::linear_program::general_form::GeneralForm;
 use rust_lp::data::linear_program::solution::Solution;
@@ -16,7 +17,6 @@ use rust_lp::io::import;
 use rust_lp::RB;
 
 use super::get_test_file_path;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 
 fn to_general_form<T: From<Rational64> + Zero + One + Ord + Element + Neg<Output=T>>(
     file_name: &str,

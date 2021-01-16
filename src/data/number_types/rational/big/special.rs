@@ -29,9 +29,9 @@ mod field {
     use crate::data::number_types::rational::big::Big;
 
     mod add {
-        use super::*;
-
         use std::ops::{Add, AddAssign};
+
+        use super::*;
 
         impl Add<Cost> for Big {
             type Output = Big;
@@ -88,9 +88,9 @@ mod field {
     }
 
     mod mul {
-        use super::*;
-
         use std::ops::Mul;
+
+        use super::*;
 
         impl Mul<Cost> for Big {
             type Output = Big;
@@ -135,9 +135,9 @@ mod field {
     }
 
     mod div {
-        use super::*;
-
         use std::ops::Div;
+
+        use super::*;
 
         impl Div<&identity::One> for Big {
             type Output = Big;

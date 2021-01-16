@@ -13,11 +13,11 @@
 //! * The third is the type that both can be dereferenced to. This is used to create a row-major
 //! copy of the constraint matrix using references, rather than the actual values.
 use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::fmt::{Debug, Display};
 use std::ops::Neg;
 
 use num::Zero;
-use std::cmp::Ordering;
 
 /// Element of a `Vector` of `Matrix` type.
 ///
