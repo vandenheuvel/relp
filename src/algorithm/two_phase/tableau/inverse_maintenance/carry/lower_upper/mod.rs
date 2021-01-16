@@ -3,12 +3,12 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::Display;
+use std::iter;
 use std::ops::{AddAssign, Mul, Neg, SubAssign};
 
 use num::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
-use crate::algorithm::two_phase::matrix_provider::column::identity::{IdentityColumnStruct, One};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, ops};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{FullPermutation, Permutation, RotateToBackPermutation};
@@ -47,6 +47,7 @@ pub struct LUDecomposition<F> {
     /// Upper triangular matrix `U`.
     ///
     /// Column major.
+    // TODO(PERFORMANCE): Consider storing the diagonal separately.
     upper_triangular: Vec<Vec<(usize, F)>>,
 
     // TODO(PERFORMANCE): Consider an Option<Permutation> instead to avoid doing identities
@@ -221,13 +222,29 @@ where
     }
 
     fn iter_basis_inverse_row(&self, row: usize) -> SparseVector<Self::F, Self::F> {
-        // TODO(ENHANCEMENT): Don't compute full basis inverse, but just the one row.
         let tuples = (0..self.m())
-            .map(|j| IdentityColumnStruct((j, One)))
-            .map(|column| self.generate_column(column))
-            .enumerate()
-            .filter_map(|(j, column)| {
-                column.into_column().get(row).map(|v| (j, v.clone()))
+            .filter_map(|i| {
+                let mut permuted = i; self.row_permutation.forward(&mut permuted);
+
+                let initial_rhs = iter::once((permuted, F::one())).collect();
+                let mut w = self.invert_lower_right(initial_rhs);
+
+                for (r, q) in &self.updates {
+                    r_inverse_transformation(r, q.index, &mut w);
+                    // Q^-1 c = (c^T Q)^T because Q orthogonal matrix. Here we
+                    q.forward_sorted(&mut w);
+                }
+
+                let mut target_row = row;
+                self.column_permutation.forward(&mut target_row);
+                for (_, q) in &self.updates {
+                    q.forward(&mut target_row);
+                }
+
+                let initial_rhs = w.into_iter().collect();
+                let result_value = self.invert_upper_right_row(initial_rhs, target_row);
+
+                result_value.map(|v| (i, v))
             })
             .collect();
 
@@ -246,39 +263,6 @@ impl<F> LUDecomposition<F>
 where
     F: ops::Internal + ops::InternalHR,
 {
-    fn invert_upper_right(&self, mut rhs: BTreeMap<usize, F>) -> Vec<(usize, F)> {
-        let mut result = Vec::new();
-
-        while let Some((row, rhs_value)) = rhs.pop_last() {
-            let column = row;
-            debug_assert_eq!(
-                self.upper_triangular[column].last().unwrap().0,
-                column, "Needs to have a diagonal element",
-            );
-            let diagonal_item = &self.upper_triangular[column].last().unwrap().1;
-            let result_value = rhs_value / diagonal_item;
-
-            // Introduce new nonzeros
-            let nr_column_items = self.upper_triangular[column].len();
-            for (row, value) in &self.upper_triangular[column][..(nr_column_items - 1)] {
-                match rhs.get_mut(row) {
-                    None => { rhs.insert(*row, -&result_value * value); },
-                    Some(existing) => {
-                        *existing -= &result_value * value;
-                        if existing.is_zero() {
-                            rhs.remove(row);
-                        }
-                    },
-                }
-            }
-
-            result.push((row, result_value));
-        }
-
-        result.sort_unstable_by_key(|&(i, _)| i);
-        result
-    }
-
     fn invert_lower_right(&self, mut rhs: BTreeMap<usize, F>) -> Vec<(usize, F)> {
         let mut result = Vec::new();
 
@@ -306,6 +290,61 @@ where
         }
 
         result
+    }
+
+    fn invert_upper_right(&self, mut rhs: BTreeMap<usize, F>) -> Vec<(usize, F)> {
+        let mut result = Vec::new();
+
+        while let Some((row, rhs_value)) = rhs.pop_last() {
+            let column = row;
+            let result_value = self.compute_result(column, rhs_value);
+            self.update_rhs(column, &result_value, &mut rhs);
+            result.push((row, result_value));
+        }
+
+        result.sort_unstable_by_key(|&(i, _)| i);
+        result
+    }
+
+    fn invert_upper_right_row(&self, mut rhs: BTreeMap<usize, F>, target_row: usize) -> Option<F> {
+        while let Some((row, rhs_value)) = rhs.pop_last() {
+            let column = row;
+            match row.cmp(&target_row) {
+                Ordering::Less => return None,
+                Ordering::Equal => return Some(self.compute_result(column, rhs_value)),
+                Ordering::Greater => {
+                    let result_value = self.compute_result(column, rhs_value);
+                    self.update_rhs(column, &result_value, &mut rhs);
+                },
+            }
+        }
+
+        None
+    }
+
+    fn compute_result(&self, column: usize, rhs_value: F) -> F {
+        debug_assert_eq!(
+            self.upper_triangular[column].last().unwrap().0,
+            column, "Needs to have a diagonal element",
+        );
+
+        let diagonal_item = &self.upper_triangular[column].last().unwrap().1;
+        rhs_value / diagonal_item
+    }
+
+    fn update_rhs(&self, column: usize, result_value: &F, rhs: &mut BTreeMap<usize, F>) {
+        let nr_column_items = self.upper_triangular[column].len();
+        for (row, value) in &self.upper_triangular[column][..(nr_column_items - 1)] {
+            match rhs.get_mut(row) {
+                None => { rhs.insert(*row, -result_value * value); },
+                Some(existing) => {
+                    *existing -= result_value * value;
+                    if existing.is_zero() {
+                        rhs.remove(row);
+                    }
+                },
+            }
+        }
     }
 
     fn invert_upper_left(&self, mut rhs: BTreeMap<usize, F>) -> Vec<(usize, F)> {

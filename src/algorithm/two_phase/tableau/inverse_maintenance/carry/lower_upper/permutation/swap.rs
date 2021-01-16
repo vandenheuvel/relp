@@ -1,8 +1,9 @@
 //! # Swapping
 //!
 //! Exchange two values.
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::Permutation;
 use std::cmp::Ordering;
+
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::Permutation;
 
 /// Exchange two values.
 pub struct Swap {
@@ -82,7 +83,7 @@ impl Permutation for Swap {
 
 #[cfg(test)]
 mod test {
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{SwapPermutation, Permutation};
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{Permutation, SwapPermutation};
 
     #[test]
     fn empty() {
