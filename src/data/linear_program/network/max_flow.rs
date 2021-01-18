@@ -228,6 +228,17 @@ impl Mul<Cost> for &RationalBig {
     }
 }
 
+impl Mul<Cost> for RationalBig {
+    type Output = RationalBig;
+
+    fn mul(self, rhs: Cost) -> Self::Output {
+        match rhs {
+            Cost::Zero => Self::Output::zero(),
+            Cost::MinusOne => -self,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::algorithm::{OptimizationResult, SolveRelaxation};

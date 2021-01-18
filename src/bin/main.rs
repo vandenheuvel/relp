@@ -32,11 +32,15 @@ fn main() {
 
     let mut general: GeneralForm<RationalBig> = mps.try_into()
         .expect("Problem is inconsistent");
+
+    println!("Presolving...");
     let data = match general.derive_matrix_data() {
         Ok(presolved_data) => presolved_data,
         Err(program_type) => {
             match program_type {
-                LinearProgramType::FiniteOptimum(solution) => println!("{}", solution.to_string()),
+                LinearProgramType::FiniteOptimum(solution) => {
+                    println!("Solution computed.\n{}", solution.to_string())
+                },
                 LinearProgramType::Infeasible => println!("Problem is not feasible."),
                 LinearProgramType::Unbounded => println!("Problem is unbounded."),
             }
@@ -47,7 +51,7 @@ fn main() {
     println!("Solving relaxation...");
     let result = data.solve_relaxation::<Carry<RationalBig, LUDecomposition<_>>>();
 
-    println!("Solution computed.");
+    println!("Solution computed:");
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
             let reconstructed = data.reconstruct_solution(vector);

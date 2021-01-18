@@ -6,8 +6,10 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::ops::Neg;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::identity::{IdentityColumnStruct, One};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops};
@@ -16,7 +18,6 @@ use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
-use crate::algorithm::two_phase::matrix_provider::column::identity::{IdentityColumnStruct, One};
 
 pub mod basis_inverse_rows;
 pub mod lower_upper;
@@ -147,7 +148,7 @@ pub trait BasisInverse: Display {
     fn should_refactor(&self) -> bool;
 
     /// Iterate over a row of the basis inverse matrix.
-    fn iter_basis_inverse_row(&self, row: usize) -> SparseVector<Self::F, Self::F>;
+    fn basis_inverse_row(&self, row: usize) -> SparseVector<Self::F, Self::F>;
 
     /// Size of the basis who's inverse is represented.
     fn m(&self) -> usize;
@@ -233,13 +234,13 @@ where
         }
 
         let mut pi = vec![F::zero(); m];
-        for (i, &basis_column) in basis.iter().enumerate() {
-            for (j, value) in &b_inverse_rows[i] {
-                pi[*j] += value * provider.cost_value(basis_column);
+        for (i, inverse_row) in b_inverse_rows.into_iter().enumerate() {
+            for (j, value) in inverse_row {
+                pi[j] += value * provider.cost_value(basis[i]);
             }
         }
 
-        let data = pi.into_iter().map(|v| -v).collect::<Vec<_>>();
+        let data = pi.into_iter().map(Neg::neg).collect::<Vec<_>>();
         let len = data.len();
         DenseVector::new(data, len)
     }
@@ -321,7 +322,7 @@ where
     ///
     /// This method requires a normalized pivot element.
     fn update_minus_pi_and_obj(&mut self, pivot_row_index: usize, relative_cost: F) {
-        let basis_inverse_row = self.basis_inverse.iter_basis_inverse_row(pivot_row_index);
+        let basis_inverse_row = self.basis_inverse.basis_inverse_row(pivot_row_index);
         for (column_index, value) in basis_inverse_row.iter_values() {
             self.minus_pi[*column_index] -= &relative_cost * value;
         }
@@ -450,6 +451,8 @@ where
     where
         F: ops::Column<<MP::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>,
     {
+        debug_assert_eq!(artificial.m(), provider.nr_rows());
+
         for index in &mut artificial.basis_indices {
             *index -= nr_artificial;
         }
@@ -476,7 +479,7 @@ where
     where
         Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>,
     {
-        debug_assert_eq!(artificial.basis_indices.len(), rows_removed.nr_rows());
+        debug_assert_eq!(artificial.basis_indices.len(), rows_removed.nr_rows() + rows_removed.filtered_rows().len());
 
         remove_indices(&mut artificial.basis_indices, rows_removed.filtered_rows());
         for basis_column in &mut artificial.basis_indices {

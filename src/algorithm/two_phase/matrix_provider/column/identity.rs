@@ -8,6 +8,7 @@
 //! basis is equivalent to just inverting the basis explicitly.
 use std::{fmt, iter};
 use std::fmt::Display;
+use std::ops::{Add, AddAssign, Div};
 use std::ops::Mul;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
@@ -76,8 +77,6 @@ impl Display for One {
         f.write_str("1")
     }
 }
-
-use std::ops::{Add, AddAssign, Div};
 
 macro_rules! define_ops {
     ($primitive:ident) => {
