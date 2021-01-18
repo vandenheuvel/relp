@@ -47,8 +47,6 @@ pub trait Internal =
 
     SparseElement<Self> +
 
-    for<'r> From<&'r Self> +
-
     Clone +
     Debug +
     Display +
