@@ -4,19 +4,20 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::Display;
 use std::iter;
-use std::ops::{AddAssign, Mul, Neg, SubAssign};
 
 use num::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, ops};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::eta_file::EtaFile;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{FullPermutation, Permutation, RotateToBackPermutation};
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_algebra::vector::{SparseVector, Vector};
 
 mod decomposition;
 mod permutation;
+mod eta_file;
 
 /// Decompose a matrix `B` into `PBQ = LU` where
 ///
@@ -51,7 +52,8 @@ pub struct LUDecomposition<F> {
     upper_triangular: Vec<Vec<(usize, F)>>,
 
     // TODO(PERFORMANCE): Consider an Option<Permutation> instead to avoid doing identities
-    updates: Vec<(Vec<(usize, F)>, RotateToBackPermutation)>,
+    // TODO(ARCHITECTURE): Consider grouping pivot index and eta file in a single update struct.
+    updates: Vec<(EtaFile<F>, RotateToBackPermutation)>,
 }
 
 impl<F> BasisInverse for LUDecomposition<F>
@@ -118,6 +120,7 @@ where
             .unzip();
         let u_bar = u_bar.into_iter().collect();
         let r = self.invert_upper_left(u_bar);
+        let eta_file = EtaFile::new(r, pivot_column_index, self.m());
 
         // We now have all information needed to recover the triangle, start modifying it
         // Zero out part of a row that will be rotated to the bottom
@@ -127,30 +130,7 @@ where
         let Self::ColumnComputationInfo { column: _, mut spike } = column;
         debug_assert!(spike.iter().is_sorted_by_key(|&(i, _)| i));
 
-        // Update the one value in that row that doesn't get zeroed
-        let difference = r.iter()
-            .filter_map(|&(j, ref r_value)| {
-                let row = j;
-                spike
-                    .binary_search_by_key(&row, |&(i, _)| i)
-                    .ok()
-                    .map(|data_index| {
-                        r_value * &spike[data_index].1
-                    })
-            })
-            .sum::<F>();
-        if !difference.is_zero() {
-            match spike.binary_search_by_key(&pivot_column_index, |&(i, _)| i) {
-                Ok(data_index) => {
-                    spike[data_index].1 -= difference;
-                    if spike[data_index].1.is_zero() {
-                        spike.remove(data_index);
-                    }
-                },
-                Err(data_index) => spike.insert(data_index, (pivot_column_index, -difference)),
-            }
-        }
-
+        eta_file.update_spike_pivot_value(&mut spike);
         debug_assert!(
             spike.binary_search_by_key(&pivot_column_index, |&(i, _)| i).is_ok(),
             "This value should be present to avoid singularity because it will be the bottom corner value.",
@@ -171,7 +151,7 @@ where
         debug_assert!(self.upper_triangular.iter().enumerate().all(|(j, column)| {
             column.last().unwrap().0 == j && column.is_sorted_by_key(|&(i, _)| i)
         }));
-        self.updates.push((r, q));
+        self.updates.push((eta_file, q));
     }
 
     fn generate_column<C: Column>(&self, original_column: C) -> Self::ColumnComputationInfo
@@ -187,8 +167,8 @@ where
             .collect::<BTreeMap<_, _>>();
         let mut w = self.invert_lower_right(rhs);
 
-        for (r, q) in &self.updates {
-            r_inverse_transformation(r, q.index, &mut w);
+        for (eta, q) in &self.updates {
+            eta.apply_right(&mut w);
             // Q^-1 c = (c^T Q)^T because Q orthogonal matrix. Here we
             q.forward_sorted(&mut w);
         }
@@ -230,7 +210,7 @@ where
                 let mut w = self.invert_lower_right(initial_rhs);
 
                 for (r, q) in &self.updates {
-                    r_inverse_transformation(r, q.index, &mut w);
+                    r.apply_left(&mut w);
                     // Q^-1 c = (c^T Q)^T because Q orthogonal matrix. Here we
                     q.forward_sorted(&mut w);
                 }
@@ -273,16 +253,8 @@ where
 
             if column != self.m() - 1 {
                 // Introduce new nonzeros
-                for (row, value) in &self.lower_triangular[column] {
-                    match rhs.get_mut(row) {
-                        None => { rhs.insert(*row, -&result_value * value); },
-                        Some(existing) => {
-                            *existing -= &result_value * value;
-                            if existing.is_zero() {
-                                rhs.remove(row);
-                            }
-                        },
-                    }
+                for &(row, ref value) in &self.lower_triangular[column] {
+                    insert_or_shift_maybe_remove(row, &result_value * value, &mut rhs);
                 }
             }
 
@@ -302,7 +274,9 @@ where
             result.push((row, result_value));
         }
 
-        result.sort_unstable_by_key(|&(i, _)| i);
+        result.reverse();
+        debug_assert!(result.is_sorted_by_key(|&(i, _)| i));
+
         result
     }
 
@@ -334,17 +308,35 @@ where
 
     fn update_rhs(&self, column: usize, result_value: &F, rhs: &mut BTreeMap<usize, F>) {
         let nr_column_items = self.upper_triangular[column].len();
-        for (row, value) in &self.upper_triangular[column][..(nr_column_items - 1)] {
-            match rhs.get_mut(row) {
-                None => { rhs.insert(*row, -result_value * value); },
-                Some(existing) => {
-                    *existing -= result_value * value;
-                    if existing.is_zero() {
-                        rhs.remove(row);
-                    }
-                },
-            }
+        for &(row, ref value) in &self.upper_triangular[column][..(nr_column_items - 1)] {
+            insert_or_shift_maybe_remove(row, result_value * value, rhs);
         }
+    }
+
+    fn invert_lower_left(&self, mut rhs: BTreeMap<usize, F>) -> Vec<(usize, F)> {
+        let mut result = Vec::new();
+
+        while let Some((column, rhs_value)) = rhs.pop_last() {
+            let row = column;
+            let result_value = rhs_value;
+
+            // Introduce new nonzeros, by rows
+            for j in 0..column {
+                // TODO(PERFORMANCE): Avoid scanning all columns for row values
+                let has_row = self.lower_triangular[j].binary_search_by_key(&row, |&(i, _)| i);
+                if let Ok(data_index) = has_row {
+                    let value = &self.lower_triangular[j][data_index].1;
+                    insert_or_shift_maybe_remove(j, &result_value * value, &mut rhs);
+                }
+            }
+
+            result.push((row, result_value));
+        }
+
+        result.reverse();
+        debug_assert!(result.is_sorted_by_key(|&(i, _)| i));
+
+        result
     }
 
     fn invert_upper_left(&self, mut rhs: BTreeMap<usize, F>) -> Vec<(usize, F)> {
@@ -355,25 +347,13 @@ where
             let diagonal_item = &self.upper_triangular[column].last().unwrap().1;
             let result_value = rhs_value / diagonal_item;
 
-            if column != self.m() - 1 {
-                // Introduce new nonzeros, by rows
+            // Introduce new nonzeros, by rows
+            for j in (column + 1)..self.m() {
                 // TODO(PERFORMANCE): Avoid scanning all columns for row values
-                for (j, v) in ((column + 1)..self.m())
-                    .filter_map(|j| {
-                        self.upper_triangular[j]
-                            .binary_search_by_key(&row, |&(i, _)| i)
-                            .ok()
-                            .map(|data_index| (j, &self.upper_triangular[j][data_index].1))
-                    }) {
-                    match rhs.get_mut(&j) {
-                        None => {rhs.insert(j, -&result_value * v); },
-                        Some(existing) => {
-                            *existing -= &result_value * v;
-                            if existing.is_zero() {
-                                rhs.remove(&j);
-                            }
-                        },
-                    }
+                let has_row = self.upper_triangular[j].binary_search_by_key(&row, |&(i, _)| i);
+                if let Ok(data_index) = has_row {
+                    let value = &self.upper_triangular[j][data_index].1;
+                    insert_or_shift_maybe_remove(j, &result_value * value, &mut rhs);
                 }
             }
 
@@ -384,60 +364,19 @@ where
     }
 }
 
-/// Left multiply with R^-1.
-///
-/// R is given by `R = I + e_p r'` where `r'` is of the form
-/// `r' = (0, 0, ..., 0, r_(p + 1), ..., r_m)` and `r' = u' U^-1` with
-/// `u' = (0, 0, ..., 0, U_(p, p + 1), ..., U_(p, m)`.
-///
-/// # Arguments
-///
-/// * `r`: Sparse sorted representation of `r`.
-fn r_inverse_transformation<F>(
-    r: &[(usize, F)],
-    pivot_column: usize,
-    column: &mut Vec<(usize, F)>,
-)
+fn insert_or_shift_maybe_remove<F>(index: usize, change: F, rhs: &mut BTreeMap<usize, F>)
 where
-    F: Zero + AddAssign<F> + SubAssign<F> + Neg<Output=F>,
-    for<'r> &'r F: Mul<&'r F, Output=F>,
+    F: ops::Internal + ops::InternalHR + Zero,
 {
-    debug_assert!(r.windows(2).all(|w| w[0].0 < w[1].0));
-    debug_assert!(column.windows(2).all(|w| w[0].0 < w[1].0));
-
-    let column_start_index = column.binary_search_by_key(&pivot_column, |&(i, _)| i);
-
-    let mut total = F::zero();
-    let mut r_index = 0;
-    let mut column_index = match column_start_index {
-        Ok(index) | Err(index) => index,
-    };
-
-    while r_index < r.len() && column_index < column.len() {
-        match r[r_index].0.cmp(&column[column_index].0) {
-            Ordering::Less => {
-                r_index += 1;
-            }
-            Ordering::Equal => {
-                total += &r[r_index].1 * &column[column_index].1;
-                r_index += 1;
-                column_index += 1;
-            }
-            Ordering::Greater => {
-                column_index += 1;
-            }
+    match rhs.get_mut(&index) {
+        None => {
+            rhs.insert(index, -change);
         }
-    }
-
-    if !total.is_zero() {
-        match column_start_index {
-            Ok(data_index) => {
-                column[data_index].1 -= total;
-                if column[data_index].1.is_zero() {
-                    column.remove(data_index);
-                }
-            },
-            Err(data_index) => column.insert(data_index, (pivot_column, -total)),
+        Some(existing) => {
+            *existing -= change;
+            if existing.is_zero() {
+                rhs.remove(&index);
+            }
         }
     }
 }
@@ -569,6 +508,9 @@ mod test {
             let column = BTreeMap::new();
             let result = identity.invert_lower_right(column);
             assert!(result.is_empty());
+            let column = BTreeMap::new();
+            let result = identity.invert_lower_left(column);
+            assert!(result.is_empty());
         }
 
         #[test]
@@ -584,6 +526,9 @@ mod test {
             let column = vec![(0, RB!(1))];
             let result = identity.invert_lower_right(column.clone().into_iter().collect());
             assert_eq!(result, column);
+            let column = vec![(0, RB!(1))];
+            let result = identity.invert_lower_left(column.clone().into_iter().collect());
+            assert_eq!(result, column);
 
             let column = vec![(1, RB!(1))];
             let result = identity.invert_upper_right(column.clone().into_iter().collect());
@@ -593,6 +538,9 @@ mod test {
             assert_eq!(result, column);
             let column = vec![(1, RB!(1))];
             let result = identity.invert_lower_right(column.clone().into_iter().collect());
+            assert_eq!(result, column);
+            let column = vec![(1, RB!(1))];
+            let result = identity.invert_lower_left(column.clone().into_iter().collect());
             assert_eq!(result, column);
         }
 
@@ -608,6 +556,9 @@ mod test {
             assert_eq!(result, column);
             let column = vec![(0, RB!(1)), (1, RB!(1))];
             let result = identity.invert_lower_right(column.clone().into_iter().collect());
+            assert_eq!(result, column);
+            let column = vec![(0, RB!(1)), (1, RB!(1))];
+            let result = identity.invert_lower_left(column.clone().into_iter().collect());
             assert_eq!(result, column);
         }
 
@@ -659,6 +610,7 @@ mod test {
     }
 
     mod change_basis {
+        use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::eta_file::EtaFile;
         use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::RotateToBackPermutation;
 
         use super::*;
@@ -677,7 +629,10 @@ mod test {
             let modified = initial;
 
             let mut expected = LUDecomposition::<RationalBig>::identity(3);
-            expected.updates.push((vec![], RotateToBackPermutation::new(1, 3)));
+            expected.updates.push((
+                EtaFile::new(vec![], 1, 3),
+                RotateToBackPermutation::new(1, 3),
+            ));
             assert_eq!(modified, expected);
         }
 
@@ -698,7 +653,10 @@ mod test {
                 column_permutation: FullPermutation::identity(2),
                 lower_triangular: vec![vec![]],
                 upper_triangular: vec![vec![(0, RB!(1))], vec![(0, RB!(1)), (1, RB!(1))]],
-                updates: vec![(vec![], RotateToBackPermutation::new(0, 2))],
+                updates: vec![(
+                    EtaFile::new(vec![], 0, 2),
+                    RotateToBackPermutation::new(0, 2),
+                )],
             };
             assert_eq!(modified, expected);
         }
@@ -728,7 +686,10 @@ mod test {
                     vec![(3, RB!(1))],
                     vec![(0, RB!(2)), (1, RB!(5)), (2, RB!(7)), (4, RB!(3))],
                 ],
-                updates: vec![(vec![], RotateToBackPermutation::new(1, m))],
+                updates: vec![(
+                    EtaFile::new(vec![], 1, m),
+                    RotateToBackPermutation::new(1, m),
+                )],
             };
             assert_eq!(modified, expected);
         }
@@ -769,7 +730,10 @@ mod test {
                     vec![(2, RB!(6))],
                     vec![(1, RB!(3)), (2, RB!(4)), (3, -RB!(8, 6))],
                 ],
-                updates: vec![(vec![(3, RB!(5, 6))], RotateToBackPermutation::new(1, m))],
+                updates: vec![(
+                    EtaFile::new(vec![(3, RB!(5, 6))], 1, m),
+                    RotateToBackPermutation::new(1, m),
+                )],
             };
             assert_eq!(modified, expected);
 
@@ -829,11 +793,14 @@ mod test {
                     vec![(0, RB!(15)), (1, RB!(35)), (2, RB!(45)), (3, RB!(55))],
                     vec![(0, RB!(12)), (1, RB!(32)), (2, RB!(42)), (4, RB!(-215, 363))],
                 ],
-                updates: vec![(vec![
-                    (2, RB!(23, 33)),
-                    (3, RB!(24 * 33 - 34 * 23, 33 * 44)),
-                    (4, RB!(43, 7986)),
-                ], RotateToBackPermutation::new(1, m))],
+                updates: vec![(
+                    EtaFile::new(vec![
+                            (2, RB!(23, 33)),
+                            (3, RB!(24 * 33 - 34 * 23, 33 * 44)),
+                            (4, RB!(43, 7986)),
+                        ], 1, m),
+                    RotateToBackPermutation::new(1, m),
+                )],
             };
             assert_eq!(modified, expected);
 

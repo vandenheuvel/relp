@@ -76,3 +76,74 @@ impl Display for One {
         f.write_str("1")
     }
 }
+
+use std::ops::{Add, AddAssign, Div};
+
+macro_rules! define_ops {
+    ($primitive:ident) => {
+        impl From<One> for $primitive {
+            fn from(_: One) -> Self {
+                1
+            }
+        }
+
+        impl From<&One> for $primitive {
+            fn from(_: &One) -> Self {
+                1
+            }
+        }
+
+        impl Add<One> for $primitive {
+            type Output = Self;
+
+            fn add(self, _: One) -> Self::Output {
+                self + 1
+            }
+        }
+
+        impl Add<&One> for $primitive {
+            type Output = Self;
+
+            fn add(self, _: &One) -> Self::Output {
+                self + 1
+            }
+        }
+
+        impl AddAssign<&One> for $primitive {
+            fn add_assign(&mut self, _: &One) {
+                *self += 1;
+            }
+        }
+
+        impl Mul<&One> for $primitive {
+            type Output = Self;
+
+            fn mul(self, _: &One) -> Self::Output {
+                self
+            }
+        }
+
+        impl Mul<&One> for &$primitive {
+            type Output = $primitive;
+
+            fn mul(self, _: &One) -> Self::Output {
+                self.clone()
+            }
+        }
+
+        impl Div<&One> for $primitive {
+            type Output = Self;
+
+            fn div(self, _: &One) -> Self::Output {
+                self
+            }
+        }
+    }
+}
+
+define_ops!(i32);
+define_ops!(i64);
+define_ops!(i128);
+define_ops!(u32);
+define_ops!(u64);
+define_ops!(u128);
