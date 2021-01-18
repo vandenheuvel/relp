@@ -77,6 +77,7 @@ where
 /// Operations with the cost type.
 pub trait Cost<Rhs> =
     Add<Rhs, Output=Self> +
+    Mul<Rhs, Output=Self> +
 where
     for<'r> &'r Self: Mul<Rhs, Output=Self>,
 ;

@@ -201,32 +201,22 @@ where
         self.updates.len() > 5
     }
 
-    fn iter_basis_inverse_row(&self, row: usize) -> SparseVector<Self::F, Self::F> {
-        let tuples = (0..self.m())
-            .filter_map(|i| {
-                let mut permuted = i; self.row_permutation.forward(&mut permuted);
+    fn basis_inverse_row(&self, mut row: usize) -> SparseVector<Self::F, Self::F> {
+        self.column_permutation.forward(&mut row);
+        for (_, q) in &self.updates {
+            q.forward(&mut row);
+        }
 
-                let initial_rhs = iter::once((permuted, F::one())).collect();
-                let mut w = self.invert_lower_right(initial_rhs);
+        let initial_rhs = iter::once((row, Self::F::one())).collect();
+        let mut w = self.invert_upper_left(initial_rhs);
 
-                for (r, q) in &self.updates {
-                    r.apply_left(&mut w);
-                    // Q^-1 c = (c^T Q)^T because Q orthogonal matrix. Here we
-                    q.forward_sorted(&mut w);
-                }
+        for (eta, q) in self.updates.iter().rev() {
+            q.backward_sorted(&mut w);
+            eta.apply_left(&mut w);
+        }
 
-                let mut target_row = row;
-                self.column_permutation.forward(&mut target_row);
-                for (_, q) in &self.updates {
-                    q.forward(&mut target_row);
-                }
-
-                let initial_rhs = w.into_iter().collect();
-                let result_value = self.invert_upper_right_row(initial_rhs, target_row);
-
-                result_value.map(|v| (i, v))
-            })
-            .collect();
+        let mut tuples = self.invert_lower_left(w.into_iter().collect());
+        self.row_permutation.backward_sorted(&mut tuples);
 
         SparseVector::new(tuples, self.m())
     }
@@ -357,8 +347,10 @@ where
                 }
             }
 
-            result.push((row, result_value));
+            result.push((column, result_value));
         }
+
+        debug_assert!(result.windows(2).all(|w| w[0].0 < w[1].0));
 
         result
     }
@@ -465,9 +457,9 @@ where
         writeln!(f, "{:?}", self.column_permutation)?;
 
         writeln!(f, "Updates:")?;
-        for (i, (r, t)) in self.updates.iter().enumerate() {
+        for (i, (eta, t)) in self.updates.iter().enumerate() {
             writeln!(f, "Update {}: ", i)?;
-            writeln!(f, "R: {:?}", r)?;
+            writeln!(f, "R: {:?}", eta)?;
             writeln!(f, "pivot index: {}", t)?;
         }
         writeln!(f)
@@ -737,6 +729,7 @@ mod test {
             };
             assert_eq!(modified, expected);
 
+            // Columns
             assert_eq!(
                 modified.generate_column(IdentityColumnStruct((0, One))).into_column(),
                 SparseVector::standard_basis_vector(0, m),
@@ -752,6 +745,24 @@ mod test {
             assert_eq!(
                 modified.generate_column(IdentityColumnStruct((3, One))).into_column(),
                 SparseVector::new(vec![(1, RB!(5, 8)), (2, RB!(-15, 32)), (3, RB!(-1, 4))], m),
+            );
+
+            // Rows
+            assert_eq!(
+                modified.basis_inverse_row(0),
+                SparseVector::standard_basis_vector(0, m),
+            );
+            assert_eq!(
+                modified.basis_inverse_row(1),
+                SparseVector::new(vec![(1, RB!(-3, 4)), (3, RB!(5, 8))], m),
+            );
+            assert_eq!(
+                modified.basis_inverse_row(2),
+                SparseVector::new(vec![(1, RB!(9, 16)), (2, RB!(1, 4)), (3, RB!(-15, 32))], m),
+            );
+            assert_eq!(
+                modified.basis_inverse_row(3),
+                SparseVector::new(vec![(1, RB!(1, 2)), (3, RB!(-1, 4))], m),
             );
         }
 
@@ -804,6 +815,7 @@ mod test {
             };
             assert_eq!(modified, expected);
 
+            // Columns
             assert_eq!(
                 modified.generate_column(IdentityColumnStruct((0, One))).into_column(),
                 SparseVector::new(vec![(0, RB!(1, 11))], m),
@@ -824,10 +836,32 @@ mod test {
                 modified.generate_column(IdentityColumnStruct((4, One))).into_column(),
                 SparseVector::new(vec![(1, RB!(1, 110)), (3, RB!(-3, 110)), (4, RB!(1, 55))], m),
             );
-            // Sum of two columns
+            // Sum of two
             assert_eq!(
                 modified.generate_column(matrix_data::Column::TwoSlack([(0, RB!(1)), (1, RB!(1))], [])).into_column(),
                 SparseVector::new(vec![(0, RB!(-1, 11)), (1, RB!(-363, 215)), (2, RB!(-1, 43)), (3, RB!(693, 430))], m),
+            );
+
+            // Rows
+            assert_eq!(
+                modified.basis_inverse_row(0),
+                SparseVector::new(vec![(0, RB!(1, 11)), (1, RB!(-2, 11)), (2, RB!(1, 11))], m),
+            );
+            assert_eq!(
+                modified.basis_inverse_row(1),
+                SparseVector::new(vec![(1, RB!(-363, 215)), (2, RB!(253, 215)), (3, RB!(1, 86)), (4, RB!(1, 110))], m),
+            );
+            assert_eq!(
+                modified.basis_inverse_row(2),
+                SparseVector::new(vec![(1, RB!(-1, 43)), (2, RB!(2, 43)), (3, RB!(-1, 43))], m),
+            );
+            assert_eq!(
+                modified.basis_inverse_row(3),
+                SparseVector::new(vec![(1, RB!(693, 430)), (2, RB!(-483, 430)), (3, RB!(1, 86)), (4, RB!(-3, 110))], m),
+            );
+            assert_eq!(
+                modified.basis_inverse_row(4),
+                SparseVector::new(vec![(4, RB!(1, 55))], m),
             );
         }
     }

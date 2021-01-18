@@ -464,6 +464,7 @@ where
             for (new_index, &variable) in self.from_active_to_original.iter().enumerate() {
                 match &mut self.original_variables[variable].1 {
                     OriginalVariable::Active(index) => *index = new_index,
+                    OriginalVariable::ActiveFree(_, _) => unimplemented!(),
                     _ => panic!("Should still be in the problem."),
                 }
             }

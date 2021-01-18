@@ -52,30 +52,15 @@ where
 
         let pivot_index = vector.binary_search_by_key(&self.pivot, |&(i, _)| i);
         if let Ok(pivot_index) = pivot_index {
-            let mut index = pivot_index;
             for &(j, ref value) in &self.values {
-                let has_index = vector[index..]
-                    .binary_search_by_key(&j, |&(jj, _)| jj);
-                index += match has_index { Ok(shift) | Err(shift) => shift };
-
+                let has_index = vector.binary_search_by_key(&j, |&(jj, _)| jj);
 
                 // TODO(PERFORMANCE): Sort once at the end instead of inserting all the time.
                 let difference = value * &vector[pivot_index].1;
-                match has_index {
-                    Ok(_) => {
-                        vector[index].1 -= difference;
-                        if vector[index].1.is_zero() {
-                            vector.remove(index);
-                        } else {
-                            index += 1;
-                        }
-                    }
-                    Err(_) => {
-                        vector.insert(index, (j, -difference));
-                        index += 1;
-                    },
-                }
+                update_value(difference, has_index, j, vector);
             }
+
+            debug_assert!(vector.windows(2).all(|w| w[0].0 < w[1].0));
         }
     }
 
@@ -113,18 +98,9 @@ where
         }
 
         // TODO(PERFORMANCE): Sort once at the end instead of inserting all the time.
+        update_value(total, pivot_index, self.pivot, vector);
 
-        if !total.is_zero() {
-            match pivot_index {
-                Ok(data_index) => {
-                    vector[data_index].1 -= total;
-                    if vector[data_index].1.is_zero() {
-                        vector.remove(data_index);
-                    }
-                },
-                Err(data_index) => vector.insert(data_index, (self.pivot, -total)),
-            }
-        }
+        debug_assert!(vector.windows(2).all(|w| w[0].0 < w[1].0));
     }
 
     /// Modify the pivot index of the spike.
@@ -153,16 +129,28 @@ where
             })
             .sum::<F>();
 
-        if !difference.is_zero() {
-            match has_pivot_index {
-                Ok(data_index) => {
-                    spike[data_index].1 -= difference;
-                    if spike[data_index].1.is_zero() {
-                        spike.remove(data_index);
-                    }
-                },
-                Err(data_index) => spike.insert(data_index, (self.pivot, -difference)),
-            }
+        update_value(difference, has_pivot_index, self.pivot, spike);
+    }
+}
+
+fn update_value<F>(
+    difference: F,
+    pivot_index: Result<usize, usize>,
+    new_index: usize,
+    vector: &mut Vec<(usize, F)>,
+)
+where
+    F: SubAssign<F> + Neg<Output=F> + Zero,
+{
+    if !difference.is_zero() {
+        match pivot_index {
+            Ok(data_index) => {
+                vector[data_index].1 -= difference;
+                if vector[data_index].1.is_zero() {
+                    vector.remove(data_index);
+                }
+            },
+            Err(data_index) => vector.insert(data_index, (new_index, -difference)),
         }
     }
 }
@@ -182,7 +170,7 @@ mod test {
     }
 
     #[test]
-    fn empty2() {
+    fn empty_2() {
         let eta = EtaFile::new(vec![], 0, 2);
         let mut vector = vec![(0, 1)];
         eta.apply_left(&mut vector);
@@ -199,7 +187,7 @@ mod test {
     }
 
     #[test]
-    fn single_value2() {
+    fn single_value_2() {
         let eta = EtaFile::new(vec![(1, 1)], 0, 2);
         let mut vector = vec![(0, 13), (1, 17)];
         eta.apply_right(&mut vector);
@@ -211,7 +199,7 @@ mod test {
     }
 
     #[test]
-    fn single_value2_empty() {
+    fn single_value_2_empty() {
         let eta = EtaFile::new(vec![(1, 1)], 0, 2);
         let mut vector = vec![];
         eta.apply_right(&mut vector);
@@ -220,5 +208,53 @@ mod test {
         let mut vector = vec![];
         eta.apply_left(&mut vector);
         debug_assert_eq!(vector, vec![]);
+    }
+
+    #[test]
+    fn two_values_3() {
+        let eta = EtaFile::new(vec![(1, 5), (2, 7)], 0, 3);
+        let mut vector = vec![(0, 13), (1, 17), (2, 19)];
+        eta.apply_right(&mut vector);
+        debug_assert_eq!(vector, vec![(0, 13 - 5 * 17 - 7 * 19), (1, 17), (2, 19)]);
+
+        let mut vector = vec![(0, 13), (1, 17), (2, 19)];
+        eta.apply_left(&mut vector);
+        debug_assert_eq!(vector, vec![(0, 13), (1, - 5 * 13 + 17), (2, -7 * 13 + 19)]);
+    }
+
+    #[test]
+    fn one_value_3() {
+        let eta = EtaFile::new(vec![(1, 5)], 0, 3);
+        let mut vector = vec![(0, 13), (1, 17), (2, 19)];
+        eta.apply_right(&mut vector);
+        debug_assert_eq!(vector, vec![(0, 13 - 5 * 17), (1, 17), (2, 19)]);
+
+        let mut vector = vec![(0, 13), (1, 17), (2, 19)];
+        eta.apply_left(&mut vector);
+        debug_assert_eq!(vector, vec![(0, 13), (1, - 5 * 13 + 17), (2, 19)]);
+    }
+
+    #[test]
+    fn one_value_last_index_3() {
+        let eta = EtaFile::new(vec![(2, 5)], 0, 3);
+        let mut vector = vec![(0, 13), (1, 17), (2, 19)];
+        eta.apply_right(&mut vector);
+        debug_assert_eq!(vector, vec![(0, 13 - 5 * 19), (1, 17), (2, 19)]);
+
+        let mut vector = vec![(0, 13), (1, 17), (2, 19)];
+        eta.apply_left(&mut vector);
+        debug_assert_eq!(vector, vec![(0, 13), (1, 17), (2, - 5 * 13 + 19)]);
+    }
+
+    #[test]
+    fn many() {
+        let eta = EtaFile::new(vec![(1, 2), (2, 3), (5, 5), (7, 7), (11, 11), (12, 13)], 0, 14);
+        let mut vector = vec![(0, 17), (1, 19), (3, 23), (5, 29), (6, 31), (9, 37), (11, 41)];
+        eta.apply_right(&mut vector);
+        debug_assert_eq!(vector, vec![(0, 17 - 2 * 19 - 5 * 29 - 11 * 41), (1, 19), (3, 23), (5, 29), (6, 31), (9, 37), (11, 41)]);
+
+        let mut vector = vec![(0, 13), (1, 19), (3, 23), (5, 29), (6, 31), (9, 37), (11, 41)];
+        eta.apply_left(&mut vector);
+        debug_assert_eq!(vector, vec![(0, 13), (1, 19 - 2 * 13), (2, -3 * 13), (3, 23), (5, 29 -5 * 13), (6, 31), (7, -7 * 13), (9, 37), (11, 41 - 11 * 13), (12, -13 * 13)]);
     }
 }

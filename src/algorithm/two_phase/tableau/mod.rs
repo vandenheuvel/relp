@@ -258,6 +258,7 @@ where
     // Checking basis_columns
     // Correct number of basis columns (uniqueness is implied because it's a set)
     let nr_basis_columns = tableau.basis_columns.len() == tableau.nr_rows();
+    debug_assert!(nr_basis_columns);
 
     // Checking carry matrix
     let carry = {
@@ -268,13 +269,18 @@ where
                 let e_i = SparseVector::new(vec![(i, IM::F::one())], tableau.nr_rows());
                 tableau.generate_column(j).into_column() == e_i
             });
+        debug_assert!(basis);
+
         // `minus_pi` get to relative zero cost for basis columns
         let minus_pi = (0..tableau.nr_rows())
             .map(|i| tableau.inverse_maintainer.basis_column_index_for_row(i))
             .all(|j| tableau.relative_cost(j) == IM::F::zero());
+        debug_assert!(minus_pi);
+
         // `b` >= 0
         let b_ok = (0..tableau.nr_rows())
             .all(|i| tableau.inverse_maintainer.b()[i] >= IM::F::zero());
+        debug_assert!(b_ok);
 
         basis && minus_pi && b_ok
     };

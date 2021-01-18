@@ -178,7 +178,7 @@ where
         false
     }
 
-    fn iter_basis_inverse_row(&self, row: usize) -> SparseVector<Self::F, Self::F> {
+    fn basis_inverse_row(&self, row: usize) -> SparseVector<Self::F, Self::F> {
         self.rows[row].clone()
     }
 
@@ -228,6 +228,7 @@ where
         }
         writeln!(f)?;
         f.write_str(&"-".repeat((1 + self.m()) * width))?;
+        writeln!(f)?;
 
         for row in 0..self.m() {
             write!(f, "{:>width$}", format!("{} |", row), width = width / 2)?;

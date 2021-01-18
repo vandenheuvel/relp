@@ -136,6 +136,18 @@ macro_rules! define_interations {
                         }
                     }
 
+                    impl Mul<Option<&$small>> for Big {
+                        type Output = Big;
+
+                        fn mul(self, rhs: Option<&$small>) -> Self::Output {
+                            // TODO(PERFORMANCE): Make sure that this is just as efficient as a native algorithm.
+                            match rhs {
+                                None => Big::zero(),
+                                Some(rhs) => Mul::mul(self, rhs),
+                            }
+                        }
+                    }
+
                     impl Mul<Option<&$small>> for &Big {
                         type Output = Big;
 

@@ -114,6 +114,17 @@ mod field {
             }
         }
 
+        impl Mul<Option<&Big>> for Big {
+            type Output = Big;
+
+            fn mul(self, rhs: Option<&Big>) -> Self::Output {
+                match rhs {
+                    None => Big::zero(),
+                    Some(rhs) => Mul::mul(self, rhs),
+                }
+            }
+        }
+
         impl Mul<Option<&Big>> for &Big {
             type Output = Big;
 
