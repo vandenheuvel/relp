@@ -15,7 +15,7 @@ use rust_lp::io::import;
 
 /// A linear program solver written in rust.
 #[derive(Clap)]
-#[clap(version = "0.0.3", author = "Bram van den Heuvel <bram@vandenheuvel.online>")]
+#[clap(version = "0.0.4", author = "Bram van den Heuvel <bram@vandenheuvel.online>")]
 struct Opts {
     /// File containing the problem description
     problem_file: String,

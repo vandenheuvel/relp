@@ -3,7 +3,7 @@
 # rust-lp
 A linear program solver written in Rust.
 
-This project is a work in progress. Integer variables are not supported.
+This project is a work in progress. Integer variables are not (yet) supported.
 
 ## Priorities
 
@@ -19,12 +19,14 @@ This project is a work in progress. Integer variables are not supported.
 - [x] Arbitrary precision
 - [x] Presolving framework
 - [x] Reading MPS files
-- [ ] Smart matrix inverse maintenance
-- [ ] Floating point support
-- [ ] A convenient API
+- [x] Smart matrix inverse maintenance
 - [ ] Dual algorithm
+- [ ] Integer variables through Gomory cuts
+- [ ] A convenient API
+- [ ] Floating point support
 - [ ] Integration into branch and bound frameworks
 
 ## Usage
 
 The binary can be compiled with `cargo build --bin rust-lp --features="binaries"`. You can then call it like `target/release/rust-lp tests/burkardt/problem_files/adlittle.mps`. If you would like to use the library, read through the `tests/` folder for examples.
+
