@@ -8,16 +8,17 @@ use std::convert::TryInto;
 use std::fmt::{Debug, Display};
 use std::ops::{Add, Neg, Sub};
 
-use num::{One, Zero};
+use num_traits::{One, Zero};
+use relp_num::Abs;
+use relp_num::NonZero;
 
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order as MatrixOrder, Sparse};
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::{Element, NotZero};
+use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
 use crate::data::linear_program::elements::{ConstraintRelation, RangedConstraintRelation, VariableType};
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::Variable as ShiftedVariable;
-use crate::data::number_types::traits::Abs;
 use crate::io::error::Inconsistency;
 use crate::io::mps::{Bound, MPS, Range};
 use crate::io::mps::BoundType;
@@ -28,7 +29,7 @@ use crate::io::mps::Row;
 impl<FI, FO: From<FI>> TryInto<GeneralForm<FO>> for MPS<FI>
 where
     FI: Sub<Output=FI> + Abs + Ord + Zero + Display + Clone,
-    FO: NotZero + Zero + One + Neg<Output=FO> + Ord + Element,
+    FO: NonZero + Zero + One + Neg<Output=FO> + Ord + Element,
     for<'r> FO: Add<&'r FO, Output=FO>,
     for<'r> &'r FO: Neg<Output=FO>,
 {
@@ -88,7 +89,7 @@ where
 /// # Errors
 ///
 /// If there is an inconsistency in bound information, such as a trivial infeasibility.
-fn compute_variable_info<FI, FO: From<FI> + NotZero + Zero + One + Ord + Display + Debug + Clone>(
+fn compute_variable_info<FI, FO: From<FI> + NonZero + Zero + One + Ord + Display + Debug + Clone>(
     columns: Vec<Column<FI>>,
     cost_values: Vec<SparseTuple<FI>>,
     bounds: Vec<Bound<FI>>,
@@ -510,14 +511,13 @@ where
 #[cfg(test)]
 #[allow(clippy::shadow_unrelated)]
 mod test {
-    use num::FromPrimitive;
+    use relp_num::R32;
+    use relp_num::Rational32;
 
     use crate::data::linear_algebra::vector::{DenseVector, Vector};
     use crate::data::linear_program::elements::{ConstraintRelation, RangedConstraintRelation};
-    use crate::data::number_types::rational::Rational32;
     use crate::io::mps::{Rhs, Row};
     use crate::io::mps::convert::compute_b;
-    use crate::R32;
 
     type T = Rational32;
 

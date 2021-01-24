@@ -9,14 +9,14 @@ use std::fmt::{Debug, Display};
 use std::iter::Sum;
 use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Neg};
-use std::slice::Iter;
+use std::slice::{Iter, IterMut};
 
-use num::{One, Zero};
+use num_traits::{One, Zero};
+use relp_num::NonZero;
 
 use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
-use crate::data::linear_algebra::traits::NotZero;
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
 
 /// A sparse vector using a `Vec` with (row, value) combinations as back-end. Indices start at
@@ -80,9 +80,10 @@ where
     }
 
     fn sparse_inner_product<'a, H, G: 'a, I: Iterator<Item=&'a SparseTuple<G>>>(&self, column: I) -> H
-        where
-            H: Zero + AddAssign<F>,
-            for<'r> &'r F: Mul<&'r G, Output=F>,
+    where
+        H: Zero + AddAssign<F> + Display + Debug,
+        G: Display + Debug,
+        for<'r> &'r F: Mul<&'r G, Output=F>,
     {
         let mut total = H::zero();
 
@@ -152,8 +153,12 @@ where
         self.len -= indices.len();
     }
 
-    fn iter_values(&self) -> Iter<Self::Inner> {
+    fn iter(&self) -> Iter<Self::Inner> {
         self.data.iter()
+    }
+
+    fn iter_mut(&mut self) -> IterMut<Self::Inner> {
+        self.data.iter_mut()
     }
 
     /// The length of this vector.
@@ -221,7 +226,7 @@ where
 
         let mut new_tuples = Vec::new();
 
-        let mut j = 0;
+        let mut j = 0;  // data index
         let old_data = mem::replace(&mut self.data, Vec::with_capacity(0));
         for (i, value) in old_data {
             while j < other.data.len() && other.data[j].0 < i {
@@ -253,51 +258,51 @@ where
     ///
     /// * `i`: Index of the value. New tuple will be inserted, potentially causing many values to
     /// be shifted.
-    /// * `value`: Value to be taken at index `i`. Should not be very close to zero to avoid
-    /// memory usage and numerical error build-up.
+    /// * `value`: Value to be taken at index `i`.
     pub fn shift_value<G>(&mut self, i: usize, value: G)
     where
         F: PartialEq<G> + AddAssign<G> + From<G>,
         for<'r> &'r G: Neg<Output=G>,
+        G: NonZero,
     {
         debug_assert!(i < self.len);
 
-        match self.get_data_index(i) {
-            Ok(index) => {
-                if self.data[index].1 == -&value {
-                    self.set_zero(i);
-                } else {
-                    self.data[index].1 += value;
-                }
-            },
-            Err(index) => self.data.insert(index, (i, From::from(value))),
+        if value.is_not_zero() {
+            match self.get_data_index(i) {
+                Ok(index) => {
+                    if self.data[index].1 == -&value {
+                        self.set_zero(i);
+                    } else {
+                        self.data[index].1 += value;
+                    }
+                },
+                Err(index) => self.data.insert(index, (i, From::from(value))),
+            }
         }
     }
 
     /// Multiply each element of the vector by a value.
     pub fn element_wise_multiply(&mut self, value: &F)
     where
-        for<'r> F: NotZero + MulAssign<&'r F>,
+        for<'r> F: NonZero + MulAssign<&'r F>,
     {
-        debug_assert!(value.borrow().is_not_zero());
+        debug_assert!(value.is_not_zero());
 
         for (_, v) in &mut self.data {
             *v *= value;
         }
-        self.data.retain(|(_, v)| v.is_not_zero());
     }
 
     /// Divide each element of the vector by a value.
     pub fn element_wise_divide(&mut self, value: &F)
     where
-       for<'r> F: NotZero + DivAssign<&'r F>,
+       for<'r> F: NonZero + DivAssign<&'r F>,
     {
-        debug_assert!(value.borrow().is_not_zero());
+        debug_assert!(value.is_not_zero());
 
         for (_, v) in &mut self.data {
             *v /= value;
         }
-        self.data.retain(|(_, v)| v.is_not_zero());
     }
 }
 

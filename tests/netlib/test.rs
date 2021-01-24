@@ -1,8 +1,5 @@
-use num::FromPrimitive;
-
-use relp::data::number_types::rational::RationalBig;
-use relp::data::number_types::traits::Abs;
-use relp::RB;
+use relp_num::Abs;
+use relp_num::RB;
 
 use crate::netlib::solve;
 

@@ -1,10 +1,9 @@
 //! # Building blocks to describe linear programs.
-use std::cmp::Ordering;
 use std::fmt;
 use std::ops::Mul;
 use std::ops::Not;
 
-use num::Zero;
+use relp_num::NonZeroSign;
 
 use crate::data::linear_program::solution::Solution;
 
@@ -115,29 +114,6 @@ impl<F> From<&RangedConstraintRelation<F>> for RangedConstraintRelationKind {
     }
 }
 
-/// Sign of a value that is not zero.
-///
-/// When working with values that can't be zero, it is often annoying to have to include a match
-/// case that handles the case where a value is equal to zero (to let it panic).
-#[derive(Clone, Copy)]
-pub enum NonZeroSign {
-    /// x > 0
-    Positive,
-    /// x < 0
-    Negative,
-}
-
-// TODO(CORRECTNESS): NotZero trait?
-impl<OF: Zero + Ord> From<&OF> for NonZeroSign {
-    fn from(value: &OF) -> Self {
-        match value.cmp(&OF::zero()) {
-            Ordering::Greater => NonZeroSign::Positive,
-            Ordering::Less => NonZeroSign::Negative,
-            Ordering::Equal => unreachable!("Value should not be zero at this point."),
-        }
-    }
-}
-
 /// Direction of a bound.
 ///
 /// Is used more generally in the case where the three variants of the `ConstraintType` don't suit
@@ -219,5 +195,23 @@ pub enum Objective {
 impl Default for Objective {
     fn default() -> Self {
         Objective::Minimize
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use relp_num::{NonZeroSign, Sign};
+
+    use crate::data::linear_program::elements::BoundDirection;
+
+    #[test]
+    fn test_mul() {
+        assert_eq!(BoundDirection::Lower * NonZeroSign::Positive, BoundDirection::Lower);
+        assert_eq!(BoundDirection::Upper * NonZeroSign::Positive, BoundDirection::Upper);
+        assert_eq!(!BoundDirection::Lower * NonZeroSign::Positive, BoundDirection::Upper);
+
+        assert_eq!(BoundDirection::Lower * Sign::Positive.into(), BoundDirection::Lower);
+        assert_eq!(BoundDirection::Upper * Sign::Positive.into(), BoundDirection::Upper);
+        assert_eq!(!BoundDirection::Lower * Sign::Positive.into(), BoundDirection::Upper);
     }
 }

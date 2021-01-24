@@ -4,18 +4,23 @@
 //! applying the changes proposed. This module contains data structures and logic for presolving.
 use std::iter::Iterator;
 
+use relp_num::{Field, NonZeroSigned, OrderedField, OrderedFieldRef};
+use relp_num::NonZeroSign;
+
+pub use scale::Scalable as Prescalable;
+
 use crate::data::linear_algebra::traits::SparseElement;
-use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, NonZeroSign, RangedConstraintRelation};
+use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, RangedConstraintRelation};
 use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable};
 use crate::data::linear_program::general_form::presolve::counters::Counters;
 use crate::data::linear_program::general_form::presolve::queues::Queues;
 use crate::data::linear_program::general_form::presolve::updates::Updates;
-use crate::data::number_types::traits::{Field, OrderedField, OrderedFieldRef};
 
 mod rule;
 mod queues;
 pub(super) mod updates;
 mod counters;
+pub(super) mod scale;
 
 /// Container data structure to keep track of presolve status.
 ///
@@ -150,7 +155,7 @@ where
             }
         }
 
-        // TODO(ENHANCEMENT): Duplicate rows and columns.
+        // TODO(ENHANCEMENT): Deduplicate rows and columns.
 
         // No rule was applied
         Ok(Change::NotMeaningful)
@@ -177,8 +182,8 @@ where
     ) {
         debug_assert!(self.updates.removed_variables.iter().all(|&(j, _)| variable != j));
         debug_assert!(match direction {
-            BoundDirection::Lower => change.as_ref().map_or(true, |v| v > &OF::zero()),
-            BoundDirection::Upper => change.as_ref().map_or(true, |v| v < &OF::zero()),
+            BoundDirection::Lower => change.as_ref().map_or(true, NonZeroSigned::is_positive),
+            BoundDirection::Upper => change.as_ref().map_or(true, NonZeroSigned::is_negative),
         });
 
         if self.updates.is_variable_fixed(variable).is_some() && self.counters.is_variable_still_active(variable) {
@@ -221,7 +226,7 @@ where
                 continue;
             }
 
-            let bound_to_edit = direction * NonZeroSign::from(coefficient);
+            let bound_to_edit = direction * coefficient.signum();
             if let Some(ref mut bound) = match bound_to_edit {
                 BoundDirection::Lower => &mut self.activity_bounds[row].0,
                 BoundDirection::Upper => &mut self.activity_bounds[row].1,
@@ -231,7 +236,7 @@ where
                     BoundDirection::Lower => self.counters.activity[row].0,
                     BoundDirection::Upper => self.counters.activity[row].1,
                 } <= 1);
-                self.queues.activity.insert(row, bound_to_edit);
+                self.queues.activity.push((row, bound_to_edit));
             }
         }
     }
@@ -251,14 +256,14 @@ where
             // TODO(ARCHITECTURE): Avoid This clone
             .map(|(i, v)| (i, v.clone())).collect::<Vec<_>>();
         for (constraint, coefficient) in constraints_to_check {
-            let activity_direction = direction * NonZeroSign::from(&coefficient);
+            let activity_direction = direction * coefficient.signum();
             let counter = match activity_direction {
                 BoundDirection::Lower => &mut self.counters.activity[constraint].0,
                 BoundDirection::Upper => &mut self.counters.activity[constraint].1,
             };
             *counter -= 1;
             if *counter <= 1 {
-                self.queues.activity.insert(constraint, activity_direction);
+                self.queues.activity.push((constraint, activity_direction));
             }
         }
     }

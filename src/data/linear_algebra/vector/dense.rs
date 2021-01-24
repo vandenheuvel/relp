@@ -5,19 +5,20 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::fmt;
 use std::ops::{AddAssign, Index, IndexMut, Mul};
-use std::slice::Iter;
+use std::slice::{Iter, IterMut};
 
-use num::Zero;
+use num_traits::Zero;
 
 use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::vector::Vector;
+use std::vec::IntoIter;
 
 /// Uses a `Vec` as underlying data a structure. Length is fixed at creation.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Dense<F> {
     #[allow(missing_docs)]
-    pub data: Vec<F>,
+    data: Vec<F>,
 }
 
 impl<F> Dense<F> {
@@ -32,8 +33,8 @@ impl<F> Dense<F> {
     ///
     /// A constant `DenseVector`.
     pub fn constant(value: F, len: usize) -> Self
-        where
-            F: Clone,
+    where
+        F: Clone,
     {
         debug_assert_ne!(len, 0);
 
@@ -47,6 +48,16 @@ impl<F> Dense<F> {
     /// * `new_values`: An ordered collections of values to append.
     pub fn extend_with_values(&mut self, new_values: Vec<F>) {
         self.data.extend(new_values);
+    }
+
+    /// Slice view of the inner data.
+    pub fn inner(&self) -> &[F] {
+        &self.data
+    }
+
+    /// Slice view of the inner data.
+    pub fn inner_mut(&mut self) -> &mut [F] {
+        &mut self.data
     }
 }
 
@@ -129,8 +140,13 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     }
 
     /// Iterate over the values of this vector.
-    fn iter_values(&self) -> Iter<Self::Inner> {
+    fn iter(&self) -> Iter<Self::Inner> {
         self.data.iter()
+    }
+
+    /// Iterate over the values of this vector mutably.
+    fn iter_mut(&mut self) -> IterMut<Self::Inner> {
+        self.data.iter_mut()
     }
 
     /// The length of this vector.
@@ -146,6 +162,15 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     /// The size of this vector in memory.
     fn size(&self) -> usize {
         self.data.len()
+    }
+}
+
+impl<T> IntoIterator for Dense<T> {
+    type Item = T;
+    type IntoIter = IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.data.into_iter()
     }
 }
 

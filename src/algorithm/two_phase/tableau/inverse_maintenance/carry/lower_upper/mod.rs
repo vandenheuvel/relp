@@ -5,7 +5,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::iter;
 
-use num::Zero;
+use num_traits::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, ops};
@@ -58,7 +58,7 @@ pub struct LUDecomposition<F> {
 
 impl<F> BasisInverse for LUDecomposition<F>
 where
-    F: ops::Internal + ops::InternalHR,
+    F: ops::Field + ops::FieldHR,
 {
     type F = F;
     type ColumnComputationInfo = ColumnAndSpike<Self::F>;
@@ -231,7 +231,7 @@ where
 
 impl<F> LUDecomposition<F>
 where
-    F: ops::Internal + ops::InternalHR,
+    F: ops::Field + ops::FieldHR,
 {
     fn invert_lower_right(&self, mut rhs: BTreeMap<usize, F>) -> Vec<(usize, F)> {
         let mut result = Vec::new();
@@ -358,7 +358,7 @@ where
 
 fn insert_or_shift_maybe_remove<F>(index: usize, change: F, rhs: &mut BTreeMap<usize, F>)
 where
-    F: ops::Internal + ops::InternalHR + Zero,
+    F: ops::Field + ops::FieldHR + Zero,
 {
     match rhs.get_mut(&index) {
         None => {
@@ -392,7 +392,7 @@ impl<F: SparseElement<F>> ColumnComputationInfo<F> for ColumnAndSpike<F> {
 
 impl<F> Display for LUDecomposition<F>
 where
-    F: ops::Internal + ops::InternalHR,
+    F: ops::Field + ops::FieldHR,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let width = 10;
@@ -471,10 +471,10 @@ where
 mod test {
     use std::collections::BTreeMap;
 
-    use num::FromPrimitive;
+    use relp_num::{R64, RB};
+    use relp_num::{Rational64, RationalBig};
 
-    use crate::{R64, RB};
-    use crate::algorithm::two_phase::matrix_provider::column::identity::{IdentityColumnStruct, One};
+    use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumnStruct;
     use crate::algorithm::two_phase::matrix_provider::matrix_data;
     use crate::algorithm::two_phase::matrix_provider::matrix_data::Column;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
@@ -483,7 +483,6 @@ mod test {
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::FullPermutation;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::ColumnComputationInfo;
     use crate::data::linear_algebra::vector::{SparseVector, Vector};
-    use crate::data::number_types::rational::{Rational64, RationalBig};
 
     mod matmul {
         use super::*;
@@ -603,6 +602,8 @@ mod test {
     }
 
     mod change_basis {
+        use relp_num::One;
+
         use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::eta_file::EtaFile;
         use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::RotateToBackPermutation;
 

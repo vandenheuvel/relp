@@ -1,11 +1,11 @@
 [package]
 name = "relp"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["Bram van den Heuvel <bram@vandenheuvel.online>"]
 edition = "2018"
 description = "Rust Exact Linear Programming"
 repository = "https://github.com/vandenheuvel/relp"
-license = "MIT"
+license = "GPL-3.0-only"
 
 keywords = ["linear", "exact", "precision", "ilp", "simplex"]
 categories = ["algorithms", "science"]
@@ -13,8 +13,13 @@ categories = ["algorithms", "science"]
 exclude = ["tests"]
 
 [dependencies]
+relp-num = "0.0.5"
+num-traits = "0.2.14"
+
 itertools = "0.10.0"
-num = "0.4.0"
+fifo-set = "1.0.0"
+cumsum = "1.0.0"
+enum-map = "1.1.1"
 
 # TODO(PACKAGING): Make this an optional dependency.
 daggy = "0.7.0"  # Currently only for debug asserts
@@ -37,4 +42,3 @@ lto = true
 name = "relp"
 path = "src/bin/main.rs"
 required-features = ["binaries"]
-

@@ -30,7 +30,7 @@ where
     default fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
         IM: InverseMaintener<F:
-            im_ops::InternalHR +
+            im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<ArtificialCost> +
             im_ops::Rhs<MP::Rhs> +
@@ -89,7 +89,7 @@ where
     fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
         IM: InverseMaintener<F:
-            im_ops::InternalHR +
+            im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Rhs<Self::Rhs> +
             im_ops::Column<Self::Rhs> +
@@ -114,9 +114,9 @@ where
 
 #[cfg(test)]
 mod test {
-    use num::FromPrimitive;
+    use relp_num::{R64, RB};
+    use relp_num::{Rational64, RationalBig};
 
-    use crate::{R64, RB};
     use crate::algorithm::{OptimizationResult, SolveRelaxation};
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::phase_two;
@@ -128,7 +128,6 @@ mod test {
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::VariableType;
     use crate::data::linear_program::general_form::Variable;
-    use crate::data::number_types::rational::{Rational64, RationalBig};
     use crate::tests::problem_2::{create_matrix_data_data, matrix_data_form, tableau_form};
 
     #[test]
@@ -169,8 +168,8 @@ mod test {
             vec![1, 1],
         ], 2);
         let b = DenseVector::from_test_data(vec![
-            3f64 / 2f64,
-            5f64 / 2f64,
+            (3, 2),
+            (5, 2),
         ]);
         let variables = vec![
             Variable {

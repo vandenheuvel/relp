@@ -4,16 +4,17 @@
 //! the ability to use a different basis inverse representation.
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::fmt;
 use std::ops::Neg;
 
-use num::Zero;
+use relp_num::NonZero;
+use relp_num::One;
 
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, OrderedColumn, SparseColumn};
-use crate::algorithm::two_phase::matrix_provider::column::identity::{IdentityColumnStruct, One};
+use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumnStruct;
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::utilities::remove_indices;
@@ -169,7 +170,7 @@ pub trait RemoveBasisPart: BasisInverse {
 
 impl<F, BI> Carry<F, BI>
 where
-    F: ops::Internal + ops::InternalHR,
+    F: ops::Field + ops::FieldHR,
     BI: BasisInverse<F=F>,
 {
     /// Create a `Carry` for a tableau with a known basis inverse.
@@ -296,10 +297,10 @@ where
 
         // Then add multiples of the resulting value to the other values
         // TODO(ARCHITECTURE): Is there a nicer way to go about this?
-        let (b_left, b_right) = self.b.data.split_at_mut(pivot_row_index);
+        let (b_left, b_right) = self.b.inner_mut().split_at_mut(pivot_row_index);
         let (b_middle, b_right) = b_right.split_first_mut().unwrap();
 
-        for (edit_row_index, column_value) in column.iter_values() {
+        for (edit_row_index, column_value) in column.iter() {
             match edit_row_index.cmp(&pivot_row_index) {
                 Ordering::Less => {
                     b_left[*edit_row_index] -= column_value * &*b_middle;
@@ -325,7 +326,7 @@ where
     /// This method requires a normalized pivot element.
     fn update_minus_pi_and_obj(&mut self, pivot_row_index: usize, relative_cost: F) {
         let basis_inverse_row = self.basis_inverse.basis_inverse_row(pivot_row_index);
-        for (column_index, value) in basis_inverse_row.iter_values() {
+        for (column_index, value) in basis_inverse_row.iter() {
             self.minus_pi[*column_index] -= &relative_cost * value;
         }
 
@@ -349,7 +350,7 @@ where
 
 impl<F, BI> InverseMaintener for Carry<F, BI>
 where
-    F: ops::Internal + ops::InternalHR,
+    F: ops::Field + ops::FieldHR,
     BI: BasisInverse<F=F>,
 {
     type F = F;
@@ -364,14 +365,14 @@ where
         let m = b.len();
 
         let mut b_sum = Self::F::zero();
-        for v in b.iter_values() {
+        for v in b.iter() {
             b_sum += v;
         }
 
         Self {
             minus_objective: -b_sum,
             minus_pi: DenseVector::constant(-Self::F::one(), m),
-            b: DenseVector::new(b.data.into_iter().map(|v| v.into()).collect(), m),
+            b: DenseVector::new(b.into_iter().map(|v| v.into()).collect(), m),
             // Identity matrix
             basis_indices: (0..m).collect(),
             basis_inverse: BI::identity(m),
@@ -418,7 +419,7 @@ where
         Self {
             minus_objective: -objective,
             minus_pi: DenseVector::new(minus_pi_values, m),
-            b: DenseVector::new(b.data.into_iter().map(|v| v.into()).collect(), m),
+            b: DenseVector::new(b.into_iter().map(|v| v.into()).collect(), m),
             // Identity matrix
             basis_indices,
             basis_inverse: BI::identity(m),
@@ -438,9 +439,9 @@ where
         let columns = basis.iter().map(|&j| provider.column(j)).collect::<Vec<_>>();
         let basis_inverse = BI::invert(columns);
 
-        let b_data = provider.right_hand_side().data
+        let b_data = provider.right_hand_side()
             .into_iter().enumerate()
-            .filter(|(_, v)| !v.is_zero())
+            .filter(|(_, v)| v.is_not_zero())
             .collect::<Vec<_>>();
         let b_column = SparseColumn { inner: b_data, };
         let mut b_values = vec![F::zero(); provider.nr_rows()];
@@ -572,6 +573,7 @@ where
     fn cost_difference<G, C: Column<F=G> + OrderedColumn>(&self, original_column: &C) -> Self::F
     where
         Self::F: ops::Column<G>,
+        G: Display + Debug,
     {
         self.minus_pi.sparse_inner_product::<Self::F, _, _>(original_column.iter())
     }
@@ -614,7 +616,7 @@ where
     }
 
     fn current_bfs(&self) -> Vec<SparseTuple<Self::F>> {
-        let mut tuples = self.b.iter_values()
+        let mut tuples = self.b.iter()
             .enumerate()
             .map(|(i, v)| (self.basis_column_index_for_row(i), v))
             .filter(|(_, v)| !v.is_zero())
@@ -644,7 +646,7 @@ where
 
 impl<F, BI> InverseMaintener for Carry<F, BI>
 where
-    F: ops::Internal + ops::InternalHR,
+    F: ops::Field + ops::FieldHR,
     BI: BasisInverse<F=F> + RemoveBasisPart,
 {
     fn from_artificial_remove_rows<'provider, MP: Filtered>(
@@ -691,18 +693,18 @@ where
 
 impl<F, BI> Display for Carry<F, BI>
 where
-    F: ops::Internal + ops::InternalHR,
+    F: ops::Field + ops::FieldHR,
     BI: BasisInverse<F=F>,
 {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "Carry:\n============")?;
-        writeln!(f, "Objective function value: {}", self.get_objective_function_value())?;
+        // writeln!(f, "Carry:\n============")?;
+        // writeln!(f, "Objective function value: {}", self.get_objective_function_value())?;
         writeln!(f, "Column ordering:")?;
         writeln!(f, "{:?}", self.basis_indices)?;
         writeln!(f, "Minus PI:")?;
         <DenseVector<F> as Display>::fmt(&self.minus_pi, f)?;
-        writeln!(f, "b:")?;
-        <DenseVector<F> as Display>::fmt(&self.b, f)?;
+        // writeln!(f, "b:")?;
+        // <DenseVector<F> as Display>::fmt(&self.b, f)?;
         writeln!(f, "B^-1:")?;
 
         self.basis_inverse.fmt(f)?;

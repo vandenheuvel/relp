@@ -5,16 +5,18 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul};
 use std::slice::Iter;
 
+use relp_num::Field;
+use relp_num::NonZero;
+use relp_num::RationalBig;
+
 use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse as SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::{NotZero, SparseComparator, SparseElement};
+use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
-use crate::data::number_types::rational::RationalBig;
-use crate::data::number_types::traits::Field;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArcIncidenceMatrix {
@@ -143,7 +145,8 @@ pub enum ArcDirection {
     Outgoing,
 }
 
-impl NotZero for ArcDirection {
+// TODO(ARCHITECTURE): Consider renaming `NonZero` to something like `SparseElement`
+impl NonZero for ArcDirection {
     fn is_not_zero(&self) -> bool {
         true
     }

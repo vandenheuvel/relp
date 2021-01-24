@@ -1,12 +1,13 @@
 //! # Remove a constraint that is a bound on a variable.
 //!
 //! Triggered when there is only a single variable in a constraint.
+use relp_num::{OrderedField, OrderedFieldRef};
+use relp_num::NonZeroSign;
+
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, RangedConstraintRelation};
-use crate::data::linear_program::elements::NonZeroSign;
 use crate::data::linear_program::general_form::presolve::Index;
 use crate::data::linear_program::general_form::presolve::updates::BoundChange;
-use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 impl<'a, OF> Index<'a, OF>
 where
@@ -38,7 +39,7 @@ where
 
         let bound_value = self.updates.b(constraint) / coefficient;
         let mut changes = Vec::with_capacity(2);
-        match (self.updates.constraint_type(constraint), NonZeroSign::from(coefficient)) {
+        match (self.updates.constraint_type(constraint), coefficient.signum()) {
             (Greater, Positive) | (Less, Negative) => {
                 changes.push((BoundDirection::Lower, bound_value));
             },
@@ -53,7 +54,7 @@ where
                 let bound1 = (self.updates.b(constraint) - range) / coefficient;
                 let bound2 = bound_value;
 
-                match NonZeroSign::from(coefficient) {
+                match coefficient.signum() {
                     Positive => {
                         changes.push((BoundDirection::Lower, bound1));
                         changes.push((BoundDirection::Upper, bound2));

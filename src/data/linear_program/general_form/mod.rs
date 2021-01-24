@@ -7,10 +7,15 @@ use std::iter::Sum;
 use std::mem;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub};
 
+use cumsum::cumsum_array;
 use daggy::{Dag, WouldCycle};
 use daggy::petgraph::data::Element;
 use itertools::repeat_n;
-use num::Zero;
+use num_traits::Zero;
+use relp_num::{OrderedField, OrderedFieldRef};
+use relp_num::NonZero;
+
+pub use presolve::scale::{Scalable, Scaling};
 
 use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 use crate::algorithm::utilities::remove_indices;
@@ -24,7 +29,6 @@ use crate::data::linear_program::general_form::presolve::{Change, Index as Preso
 use crate::data::linear_program::general_form::presolve::updates::Changes;
 use crate::data::linear_program::general_form::RemovedVariable::{FunctionOfOthers, Solved};
 use crate::data::linear_program::solution::Solution;
-use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 mod presolve;
 
@@ -35,7 +39,7 @@ mod presolve;
 ///
 /// Can be checked for consistency by the `is_consistent` method in this module. That method can be
 /// viewed as documentation for the requirements on the variables in this data structure.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub struct GeneralForm<F> {
     /// Which direction does the objective function go?
     objective: Objective,
@@ -77,7 +81,7 @@ pub struct GeneralForm<F> {
 }
 
 /// Whether a variable from the original problem has been eliminated.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 enum OriginalVariable<F> {
     /// The variable is still active.
     ///
@@ -103,7 +107,7 @@ enum OriginalVariable<F> {
 }
 
 /// A variable from the original problem that was removed.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub enum RemovedVariable<F> {
     /// Variable was determined to an explicit value.
     Solved(F),
@@ -256,15 +260,26 @@ where
     /// # Errors
     ///
     /// In case the linear program gets solved during this presolve operation, a solution.
-    pub fn derive_matrix_data(&mut self) -> Result<MatrixData<OF>, LinearProgramType<OF>> {
-        self.standardize()?;
+    pub fn derive_matrix_data(&self, constraint_type_counts: [usize; 4]) -> MatrixData<OF> {
+        debug_assert!('check: {
+            let boundaries = cumsum_array(&constraint_type_counts);
+            for (i, ct) in self.constraint_types.iter().enumerate() {
+                use RangedConstraintRelation::*;
+                     if i < boundaries[0] { if !matches!(ct,    Equal) { break 'check false; } }
+                else if i < boundaries[1] { if !matches!(ct, Range(_)) { break 'check false; } }
+                else if i < boundaries[2] { if !matches!(ct,     Less) { break 'check false; } }
+                else if i < boundaries[3] { if !matches!(ct,  Greater) { break 'check false; } }
+            }
+            true
+        });
 
-        let (
+        let [
             nr_equality,
             nr_range,
             nr_upper,
             nr_lower,
-        ) = self.reorder_constraints_by_type();
+        ] = constraint_type_counts;
+        debug_assert_eq!(nr_equality + nr_range + nr_upper + nr_lower, self.nr_constraints());
 
         let ranges = self.constraint_types[nr_equality..(nr_equality + nr_range)].iter()
             .map(|constraint_type| match constraint_type {
@@ -272,7 +287,7 @@ where
                 _ => unreachable!("Constraint types were just sorted, and there should only be ranges here."),
             }).collect();
 
-        Ok(MatrixData::new(
+        MatrixData::new(
             &self.constraints,
             &self.b,
             ranges,
@@ -281,7 +296,7 @@ where
             nr_upper,
             nr_lower,
             &self.variables,
-        ))
+        )
     }
 
     /// Convert this `GeneralForm` problem to a form closer to the standard form representation.
@@ -295,6 +310,7 @@ where
     /// * Modifying variables such that they are either free or bounded below by zero (with possibly
     /// an upper bound).
     /// * Multiplying some rows such that the constraint value is non-negative.
+    /// * Reorder the constraints by their type (equal, range, less, greater).
     ///
     /// To do the above, a column major representation of the constraint data is built. This
     /// requires copying all constraint data once.
@@ -304,13 +320,13 @@ where
     /// # Errors
     ///
     /// In case the linear program gets solved during this presolve operation, a solution.
-    pub fn standardize(&mut self) -> Result<(), LinearProgramType<OF>> {
-        self.presolve()?;
+    pub fn standardize(&mut self) -> [usize; 4] {
         self.transform_variables();
         self.make_b_non_negative();
         self.make_minimization_problem();
+        let constraint_type_counts = self.reorder_constraints_by_type();
 
-        Ok(())
+        constraint_type_counts
     }
 
     /// Recursively analyse constraints and variable bounds and eliminating or tightning these.
@@ -330,7 +346,7 @@ where
     ///
     /// If the linear program gets solved during this presolve operation, a `Result::Err` return
     /// value containing the solution.
-    pub(crate) fn presolve(&mut self) -> Result<(), LinearProgramType<OF>> {
+    pub fn presolve(&mut self) -> Result<(), LinearProgramType<OF>> {
         let Changes {
             b,
             constraints,
@@ -572,7 +588,7 @@ where
     ///
     /// This is a step towards representing a `GeneralForm` problem in standard form.
     fn make_b_non_negative(&mut self) {
-        let rows_to_negate = self.b.iter_values().enumerate()
+        let rows_to_negate = self.b.iter().enumerate()
             .filter(|&(_, v)| v < &OF::zero())
             .map(|(i, _)| i)
             .collect();
@@ -630,7 +646,7 @@ where
     /// # Return value
     ///
     /// The number of equality, range, upper and lower bounds.
-    fn reorder_constraints_by_type(&mut self) -> (usize, usize, usize, usize) {
+    fn reorder_constraints_by_type(&mut self) -> [usize; 4] {
         let (mut e_counter, mut r_counter, mut l_counter, mut g_counter) = (0, 0, 0, 0);
         let map = self.constraint_types.iter().map(|constraint_type| {
             match constraint_type {
@@ -694,34 +710,7 @@ where
 
         debug_assert!(is_consistent(&self));
 
-        (e_counter, r_counter, l_counter, g_counter)
-    }
-
-    /// Get the known solution value for a variable, if there is one.
-    ///
-    /// # Arguments
-    ///
-    /// * `variable`: Index of the variable to get the solution for with respect to the *original,
-    /// non-presolved* problem.
-    ///
-    /// # Return value
-    ///
-    /// `None` if the variable is still in the problem, `Some` if not. In the latter case, if the
-    /// solution is a specific value known at this point in time, it contains another `Some` with
-    /// value and `None` otherwise.
-    ///
-    /// ## Note
-    ///
-    /// This is only an actual solution for the variable if the problem turns out to be feasible.
-    fn is_variable_presolved(&self, variable: usize) -> bool {
-        debug_assert!(variable < self.variables.len());
-
-        match self.original_variables[variable].1 {
-            OriginalVariable::Active(_) => false,
-            OriginalVariable::ActiveFree(_, _) => false,
-            OriginalVariable::Removed(RemovedVariable::Solved(_)) => true,
-            OriginalVariable::Removed(RemovedVariable::FunctionOfOthers { .. }) => true,
-        }
+        [e_counter, r_counter, l_counter, g_counter]
     }
 
     /// Compute explicit solution from slack variables where possible.
@@ -852,13 +841,13 @@ where
     ) -> Solution<G>
     where
         // TODO: Find a suitable trait alias to avoid this many trait bounds.
-        G: Sum + Neg<Output=G> + AddAssign<OF> + PartialEq<OF> + LinearAlgebraElement<G> + From<OF> + Eq + Ord + Zero,
+        G: Sum + Neg<Output=G> + AddAssign<OF> + PartialEq<OF> + LinearAlgebraElement<G> + From<OF> + Eq + Ord + Zero + NonZero,
         for<'r> G: Add<&'r OF, Output=G>,
         for<'r> &'r G: Neg<Output=G> + Mul<&'r OF, Output=G> + Add<&'r OF, Output=G> + Sub<&'r G, Output=G>,
     {
         debug_assert_eq!(reduced_solution.len(), self.variables.len());
 
-        let cost = reduced_solution.iter_values()
+        let cost = reduced_solution.iter()
             .map(|(j, v)| v * &self.variables[*j].cost)
             .sum::<G>() + &self.fixed_cost;
         self.reshift_solution(&mut reduced_solution);
@@ -902,7 +891,7 @@ where
         reduced_solution: &SparseVector<G, G>,
     ) -> &'a G
     where
-        G: LinearAlgebraElement<G> + Zero + From<OF> + Sum + Neg<Output=G>,
+        G: LinearAlgebraElement<G> + Zero + From<OF> + Sum + Neg<Output=G> + NonZero,
         for<'r> G: Add<&'r OF, Output=G>,
         for<'r> &'r G: Neg<Output=G> + Mul<&'r OF, Output=G> + Add<&'r OF, Output=G> + Sub<&'r G, Output=G>,
     {
@@ -1128,22 +1117,21 @@ where
 
 #[cfg(test)]
 mod test {
-    use num::FromPrimitive;
+    use relp_num::R32;
+    use relp_num::Rational32;
 
     use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
     use crate::data::linear_algebra::vector::DenseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::{Objective, RangedConstraintRelation, VariableType};
     use crate::data::linear_program::general_form::{GeneralForm, OriginalVariable, Variable};
-    use crate::data::number_types::rational::Rational32;
-    use crate::R32;
 
     /// Shifting a variable.
     #[test]
     fn shift_variables() {
         type T = Rational32;
 
-        let bound_value = 2.5_f64;
+        let bound_value = R32!(5, 2);
 
         let data = vec![
             vec![1, 0],
@@ -1168,7 +1156,7 @@ mod test {
         }, Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(3),
-            lower_bound: Some(R32!(bound_value)),
+            lower_bound: Some(bound_value),
             upper_bound: None,
             shift: R32!(0),
             flipped: false
@@ -1187,7 +1175,7 @@ mod test {
 
         let expected = GeneralForm {
             objective: Objective::Minimize,
-            fixed_cost: R32!(1) + R32!(3) * R32!(bound_value),
+            fixed_cost: R32!(1) + R32!(3) * bound_value,
             constraints: ColumnMajor::from_test_data(&[
                 vec![1, 0, -1],
                 vec![2, 1, -2],
@@ -1197,8 +1185,8 @@ mod test {
                 RangedConstraintRelation::Less,
             ],
             b: DenseVector::from_test_data(vec![
-                2f64 - bound_value * 0f64,
-                8f64 - bound_value * 1f64,
+                (2, 1),
+                (11, 2), // 8 - 5/2
             ]),
             variables: vec![
                 Variable {
@@ -1214,7 +1202,7 @@ mod test {
                     cost: R32!(3),
                     lower_bound: Some(R32!(0)),
                     upper_bound: None,
-                    shift: -R32!(bound_value),
+                    shift: -bound_value,
                     flipped: false,
                 },
                 Variable {

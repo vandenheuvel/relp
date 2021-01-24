@@ -2,12 +2,14 @@
 //!
 //! Triggered when there is only a single constraint in a variable and it does not appear in the
 //! objective function.
+use relp_num::{OrderedField, OrderedFieldRef};
+use relp_num::NonZeroSign;
+
 use crate::data::linear_algebra::traits::SparseElement;
-use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, NonZeroSign};
+use crate::data::linear_program::elements::{BoundDirection, LinearProgramType};
 use crate::data::linear_program::elements::RangedConstraintRelation;
 use crate::data::linear_program::general_form::presolve::Index;
 use crate::data::linear_program::general_form::RemovedVariable;
-use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 impl<'a, OF> Index<'a, OF>
 where
@@ -85,7 +87,7 @@ where
         let bounds = (lower.cloned(), upper.cloned());
         // We see whether these are `None` here already such that `bounds` can be moved in the match
         let bounds_is_none = (lower.is_none(), upper.is_none());
-        let coefficient_sign = NonZeroSign::from(&coefficient);
+        let coefficient_sign = coefficient.signum();
 
         // Patterns are ordered left to right, top to bottom and then by coefficient (positive to
         // negative)
@@ -186,13 +188,13 @@ where
         if matches!((bounds, coefficient_sign), ((true, _), Positive) | ((_, true), Negative)) {
             self.counters.activity[constraint].0 -= 1;
             if self.counters.activity[constraint].0 <= 1 {
-                self.queues.activity.insert(constraint, BoundDirection::Lower);
+                self.queues.activity.push((constraint, BoundDirection::Lower));
             }
         }
         if matches!((bounds, coefficient_sign), ((_, true), Positive) | ((true, _), Negative)) {
             self.counters.activity[constraint].1 -= 1;
             if self.counters.activity[constraint].1 <= 1 {
-                self.queues.activity.insert(constraint, BoundDirection::Upper);
+                self.queues.activity.push((constraint, BoundDirection::Upper));
             }
         }
     }

@@ -10,16 +10,15 @@
 use std::convert::TryInto;
 use std::path::{Path, PathBuf};
 
-use num::FromPrimitive;
+use relp_num::Abs;
+use relp_num::RationalBig;
+use relp_num::RB;
 
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use relp::data::number_types::rational::RationalBig;
-use relp::data::number_types::traits::Abs;
 use relp::io::import;
-use relp::RB;
 
 /// # Generation and execution
 #[allow(missing_docs)]
@@ -55,7 +54,9 @@ fn test(file_name: &str, objective: f64, tolerance: f64) {
     let result = import::<T>(&path).unwrap();
 
     let mut general = result.try_into().ok().unwrap();
-    let data = general.derive_matrix_data().ok().unwrap();
+    general.presolve().unwrap();
+    let constraint_type_counts = general.standardize();
+    let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<S, BasisInverseRows<_>>>();
 
     match result {

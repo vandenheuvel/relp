@@ -5,7 +5,9 @@ use std::convert::TryInto;
 use std::ops::{Add, AddAssign, Sub};
 use std::path::{Path, PathBuf};
 
-use num::{One, Zero};
+use num_traits::{One, Zero};
+use relp_num::{OrderedField, OrderedFieldRef};
+use relp_num::Rational64;
 
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -16,8 +18,6 @@ use relp::algorithm::two_phase::tableau::kind::artificial::Cost;
 use relp::data::linear_algebra::traits::Element;
 use relp::data::linear_program::elements::LinearProgramType;
 use relp::data::linear_program::solution::Solution;
-use relp::data::number_types::rational::Rational64;
-use relp::data::number_types::traits::{OrderedField, OrderedFieldRef};
 use relp::io::import;
 
 /// # Generation and execution
@@ -45,7 +45,7 @@ fn get_test_file_path(name: &str) -> PathBuf {
 }
 
 fn solve<
-    IMT: im_ops::Internal + im_ops::InternalHR + im_ops::Column<GFT> + AddAssign<GFT> + PartialEq<GFT> + Ord,
+    IMT: im_ops::Field + im_ops::FieldHR + im_ops::Column<GFT> + AddAssign<GFT> + PartialEq<GFT> + Ord,
     GFT: 'static + From<Rational64> + Zero + One + Ord + Element + OrderedField,
 >(file_name: &str) -> Solution<IMT>
 where
@@ -57,7 +57,7 @@ where
     let mps = import::<GFT>(&path).unwrap();
 
     let mut general = mps.try_into().unwrap();
-    let data = match general.derive_matrix_data() {
+    match general.presolve() {
         Ok(data) => data,
         Err(LinearProgramType::FiniteOptimum(Solution {
                                                  objective_value, solution_values,
@@ -70,7 +70,9 @@ where
             }
         },
         _ => panic!(),
-    };
+    }
+    let constraint_type_counts = general.standardize();
+    let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<IMT, LUDecomposition<_>>>();
 
     match result {
