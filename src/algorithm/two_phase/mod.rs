@@ -4,7 +4,7 @@
 //! algorithm is implemented as described in chapters 2 and 4 of Combinatorial Optimization, a book
 //! by Christos H. Papadimitriou and Kenneth Steiglitz.
 use crate::algorithm::{OptimizationResult, SolveRelaxation};
-use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber};
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -16,7 +16,7 @@ use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
 
 pub(crate) mod phase_one;
-pub(crate) mod phase_two;
+pub mod phase_two;
 
 pub mod tableau;
 pub mod matrix_provider;
@@ -34,6 +34,7 @@ where
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<ArtificialCost> +
             im_ops::Rhs<MP::Rhs> +
+            im_ops::Column<MP::Rhs> +
         >,
         for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     {
@@ -83,6 +84,7 @@ where
     // TODO(ARCHITECTURE): The <MP as MatrixProvider>::Column: IdentityColumn bound is needed
     //  because of limitations of the specialization feature; overlap is not (yet) allowed.
     MP: MatrixProvider<Column: IdentityColumn + IntoFilteredColumn>,
+    MP::Rhs: 'static + ColumnNumber,
 {
     fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
     where
@@ -90,6 +92,7 @@ where
             im_ops::InternalHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Rhs<Self::Rhs> +
+            im_ops::Column<Self::Rhs> +
         >,
         for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     {

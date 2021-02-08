@@ -9,7 +9,7 @@
 //! TODO(ENHANCEMENT): A better inverse maintenance algorithm. Start with factorization?
 use std::fmt::{Debug, Display};
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::tableau::kind::Kind;
@@ -88,9 +88,15 @@ pub trait InverseMaintener: Display + Sized {
     /// * `basis`: Indices of columns that are to be in the basis. Should match the number of rows
     /// of the provider. Values should be unique, could have been a set.
     /// * `provider`: Problem representation.
-    fn from_basis<MP: MatrixProvider>(basis: &[usize], provider: &MP) -> Self
+    fn from_basis<'a, MP: MatrixProvider>(basis: &[usize], provider: &'a MP) -> Self
     where
-        Self::F: ops::Column<<MP::Column as Column>::F>,
+        Self::F:
+            ops::Column<<MP::Column as Column>::F> +
+            ops::Rhs<MP::Rhs> +
+            ops::Cost<MP::Cost<'a>> +
+            ops::Column<MP::Rhs> +
+        ,
+        MP::Rhs: 'static,
     ;
 
     /// Create a basis inverse when the basis indices and their pivot rows are known.
@@ -103,7 +109,16 @@ pub trait InverseMaintener: Display + Sized {
     /// * `basis`: Indices of columns that are to be in the basis. Should match the number of rows
     /// of the provider. Values should be unique, could have been a set.
     /// * `provider`: Problem representation.
-    fn from_basis_pivots(basis: &[(usize, usize)], provider: &impl MatrixProvider) -> Self;
+    fn from_basis_pivots<'a, MP: MatrixProvider>(basis: &[(usize, usize)], provider: &'a MP) -> Self
+    where
+        Self::F:
+            ops::Column<<MP::Column as Column>::F> +
+            ops::Rhs<MP::Rhs> +
+            ops::Cost<MP::Cost<'a>> +
+            ops::Column<MP::Rhs> +
+        ,
+        MP::Rhs: 'static + ColumnNumber,
+    ;
 
     /// When a previous basis inverse representation was used to find a basic feasible solution.
     ///

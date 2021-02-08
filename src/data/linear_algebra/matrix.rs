@@ -417,7 +417,8 @@ where
     F: SparseComparator, // Implied
     MO: Order,
 {
-    fn from_minor_ordered_tuples(
+    /// Transpose a sparse matrix.
+    pub fn from_minor_ordered_tuples(
         data: &'a [SparseTupleVec<F>],
         current_minor_dimension_size: usize,
     ) -> Self {

@@ -8,10 +8,12 @@ use std::fmt::{Display, Formatter};
 use std::fmt;
 use std::ops::Neg;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
+use num::Zero;
+
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, OrderedColumn, SparseColumn};
 use crate::algorithm::two_phase::matrix_provider::column::identity::{IdentityColumnStruct, One};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::utilities::remove_indices;
@@ -423,24 +425,60 @@ where
         }
     }
 
-    fn from_basis<MP: MatrixProvider>(basis: &[usize], provider: &MP) -> Self
+    fn from_basis<'a, MP: MatrixProvider>(basis: &[usize], provider: &'a MP) -> Self
     where
-        Self::F: ops::Column<<MP::Column as Column>::F>,
+        Self::F:
+            ops::Column<<MP::Column as Column>::F> +
+            ops::Rhs<MP::Rhs> +
+            ops::Cost<MP::Cost<'a>> +
+            ops::Column<MP::Rhs> +
+        ,
+        MP::Rhs: 'static,
     {
         let columns = basis.iter().map(|&j| provider.column(j)).collect::<Vec<_>>();
-        let _basis_inverse = BI::invert(columns);
+        let basis_inverse = BI::invert(columns);
 
-        // TODO(ENHANCEMENT): Implement matrix inversion
-        unimplemented!()
+        let b_data = provider.right_hand_side().data
+            .into_iter().enumerate()
+            .filter(|(_, v)| !v.is_zero())
+            .collect::<Vec<_>>();
+        let b_column = SparseColumn { inner: b_data, };
+        let mut b_values = vec![F::zero(); provider.nr_rows()];
+        for (i, v) in basis_inverse.generate_column(b_column)
+            .into_column().into_iter() {
+            b_values[i] = v;
+        }
+        let b = DenseVector::new(b_values, provider.nr_rows());
+
+        let minus_objective = Carry::<_, BI>::create_minus_obj_from_artificial(provider, basis, &b);
+        let minus_pi = Carry::create_minus_pi_from_artificial(&basis_inverse, provider, basis);
+
+        Self {
+            minus_objective,
+            minus_pi,
+            b,
+            basis_indices: Vec::from(basis),
+            basis_inverse,
+        }
     }
 
-    fn from_basis_pivots(
+    fn from_basis_pivots<'a, MP: MatrixProvider>(
         basis_columns: &[(usize, usize)],
-        provider: &impl MatrixProvider,
-    ) -> Self {
-        let _columns = basis_columns.iter().map(|&(_, j)| provider.column(j)).collect::<Vec<_>>();
-        // TODO(ENHANCEMENT): Implement matrix inversion
-        unimplemented!()
+        provider: &'a MP,
+    ) -> Self
+    where
+        Self::F:
+            ops::Column<<MP::Column as Column>::F> +
+            ops::Rhs<MP::Rhs> +
+            ops::Cost<MP::Cost<'a>> +
+            ops::Column<MP::Rhs> +
+        ,
+        MP::Rhs: 'static + ColumnNumber,
+    {
+        let mut elements = Vec::from(basis_columns);
+        elements.sort_by_key(|&(row, _)| row);
+        let columns = elements.into_iter().map(|(_, column)| column).collect::<Vec<_>>();
+        Self::from_basis(&columns, provider)
     }
 
     fn from_artificial<'provider, MP: MatrixProvider>(

@@ -66,7 +66,6 @@ where
 pub trait Column<Rhs> =
     for<'r> AddAssign<&'r Rhs> +
     for<'r> Add<&'r Rhs, Output=Self> +
-    for<'r> Div<&'r Rhs, Output=Self> +
 
     From<Rhs> +
     for<'r> From<&'r Rhs> +

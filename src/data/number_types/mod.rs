@@ -9,3 +9,4 @@
 //! floats, which is potentially limiting.
 pub mod traits;
 pub mod rational;
+pub mod binary;

@@ -4,7 +4,7 @@
 //! `Tableau` logic that is only relevant in the second phase.
 use std::collections::HashSet;
 
-use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
@@ -92,7 +92,7 @@ where
     /// # Return value
     ///
     /// `Tableau` with for the provided problem with the provided basis.
-    pub(crate) fn new_with_inverse_maintainer(
+    pub fn new_with_inverse_maintainer(
         provider: &'provider MP,
         inverse_maintainer: IM,
         basis_columns: HashSet<usize>,
@@ -122,7 +122,11 @@ where
         provider: &'provider MP,
         // TODO(OPTIMIZATION): Order doesn't matter, document and make this a Vec
         basis: &HashSet<usize>,
-    ) -> Self {
+    ) -> Self
+    where
+        IM::F: im_ops::Column<MP::Rhs>,
+        MP::Rhs: 'static,
+    {
         let arbitrary_order = basis.iter().copied().collect::<Vec<_>>();
 
         Tableau {

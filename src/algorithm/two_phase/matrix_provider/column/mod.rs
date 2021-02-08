@@ -71,3 +71,27 @@ pub trait ColumnNumber =
 // TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
 pub trait OrderedColumn: Column {
 }
+
+/// Wrapping a sparse vector of tuples.
+#[derive(Clone)]
+#[allow(missing_docs)]
+pub struct SparseColumn<F> {
+    pub inner: Vec<SparseTuple<F>>
+}
+impl<F: 'static + ColumnNumber> Column for SparseColumn<F> {
+    type F = F;
+    type Iter<'a> = impl Iterator<Item = &'a SparseTuple<Self::F>> + Clone;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        self.inner.iter()
+    }
+
+    fn index_to_string(&self, i: usize) -> String {
+        match self.inner.iter().find(|&&(ii, _)| ii == i) {
+            None => "0".to_string(),
+            Some((_, v)) => v.to_string(),
+        }
+    }
+}
+impl<F: 'static + ColumnNumber> OrderedColumn for SparseColumn<F> {
+}

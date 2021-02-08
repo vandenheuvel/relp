@@ -373,6 +373,7 @@ where
     }
 }
 
+/// The generated column and the spike that was generated in the process wrapped together.
 #[derive(Debug)]
 pub struct ColumnAndSpike<F> {
     column: SparseVector<F, F>,
