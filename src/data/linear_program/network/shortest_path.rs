@@ -1,7 +1,5 @@
 //! # Shortest path problem
 use std::fmt::{Display, Formatter, Result as FormatResult};
-use std::fmt;
-use std::ops::{Add, AddAssign};
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -10,7 +8,7 @@ use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::network::representation::ArcIncidenceColumn;
 use crate::data::linear_program::network::representation::ArcIncidenceMatrix;
-use crate::data::number_types::rational::RationalBig;
+use crate::data::number_types::binary::Binary;
 use crate::data::number_types::traits::Field;
 
 /// Solving a shortest path problem as a linear program.
@@ -110,50 +108,6 @@ where
 
     fn reconstruct_solution<H>(&self, column_values: SparseVector<H, H>) -> SparseVector<H, H> {
         unimplemented!()
-    }
-}
-
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-enum Binary {
-    Zero,
-    One,
-}
-
-impl fmt::Display for Binary {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match self {
-            Binary::Zero => "0",
-            Binary::One => "1",
-        })
-    }
-}
-
-impl From<Binary> for RationalBig {
-    fn from(from: Binary) -> Self {
-        match from {
-            Binary::Zero => Self::zero(),
-            Binary::One => Self::one(),
-        }
-    }
-}
-
-impl Add<&Binary> for RationalBig {
-    type Output = RationalBig;
-
-    fn add(self, rhs: &Binary) -> Self::Output {
-        match rhs {
-            Binary::Zero => self,
-            Binary::One => self + Self::one(),
-        }
-    }
-}
-
-impl AddAssign<&Binary> for RationalBig {
-    fn add_assign(&mut self, rhs: &Binary) {
-        match rhs {
-            Binary::Zero => {}
-            Binary::One => *self += RationalBig::one(),
-        }
     }
 }
 

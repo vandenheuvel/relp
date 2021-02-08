@@ -48,6 +48,7 @@ impl<F, C> Sparse<F, C> {
         self.len += extra_len;
     }
 
+    /// Convert the inner data structure into an iterator, consuming the struct.
     pub fn into_iter(self) -> impl Iterator<Item=SparseTuple<F>> {
         self.data.into_iter()
     }

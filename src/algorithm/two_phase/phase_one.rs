@@ -1,3 +1,4 @@
+//! # Phase one: finding a basic feasible solution
 use std::collections::HashSet;
 
 use num::Zero;

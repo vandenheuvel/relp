@@ -6,7 +6,8 @@
 use std::fmt::{Debug, Formatter};
 use std::fmt;
 
-mod with_fixed_size;
+mod with_fixed_size_integer;
+mod with_binary;
 mod wrapping;
 mod special;
 #[cfg(test)]

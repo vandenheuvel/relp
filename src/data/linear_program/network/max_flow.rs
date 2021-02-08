@@ -121,7 +121,7 @@ impl IntoFilteredColumn for Column {
 
 impl<F> MatrixProvider for Primal<F>
 where
-    F: SparseElement<F> + Zero,
+    F: SparseElement<F> + Zero + Eq,
 {
     type Column = Column;
     type Cost<'a> = Cost;
@@ -192,7 +192,7 @@ where
 
 impl<F> PartialInitialBasis for Primal<F>
 where
-    F: SparseElement<F> + Zero,
+    F: SparseElement<F> + Zero + Eq,
 {
     fn pivot_element_indices(&self) -> Vec<(usize, usize)> {
         (0..self.nr_edges()).map(|j| (j + self.nr_constraints(), self.nr_edges() + j)).collect()

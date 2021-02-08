@@ -4,13 +4,14 @@
 //! practice, we store in a matrix that describes the current basis together with the original
 //! (also sparse) matrix data. This module contains structures that can provide a matrix.
 use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
-use crate::data::linear_algebra::traits::{Element, SparseComparator, SparseElement};
+use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
 
 pub mod column;
 pub mod matrix_data;
 pub mod filter;
+pub mod ops;
 pub mod variable;
 
 /// Abstract interface for a matrix and constraint vector.
@@ -49,7 +50,7 @@ pub trait MatrixProvider {
     type Cost<'a>;
 
     /// Right hand side type.
-    type Rhs: Element;
+    type Rhs: ops::Rhs;
 
     /// Column of the problem.
     ///
