@@ -15,7 +15,6 @@
 #![feature(trait_alias)]
 #![feature(generic_associated_types)]
 #![feature(const_generics)]
-#![feature(peekable_next_if)]
 #![feature(vecdeque_binary_search)]
 #![feature(map_first_last)]
 
