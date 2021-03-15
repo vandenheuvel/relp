@@ -198,15 +198,15 @@ where
     fn column_type(&self, j: usize) -> ColumnType {
         debug_assert!(j < self.nr_columns());
 
-
         let separating_indices = self.get_variable_separating_indices();
         debug_assert!(separating_indices.is_sorted());
 
-        // TODO(OPTIMIZATION): Is this binary search actually faster?
-        let group_number = match separating_indices.binary_search(&j) {
-            Ok(i) => i,
-            Err(i) => i - 1,
-        };
+        // TODO(OPTIMIZATION): Binary search might be faster, but it would need to select the
+        //  left-most element of equal elements in the cumulative group indices.
+        let mut group_number = 0;
+        while group_number + 1 < NR_VARIABLE_TYPES && j >= separating_indices[group_number + 1] {
+            group_number += 1;
+        }
 
         let index_in_group = j - separating_indices[group_number];
         match group_number {
