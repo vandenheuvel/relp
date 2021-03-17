@@ -10,7 +10,7 @@
 #![feature(drain_filter)]
 #![feature(result_cloned)]
 #![feature(specialization)]
-#![feature(type_alias_impl_trait)]
+#![feature(min_type_alias_impl_trait)]
 #![feature(associated_type_bounds)]
 #![feature(trait_alias)]
 #![feature(generic_associated_types)]
