@@ -108,7 +108,7 @@ fn main() {
                 // There is a value there, so we add a constraint.
                 row_major_constraints.push(vec![
                     (i, RB!(1)),     // The "subtraction amount" variable index
-                    (m + j, RB!(1)), // The "column mimimum" variable index (there are `m` of the
+                    (m + j, RB!(1)), // The "column minimum" variable index (there are `m` of the
                                      // "subtraction amount" variables)
                 ]);
                 b.push(RB!(value));
