@@ -4,14 +4,14 @@ use std::process::exit;
 
 use clap::Clap;
 
-use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
-use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
-use rust_lp::data::linear_program::elements::LinearProgramType;
-use rust_lp::data::linear_program::general_form::GeneralForm;
-use rust_lp::data::number_types::rational::RationalBig;
-use rust_lp::io::import;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
+use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
+use relp::data::linear_program::elements::LinearProgramType;
+use relp::data::linear_program::general_form::GeneralForm;
+use relp::data::number_types::rational::RationalBig;
+use relp::io::import;
 
 /// A linear program solver written in rust.
 #[derive(Clap)]

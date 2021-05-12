@@ -2,15 +2,15 @@ use std::convert::TryInto;
 
 use num::FromPrimitive;
 
-use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
-use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
-use rust_lp::data::linear_program::general_form::GeneralForm;
-use rust_lp::data::number_types::rational::{Rational64, RationalBig};
-use rust_lp::data::number_types::traits::Abs;
-use rust_lp::io::import;
-use rust_lp::RB;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
+use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
+use relp::data::linear_program::general_form::GeneralForm;
+use relp::data::number_types::rational::{Rational64, RationalBig};
+use relp::data::number_types::traits::Abs;
+use relp::io::import;
+use relp::RB;
 
 use crate::cook::get_test_file_path;
 

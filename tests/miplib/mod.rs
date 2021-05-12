@@ -12,14 +12,14 @@ use std::path::{Path, PathBuf};
 
 use num::FromPrimitive;
 
-use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
-use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use rust_lp::data::number_types::rational::RationalBig;
-use rust_lp::data::number_types::traits::Abs;
-use rust_lp::io::import;
-use rust_lp::RB;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
+use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::data::number_types::rational::RationalBig;
+use relp::data::number_types::traits::Abs;
+use relp::io::import;
+use relp::RB;
 
 /// # Generation and execution
 #[allow(missing_docs)]

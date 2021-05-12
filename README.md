@@ -1,6 +1,7 @@
-[![Build Status](https://travis-ci.com/vandenheuvel/rust-lp.svg?branch=master)](https://travis-ci.com/vandenheuvel/rust-lp) [![codecov](https://codecov.io/gh/vandenheuvel/rust-lp/branch/master/graph/badge.svg)](https://codecov.io/gh/vandenheuvel/rust-lp)
+[![Build Status](https://travis-ci.com/vandenheuvel/relp.svg?branch=master)](https://travis-ci.com/vandenheuvel/relp) [![codecov](https://codecov.io/gh/vandenheuvel/relp/branch/master/graph/badge.svg)](https://codecov.io/gh/vandenheuvel/relp)
 
-# rust-lp
+# RELP: Rust Exact Linear Programming
+
 A linear program solver written in Rust.
 
 This project is a work in progress. Integer variables are not (yet) supported.
@@ -28,5 +29,5 @@ This project is a work in progress. Integer variables are not (yet) supported.
 
 ## Usage
 
-The binary can be compiled with `cargo build --bin rust-lp --features="binaries"`. You can then call it like `target/release/rust-lp tests/burkardt/problem_files/adlittle.mps`. If you would like to use the library, read through the `tests/` folder for examples.
+The binary can be compiled with `cargo build --bin relp --features="binaries"`. You can then call it like `target/release/relp tests/burkardt/problem_files/adlittle.mps`. If you would like to use the library, read through the `tests/` folder for examples.
 

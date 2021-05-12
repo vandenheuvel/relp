@@ -1,8 +1,8 @@
 use num::FromPrimitive;
 
-use rust_lp::data::number_types::rational::RationalBig;
-use rust_lp::data::number_types::traits::Abs;
-use rust_lp::RB;
+use relp::data::number_types::rational::RationalBig;
+use relp::data::number_types::traits::Abs;
+use relp::RB;
 
 use crate::netlib::solve;
 

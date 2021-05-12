@@ -16,8 +16,8 @@ script:
  - cargo clean
  - cargo build
  - cargo test
- - cargo test --package rust-lp --all-features --release --test mod
- - cargo build --bin rust-lp --features="binaries"
+ - cargo test --package relp --all-features --release --test mod
+ - cargo build --bin relp --features="binaries"
 
 after_success:
  - cargo tarpaulin --ignore-tests --out Xml

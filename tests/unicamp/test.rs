@@ -1,8 +1,8 @@
 use num::FromPrimitive;
 
-use rust_lp::data::linear_program::solution::Solution;
-use rust_lp::data::number_types::rational::{Rational64, RationalBig};
-use rust_lp::RB;
+use relp::data::linear_program::solution::Solution;
+use relp::data::number_types::rational::{Rational64, RationalBig};
+use relp::RB;
 
 use crate::unicamp::solve;
 

@@ -19,22 +19,22 @@
 //! don't already contain a pivot from the column minimum or maximum.
 use num::{FromPrimitive, Zero};
 
-use rust_lp::algorithm::OptimizationResult;
-use rust_lp::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
-use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::two_phase::phase_two;
-use rust_lp::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintener;
-use rust_lp::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
-use rust_lp::algorithm::two_phase::tableau::Tableau;
-use rust_lp::data::linear_algebra::matrix::{ColumnMajor, Order};
-use rust_lp::data::linear_algebra::vector::{DenseVector, Vector};
-use rust_lp::data::linear_program::elements::VariableType;
-use rust_lp::data::linear_program::general_form::Variable;
-use rust_lp::data::number_types::rational::RationalBig;
-use rust_lp::RB;
+use relp::algorithm::OptimizationResult;
+use relp::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
+use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use relp::algorithm::two_phase::phase_two;
+use relp::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintener;
+use relp::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
+use relp::algorithm::two_phase::tableau::Tableau;
+use relp::data::linear_algebra::matrix::{ColumnMajor, Order};
+use relp::data::linear_algebra::vector::{DenseVector, Vector};
+use relp::data::linear_program::elements::VariableType;
+use relp::data::linear_program::general_form::Variable;
+use relp::data::number_types::rational::RationalBig;
+use relp::RB;
 
 fn main() {
     // Needs at least one `Some` in each row.

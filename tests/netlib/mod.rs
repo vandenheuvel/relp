@@ -6,15 +6,15 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
-use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use rust_lp::data::linear_program::general_form::GeneralForm;
-use rust_lp::data::linear_program::solution::Solution;
-use rust_lp::data::number_types::rational::RationalBig;
-use rust_lp::io::error::Import;
-use rust_lp::io::mps::parse_fixed;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
+use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::data::linear_program::general_form::GeneralForm;
+use relp::data::linear_program::solution::Solution;
+use relp::data::number_types::rational::RationalBig;
+use relp::io::error::Import;
+use relp::io::mps::parse_fixed;
 
 /// # Generation and execution
 #[allow(missing_docs)]

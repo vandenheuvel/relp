@@ -3,18 +3,18 @@ use std::ops::{Add, Neg};
 
 use num::{One, Zero};
 
-use rust_lp::algorithm::{OptimizationResult, SolveRelaxation};
-use rust_lp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use rust_lp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
-use rust_lp::data::linear_algebra::traits::Element;
-use rust_lp::data::linear_program::general_form::GeneralForm;
-use rust_lp::data::linear_program::solution::Solution;
-use rust_lp::data::number_types::rational::{Rational64, RationalBig};
-use rust_lp::data::number_types::traits::OrderedField;
-use rust_lp::io::import;
-use rust_lp::RB;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
+use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
+use relp::data::linear_algebra::traits::Element;
+use relp::data::linear_program::general_form::GeneralForm;
+use relp::data::linear_program::solution::Solution;
+use relp::data::number_types::rational::{Rational64, RationalBig};
+use relp::data::number_types::traits::OrderedField;
+use relp::io::import;
+use relp::RB;
 
 use super::get_test_file_path;
 
