@@ -10,6 +10,8 @@ license = "MIT"
 keywords = ["linear", "exact", "precision", "ilp", "simplex"]
 categories = ["algorithms", "science"]
 
+exclude = ["tests"]
+
 [dependencies]
 itertools = "0.10.0"
 num = "0.4.0"
