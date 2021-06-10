@@ -1,0 +1,47 @@
+name: build
+
+on: 
+  [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+  
+jobs:
+  check:
+    name: Rust project
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install nightly toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          
+      - name: Build binary
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --bin relp --features binaries
+          
+      - name: Run integration tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --package relp --all-features --release --test mod
+
+      - name: Run cargo-tarpaulin
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          version: '0.15.0'
+          args: '-- --test-threads 1'
+
+      - name: Upload to codecov.io
+        uses: codecov/codecov-action@v1.5.2

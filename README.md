@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.com/vandenheuvel/relp.svg?branch=master)](https://travis-ci.com/vandenheuvel/relp) [![codecov](https://codecov.io/gh/vandenheuvel/relp/branch/master/graph/badge.svg)](https://codecov.io/gh/vandenheuvel/relp)
+[![Build Status](https://github.com/vandenheuvel/relp/actions/workflows/main.yml/badge.svg?branch=master)](https://github.com/vandenheuvel/relp/actions) [![codecov](https://codecov.io/gh/vandenheuvel/relp/branch/master/graph/badge.svg)](https://codecov.io/gh/vandenheuvel/relp)
 
 # RELP: Rust Exact Linear Programming
 
