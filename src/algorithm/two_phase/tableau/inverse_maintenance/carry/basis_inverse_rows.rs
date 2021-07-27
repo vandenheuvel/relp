@@ -3,16 +3,18 @@
 //! Explicit row-major representation of the basis inverse B^-1. The inverse of a sparse matrix is
 //! not generally sparse, so this is not a scalable algorithm. It is however useful for debugging
 //! purposes to have an explicit representation of the basis inverse at hand.
-use std::cmp::Ordering;
+use std::cmp::{max, Ordering};
 use std::fmt;
 
+use relp_num::One;
+
 use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
-use crate::algorithm::two_phase::matrix_provider::column::identity::{IdentityColumnStruct, One};
+use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumnStruct;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, ops};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, RemoveBasisPart};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use crate::algorithm::utilities::remove_indices;
-use crate::data::linear_algebra::traits::{NotZero, SparseElement};
+use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_algebra::vector::{SparseVector, Vector};
 
 /// Explicit row-major sparse representation of the basis inverse.
@@ -23,7 +25,7 @@ pub struct BasisInverseRows<F> {
 
 impl<F> BasisInverseRows<F>
 where
-    F: ops::Internal + ops::InternalHR,
+    F: ops::Field + ops::FieldHR,
 {
     /// Create a new instance by wrapping sparse vectors.
     #[must_use]
@@ -71,8 +73,8 @@ where
         let (rows_left, rows_right) = self.rows.split_at_mut(pivot_row_index);
         let (rows_middle, rows_right) = rows_right.split_first_mut().unwrap();
 
-        for (edit_row_index, column_value) in column.iter_values() {
-            match edit_row_index.cmp(&pivot_row_index) {
+        for (edit_row_index, column_value) in column.iter() {
+             match edit_row_index.cmp(&pivot_row_index) {
                 Ordering::Less => rows_left[*edit_row_index]
                     .add_multiple_of_row(&-column_value, &rows_middle),
                 Ordering::Equal => {},
@@ -89,7 +91,7 @@ where
 
 impl<F> BasisInverse for BasisInverseRows<F>
 where
-    F: ops::Internal + ops::InternalHR,
+    F: ops::Field + ops::FieldHR,
 {
     type F = F;
     type ColumnComputationInfo = SparseVector<Self::F, Self::F>;
@@ -189,7 +191,7 @@ where
 
 impl<F> RemoveBasisPart for BasisInverseRows<F>
 where
-    F: SparseElement<F> + ops::Internal + ops::InternalHR,
+    F: SparseElement<F> + ops::Field + ops::FieldHR,
 {
     fn remove_basis_part(&mut self, indices: &[usize]) {
         let old_m = self.m();
@@ -217,44 +219,54 @@ impl<F: SparseElement<F>> ColumnComputationInfo<F> for SparseVector<F, F> {
 
 impl<F> fmt::Display for BasisInverseRows<F>
 where
-    F: ops::Internal + ops::InternalHR,
+    F: ops::Field + ops::FieldHR,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let width = 8;
+        let rows = (0..self.m()).map(|i| {
+            (0..self.m()).map(|j| match self.rows[i].get(j) {
+                None => "0".to_string(),
+                Some(value) => value.to_string(),
+            }).collect::<Vec<_>>()
+        }).collect::<Vec<_>>();
 
-        f.write_str(&" ".repeat(width / 2))?;
-        for column in 0..self.m() {
-            write!(f, "{:^width$}", column, width = width)?;
+        let row_counter_width = (self.m() - 1).to_string().len();
+        let column_width = (0..self.m()).map(|j| {
+            max(j.to_string().len(), (0..self.m()).map(|i| rows[i][j].len()).max().unwrap())
+        }).collect::<Vec<_>>();
+
+        // Column counters
+        write!(f, "{0:>width$} |", "", width = row_counter_width)?;
+        for (j, width) in column_width.iter().enumerate() {
+            write!(f, " {0:^width$}", j, width = width)?;
         }
         writeln!(f)?;
-        f.write_str(&"-".repeat((1 + self.m()) * width))?;
-        writeln!(f)?;
 
-        for row in 0..self.m() {
-            write!(f, "{:>width$}", format!("{} |", row), width = width / 2)?;
-            for column in 0..self.m() {
-                let value = match self.rows[row].get(column) {
-                    Some(value) => value.to_string(),
-                    None => "0".to_string(),
-                };
-                write!(f, "{:^width$}", value, width = width)?;
+        // Separator
+        let total_width = (row_counter_width + 1) + 1 +
+            column_width.iter().map(|l| 1 + l).sum::<usize>();
+        writeln!(f, "{}", "-".repeat(total_width))?;
+
+        // Row counter and row data
+        for (i, row) in rows.into_iter().enumerate() {
+            write!(f, "{0:>width$} |", i, width = row_counter_width)?;
+            for (width, value) in column_width.iter().zip(row) {
+                write!(f, " {0:^width$}", value, width = width)?;
             }
             writeln!(f)?;
         }
-        Ok(())
+        writeln!(f)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use num::FromPrimitive;
+    use relp_num::RationalBig;
+    use relp_num::RB;
 
     use crate::algorithm::two_phase::matrix_provider::matrix_data;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
     use crate::data::linear_algebra::vector::{SparseVector, Vector};
-    use crate::data::number_types::rational::RationalBig;
-    use crate::RB;
 
     #[test]
     fn invert_identity() {

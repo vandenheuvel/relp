@@ -1,12 +1,12 @@
 //! # Queues
 //!
 //! Rules are not directly applied, but instead queued.
-use std::collections::{HashSet, VecDeque};
+use fifo_set::FIFOSet;
+use relp_num::{OrderedField, OrderedFieldRef};
 
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::presolve::counters::Counters;
-use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 /// Which rules still need to be applied to which constraint or variable.
 ///
@@ -78,44 +78,7 @@ pub(super) struct Queues {
     /// The relevant activity counters are `.0` for `Lower`, `.1` for `Upper`.
     /// TODO(ENHANCEMENT): Consider tracking which indices are still missing to avoid a scan when
     ///  count is 1.
-    pub(crate) activity: ActivityQueue,
-}
-
-/// A queue with unique values that has quick insertion and removal of an arbitrary element.
-///
-/// Sets like stdlib's default `BTreeSet` do in-order traversal. Instead, we want to consider these
-/// constraints that haven't been considered the longest, such that hopefully, as much as possible
-/// has changed in the available information.
-///
-/// Insertion and removal is performant. Duplicate elements will not be added to the queue again.
-pub(super) struct ActivityQueue {
-    vec_deque: VecDeque<(usize, BoundDirection)>,
-    set: HashSet<(usize, BoundDirection)>,
-}
-impl ActivityQueue {
-    fn new(vec_deque: VecDeque<(usize, BoundDirection)>) -> Self {
-        let set = vec_deque.iter().copied().collect();
-
-        Self {
-            vec_deque,
-            set,
-        }
-    }
-    pub(crate) fn insert(&mut self, constraint: usize, direction: BoundDirection) {
-        if self.set.insert((constraint, direction)) {
-            self.vec_deque.push_back((constraint, direction));
-        }
-    }
-    pub(crate) fn pop(&mut self) -> Option<(usize, BoundDirection)> {
-        let chosen_value = self.vec_deque.pop_front();
-        if let Some(value) = chosen_value {
-            self.set.remove(&value);
-        }
-        chosen_value
-    }
-    fn is_empty(&self) -> bool {
-        self.vec_deque.is_empty()
-    }
+    pub(crate) activity: FIFOSet<(usize, BoundDirection)>,
 }
 
 impl Queues {
@@ -142,7 +105,7 @@ impl Queues {
             bound: counters.constraint.iter().enumerate()
                 .filter(|&(_, &count)| count == 1)
                 .map(|(i, _)| i).collect(),
-            activity: ActivityQueue::new(counters.activity.iter().enumerate()
+            activity: counters.activity.iter().enumerate()
                 .flat_map(|(i, &(lower_count, upper_count))| {
                     let mut sides = Vec::with_capacity(2);
                     if counters.constraint[i] > 1 {
@@ -154,7 +117,7 @@ impl Queues {
                         }
                     }
                     sides
-                }).collect()),
+                }).collect(),
 
             slack: counters.variable.iter().enumerate()
                 .filter(|&(_, &count)| count == 1)

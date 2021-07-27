@@ -4,6 +4,11 @@
 use std::fmt::{Display, Formatter};
 use std::fmt;
 
+use cumsum::cumsum_array_owned;
+use enum_map::{Enum, enum_map, EnumMap};
+use relp_num::{Field, FieldRef};
+use relp_num::NonZero;
+
 use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
@@ -12,18 +17,17 @@ use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::{Element, SparseComparator, SparseElement};
+use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::general_form::Variable;
-use crate::data::number_types::traits::{Field, FieldRef};
 
 /// The `MatrixData` struct represents variables in 6 different categories.
 ///
 /// They are sorted and grouped together in their representation. This constant is used to define
 /// the size of an array the contains all the indices at the boundaries of the groups, to be able to
 /// search quickly what type a variable is by index.
-const NR_VARIABLE_TYPES: usize = 6;
+const NR_GROUPS: usize = 6;
 
 /// Describes a linear program using a combination of a sparse matrix of constraints, and a vector
 /// with simple variable bounds.
@@ -73,6 +77,9 @@ pub struct MatrixData<'a, F> {
     nr_upper_bounded_constraints: usize,
     /// >=
     nr_lower_bounded_constraints: usize,
+    /// Indices that separate the different groups.
+    row_group_end: EnumMap<RowType, usize>,
+    column_group_end: EnumMap<ColumnType, usize>,
 
     /// Used to read the variable upper bounds, see `*b*` in the matrix in the struct documentation.
     ///
@@ -89,41 +96,52 @@ pub struct MatrixData<'a, F> {
     bound_index_to_non_slack_variable_index: Vec<usize>,
 }
 
+#[derive(Enum, Debug)]
+enum RowType {
+    EqualityConstraint,
+    RangeConstraint,
+    UpperInequalityConstraint,
+    LowerInequalityConstraint,
+    VariableBound,
+    SlackBound,
+}
+
 /// Indexing within the different column types (see struct description).
+#[derive(Enum, Debug)]
 enum ColumnType {
     /// Variables for which we want a solution.
     ///
     /// These are explicitly represented in the `GeneralForm` that `MatrixData` reads from. These
     /// are not slacks, so if the problem is properly presolved, at least two `Normal` columns appear
     /// on each row.
-    Normal(usize),
+    Normal,
     /// Slack for a range constraint.
     ///
     /// These are the only slacks that are themselves bounded. In that way, they are not really
     /// slacks. The alternative is to duplicate an entire row, which would cost sparsity.
     ///
     /// TODO(ENHANCEMENT): Use these slacks as part of the initial basis.
-    RangeSlack(usize),
+    RangeSlack,
     /// Slacks `s` for an equation like `<a, x> + s = b`.
     ///
     /// Can be used as part of the initial basis.
-    UpperInequalitySlack(usize),
+    UpperInequalitySlack,
     /// Slacks `s` for an equation like `<a, x> - s = b`.
-    LowerInequalitySlack(usize),
+    LowerInequalitySlack,
     /// Slacks for a variable bound like `x + s = b`.
     ///
     /// Only upper bounds are represented; lower bounds should have been eliminated beforehand.
     /// Can be used as part of the initial basis.
-    VariableBoundSlack(usize),
+    VariableBoundSlack,
     /// Slack variables for the range slacks (see the `RangeSlack` variant).
     ///
     /// Can be used as part of the initial basis.
-    SlackBoundSlack(usize)
+    SlackBoundSlack,
 }
 
 impl<'a, F: 'static> MatrixData<'a, F>
 where
-    F: SparseElement<F> + Field,
+    F: SparseElement<F> + Field + NonZero,
     for <'r> &'r F: FieldRef<F>,
 {
     /// Create a new `MatrixData` instance.
@@ -156,13 +174,6 @@ where
         nr_lower_bounded_constraints: usize,
         variables: &'a [Variable<F>],
     ) -> Self {
-        debug_assert_eq!(
-            nr_equality_constraints
-                + nr_range_constraints
-                + nr_upper_bounded_constraints
-                + nr_lower_bounded_constraints,
-            constraints.nr_rows(),
-        );
         debug_assert_eq!(ranges.len(), nr_range_constraints);
 
         let mut bound_index_to_non_slack_variable_index = Vec::new();
@@ -178,6 +189,43 @@ where
         debug_assert!(bound_index_to_non_slack_variable_index.len() <= variables.len());
         debug_assert_eq!(non_slack_variable_index_to_bound_index.len(), variables.len());
 
+        let nr_bounds = bound_index_to_non_slack_variable_index.len();
+
+        let cumulative = cumsum_array_owned([
+            nr_equality_constraints,
+            nr_range_constraints,
+            nr_upper_bounded_constraints,
+            nr_lower_bounded_constraints,
+            nr_bounds,
+            nr_range_constraints,
+        ]);
+        let row_group_end = enum_map!{
+            RowType::EqualityConstraint        => cumulative[0],
+            RowType::RangeConstraint           => cumulative[1],
+            RowType::UpperInequalityConstraint => cumulative[2],
+            RowType::LowerInequalityConstraint => cumulative[3],
+            RowType::VariableBound             => cumulative[4],
+            RowType::SlackBound                => cumulative[5],
+        };
+        debug_assert_eq!(row_group_end[RowType::LowerInequalityConstraint], constraints.nr_rows());
+
+        let cumulative = cumsum_array_owned([
+            variables.len(),
+            nr_range_constraints,
+            nr_upper_bounded_constraints,
+            nr_lower_bounded_constraints,
+            nr_bounds,
+            nr_range_constraints,
+        ]);
+        let column_group_end = enum_map!{
+            ColumnType::Normal               => cumulative[0],
+            ColumnType::RangeSlack           => cumulative[1],
+            ColumnType::UpperInequalitySlack => cumulative[2],
+            ColumnType::LowerInequalitySlack => cumulative[3],
+            ColumnType::VariableBoundSlack   => cumulative[4],
+            ColumnType::SlackBoundSlack      => cumulative[5],
+        };
+
         MatrixData {
             constraints,
             b,
@@ -186,6 +234,8 @@ where
             nr_range_constraints,
             nr_upper_bounded_constraints,
             nr_lower_bounded_constraints,
+            row_group_end,
+            column_group_end,
             variables,
             non_slack_variable_index_to_bound_index,
             bound_index_to_non_slack_variable_index,
@@ -195,163 +245,93 @@ where
     /// Classify a column by type using the column index.
     ///
     /// See the struct documentation for a visualization.
-    fn column_type(&self, j: usize) -> ColumnType {
+    fn column_type(&self, j: usize) -> (ColumnType, usize) {
         debug_assert!(j < self.nr_columns());
-
-        let separating_indices = self.get_variable_separating_indices();
-        debug_assert!(separating_indices.is_sorted());
 
         // TODO(OPTIMIZATION): Binary search might be faster, but it would need to select the
         //  left-most element of equal elements in the cumulative group indices.
-        let mut group_number = 0;
-        while group_number + 1 < NR_VARIABLE_TYPES && j >= separating_indices[group_number + 1] {
-            group_number += 1;
+
+        if j < self.column_group_end[ColumnType::Normal] {
+            (ColumnType::Normal, j - 0)
+        } else if j < self.column_group_end[ColumnType::RangeSlack] {
+            (ColumnType::RangeSlack, j - self.column_group_end[ColumnType::Normal])
+        } else if j < self.column_group_end[ColumnType::UpperInequalitySlack] {
+            (ColumnType::UpperInequalitySlack, j - self.column_group_end[ColumnType::RangeSlack])
+        } else if j < self.column_group_end[ColumnType::LowerInequalitySlack] {
+            (ColumnType::LowerInequalitySlack, j - self.column_group_end[ColumnType::UpperInequalitySlack])
+        } else if j < self.column_group_end[ColumnType::VariableBoundSlack] {
+            (ColumnType::VariableBoundSlack, j - self.column_group_end[ColumnType::LowerInequalitySlack])
+        } else {
+            // j < self.column_type_indices[ColumnType::VariableBoundSlack] == self.nr_columns()
+            (ColumnType::SlackBoundSlack, j - self.column_group_end[ColumnType::VariableBoundSlack])
         }
-
-        let index_in_group = j - separating_indices[group_number];
-        match group_number {
-            0 => ColumnType::Normal(index_in_group),
-            1 => ColumnType::RangeSlack(index_in_group),
-            2 => ColumnType::UpperInequalitySlack(index_in_group),
-            3 => ColumnType::LowerInequalitySlack(index_in_group),
-            4 => ColumnType::VariableBoundSlack(index_in_group),
-            5 => ColumnType::SlackBoundSlack(index_in_group),
-            _ => unreachable!("Should have `self.nr_columns() == separating_indices[5]`"),
-        }
-    }
-
-    /// Indices at which a different type of variable starts.
-    ///
-    /// See the struct documentation for a visualization.
-    ///
-    /// The indices start at zero, because the first block starts at index 0.
-    fn get_variable_separating_indices(&self) -> [usize; NR_VARIABLE_TYPES] {
-        let amounts_per_block = [
-            self.nr_normal_variables(),
-            self.nr_range_constraints,
-            self.nr_upper_bounded_constraints,
-            self.nr_lower_bounded_constraints,
-            self.bound_index_to_non_slack_variable_index.len(),
-            self.nr_range_slack_bounds(),
-        ];
-
-        Self::cumulative_sum(amounts_per_block)
-    }
-
-    /// Indices at which the group of constraints starts.
-    ///
-    /// See the struct documentation for a visualization.
-    ///
-    /// The indices start at zero, because the first block starts at index 0.
-    fn constraint_group_start_index(&self, group: usize) -> usize {
-        debug_assert!(group < NR_VARIABLE_TYPES);
-
-        self.constraint_group_start_indices()[group]
-    }
-
-    /// Indices at which a different type of constraints starts.
-    ///
-    /// See the struct documentation for a visualization.
-    ///
-    /// The indices start at zero, because the first block starts at index 0.
-    fn constraint_group_start_indices(&self) ->[usize; NR_VARIABLE_TYPES] {
-        let amounts_per_block = [
-            self.nr_equality_constraints,
-            self.nr_range_constraints,
-            self.nr_upper_bounded_constraints,
-            self.nr_lower_bounded_constraints,
-            self.bound_index_to_non_slack_variable_index.len(),
-            self.nr_range_slack_bounds(),
-        ];
-
-        Self::cumulative_sum(amounts_per_block)
-    }
-
-    /// A simple cumulative sum.
-    ///
-    /// The implementation isn't the nicest, but this seemed like a fair way to use the knowledge
-    /// that the input and output are always of fixed size. Compiler optimizations etc. should
-    /// make this quick.
-    #[allow(clippy::identity_op)]
-    fn cumulative_sum(x: [usize; NR_VARIABLE_TYPES]) -> [usize; NR_VARIABLE_TYPES] {
-        [
-            0,
-            0 + x[0],
-            0 + x[0] + x[1],
-            0 + x[0] + x[1] + x[2],
-            0 + x[0] + x[1] + x[2] + x[3],
-            0 + x[0] + x[1] + x[2] + x[3] + x[4],
-        ]
     }
 
     /// The number of variables for which we want a solution.
     fn nr_normal_variables(&self) -> usize {
         self.constraints.nr_columns()
     }
-
-    /// The number of variables in the range slack, and the number of variables in the range "slack
-    /// slack" group.
-    fn nr_range_slack_bounds(&self) -> usize {
-        self.nr_range_constraints
-    }
 }
 
 impl<'data, F: 'static> MatrixProvider for MatrixData<'data, F>
 where
-    F: Field + SparseElement<F>,
+    F: Field + SparseElement<F> + NonZero,
     for<'r> &'r F: FieldRef<F>,
 {
     type Column = Column<F>;
     type Cost<'a> = Option<&'a <Self::Column as ColumnTrait>::F>;
     type Rhs = F;
 
+    // TODO(PERFORMANCE): Consider inlining this method.
     fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
 
         // TODO(ARCHITECTURE): Can the +/- F::one() constants be avoided? They might be large and
         //  require an allocation.
-        match self.column_type(j) {
-            ColumnType::Normal(j) => {
+        let (column_type, j) = self.column_type(j);
+        match column_type {
+            ColumnType::Normal => {
                 Column::Sparse {
                     // TODO(ENHANCEMENT): Avoid this cloning by using references (needs the GAT
                     //  feature to be more mature).
                     constraint_values: self.constraints.iter_column(j).cloned().collect(),
                     slack: self.bound_row_index(j, BoundDirection::Upper)
-                        .map(|i| i + self.constraint_group_start_index(0))
+                        .map(|i| 0 + i)
                         .map(|i| [(i, F::one())]),
                     mock_array: [],
                 }
-            },
-            ColumnType::RangeSlack(j) => Column::TwoSlack([
-                    (self.constraint_group_start_index(1) + j, F::one()),
-                    (self.constraint_group_start_index(5) + j, F::one()),
+            }
+            ColumnType::RangeSlack => Column::TwoSlack([
+                    (self.row_group_end[RowType::EqualityConstraint] + j, F::one()),
+                    (self.row_group_end[RowType::VariableBound] + j, F::one()),
                 ],
                 [],
             ),
-            ColumnType::UpperInequalitySlack(j) => {
-                let row_index = self.constraint_group_start_index(2) + j;
+            ColumnType::UpperInequalitySlack => {
+                let row_index = self.row_group_end[RowType::RangeConstraint] + j;
                 Column::Slack([(row_index, F::one())], [])
-            },
-            ColumnType::LowerInequalitySlack(j) => {
-                let row_index = self.constraint_group_start_index(3) + j;
+            }
+            ColumnType::LowerInequalitySlack => {
+                let row_index = self.row_group_end[RowType::UpperInequalityConstraint] + j;
                 Column::Slack([(row_index, -F::one())], [])
-            },
-            ColumnType::VariableBoundSlack(j) => {
-                let row_index = self.constraint_group_start_index(4) + j;
+            }
+            ColumnType::VariableBoundSlack => {
+                let row_index = self.row_group_end[RowType::LowerInequalityConstraint] + j;
                 Column::Slack([(row_index, F::one())], [])
-            },
-            ColumnType::SlackBoundSlack(j) => {
-                let row_index = self.constraint_group_start_index(5) + j;
+            }
+            ColumnType::SlackBoundSlack => {
+                let row_index = self.row_group_end[RowType::VariableBound] + j;
                 Column::Slack([(row_index, F::one())], [])
-            },
+            }
         }
     }
 
     fn cost_value(&self, j: usize) -> Self::Cost<'_> {
         debug_assert!(j < self.nr_columns());
 
-        match self.column_type(j) {
-            ColumnType::Normal(j) => Some(&self.variables[j].cost),
+        let (column_type, j) = self.column_type(j);
+        match column_type {
+            ColumnType::Normal => Some(&self.variables[j].cost),
             _ => None,
         }
     }
@@ -380,24 +360,28 @@ where
 
         match bound_type {
             BoundDirection::Lower => None,
-            BoundDirection::Upper => match self.column_type(j) {
-                ColumnType::Normal(j) => {
-                    self.non_slack_variable_index_to_bound_index[j]
-                        .map(|index| self.nr_constraints() + index)
-                },
-                ColumnType::RangeSlack(j) => {
-                    Some(self.constraint_group_start_index(5) + j)
-                },
-                _ => None,
+            BoundDirection::Upper => {
+                let (column_type, j) = self.column_type(j);
+                match column_type {
+                    ColumnType::Normal => {
+                        self.non_slack_variable_index_to_bound_index[j]
+                            .map(|index| self.row_group_end[RowType::LowerInequalityConstraint] + index)
+                    },
+                    ColumnType::RangeSlack => {
+                        Some(self.row_group_end[RowType::VariableBound] + j)
+                    },
+                    _ => None,
+                }
             }
         }
     }
 
     fn nr_constraints(&self) -> usize {
-        self.nr_equality_constraints
-            + self.nr_range_constraints
-            + self.nr_upper_bounded_constraints
-            + self.nr_lower_bounded_constraints
+        self.row_group_end[RowType::LowerInequalityConstraint]
+        // == self.nr_equality_constraints
+        //     + self.nr_range_constraints
+        //     + self.nr_upper_bounded_constraints
+        //     + self.nr_lower_bounded_constraints
     }
 
     fn nr_variable_bounds(&self) -> usize {
@@ -405,11 +389,12 @@ where
     }
 
     fn nr_columns(&self) -> usize {
-        self.nr_normal_variables()
-            + self.nr_range_constraints
-            + self.nr_upper_bounded_constraints
-            + self.nr_lower_bounded_constraints
-            + self.nr_variable_bounds()
+        self.column_group_end[ColumnType::SlackBoundSlack]
+        // == self.nr_normal_variables()
+        //     + self.nr_range_constraints
+        //     + self.nr_upper_bounded_constraints
+        //     + self.nr_lower_bounded_constraints
+        //     + self.nr_variable_bounds()
     }
 
     fn reconstruct_solution<G>(&self, mut column_values: SparseVector<G, G>) -> SparseVector<G, G>
@@ -426,27 +411,33 @@ where
 
 impl<'a, F: 'static> PartialInitialBasis for MatrixData<'a, F>
 where
-    F: SparseElement<F> + Field,
+    F: SparseElement<F> + Field + NonZero,
     for <'r> &'r F: FieldRef<F>,
 {
     fn pivot_element_indices(&self) -> Vec<(usize, usize)> {
-        let separating_indices = self.get_variable_separating_indices();
-        debug_assert!(separating_indices.is_sorted());
-
-        let column_index = |group| self.get_variable_separating_indices()[group];
-        let row_index = |group| self.constraint_group_start_index(group);
-
         // TODO(ENHANCEMENT): Use also the pivot values from the range slack variables. This
         //  requires that the range constraint rows are subtracted from the range slack variable
         //  bound rows, such that identity vectors appear in the "second group". Note that this is
         //  not always possible: the range needs to be larger than the range upper bound for the
         //  right hand side to remain nonnegative.
         let upper = (0..self.nr_upper_bounded_constraints)
-            .map(|j| (row_index(2) + j, column_index(2) + j));
+            .map(|j| {
+                let row = self.row_group_end[RowType::RangeConstraint] + j;
+                let column = self.column_group_end[ColumnType::RangeSlack] + j;
+                (row, column)
+            });
         let variable = (0..self.bound_index_to_non_slack_variable_index.len())
-            .map(|j| (row_index(4) + j, column_index(4) + j));
+            .map(|j| {
+                let row = self.row_group_end[RowType::LowerInequalityConstraint] + j;
+                let column = self.column_group_end[ColumnType::LowerInequalitySlack] + j;
+                (row, column)
+            });
         let slack = (0..self.nr_range_constraints)
-            .map(|j| (row_index(5) + j, column_index(5) + j));
+            .map(|j| {
+                let row = self.row_group_end[RowType::VariableBound] + j;
+                let column = self.column_group_end[ColumnType::VariableBoundSlack] + j;
+                (row, column)
+            });
 
         upper.chain(variable).chain(slack).collect()
     }
@@ -616,16 +607,16 @@ where
 
 impl<'a, F: 'static> Display for MatrixData<'a, F>
 where
-    F: Field + SparseElement<F> + 'a,
+    F: Field + SparseElement<F> + NonZero + 'a,
     for<'r> &'r F: FieldRef<F>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 8;
-        let separator_width = (1 + self.nr_columns()) * width + self.get_variable_separating_indices().len();
+        let separator_width = (1 + self.nr_columns()) * width + NR_GROUPS;
 
         write!(f, "{:>width$}", "|", width = width)?;
         for column in 0..self.nr_columns() {
-            if self.get_variable_separating_indices().contains(&column) {
+            if column == 0 || self.column_group_end.values().any(|&j| j == column) {
                 write!(f, "|")?;
             }
             write!(f, "{:^width$}", column, width = width)?;
@@ -634,7 +625,7 @@ where
         f.write_str(&"=".repeat(separator_width))?;
         write!(f, "{:>width$}", "cost |", width = width)?;
         for column in 0..self.nr_columns() {
-            if self.get_variable_separating_indices().contains(&column) {
+            if column == 0 || self.column_group_end.values().any(|&j| j == column) {
                 write!(f, "|")?;
             }
             let cost = self.cost_value(column).map_or("0".to_string(), ToString::to_string);
@@ -644,13 +635,13 @@ where
         f.write_str(&"=".repeat(separator_width))?;
 
         for row in 0..self.nr_rows() {
-            if row == 0 || self.constraint_group_start_indices().contains(&row) {
+            if row == 0 || self.row_group_end.values().any(|&i| i == row) {
                 // Start of new section
                 f.write_str(&"-".repeat(separator_width))?;
             }
             write!(f, "{:>width$}", format!("{} |", row), width = width)?;
             for column in 0..self.nr_columns() {
-                if self.get_variable_separating_indices().contains(&column) {
+                if column == 0 || self.column_group_end.values().any(|&j| j == column) {
                     write!(f, "|")?;
                 }
                 let value = self.column(column).iter()
@@ -666,15 +657,13 @@ where
 
 #[cfg(test)]
 mod test {
-    use num::traits::FromPrimitive;
+    use relp_num::R64;
 
     use crate::algorithm::two_phase::matrix_provider::matrix_data::Column;
     use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
     use crate::data::linear_algebra::vector::DenseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::BoundDirection;
-    use crate::data::number_types::rational::Rational64;
-    use crate::R64;
     use crate::tests::problem_1;
 
     #[test]

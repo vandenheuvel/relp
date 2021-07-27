@@ -1,13 +1,13 @@
 //! # Phase one: finding a basic feasible solution
 use std::collections::HashSet;
 
-use num::Zero;
+use num_traits::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitableWithMemory, PivotRule};
-use crate::algorithm::two_phase::tableau::{is_in_basic_feasible_solution_state, Tableau};
+use crate::algorithm::two_phase::tableau::{debug_assert_in_basic_feasible_solution_state, Tableau};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
 use crate::algorithm::two_phase::tableau::kind::artificial::Cost;
@@ -28,7 +28,7 @@ pub trait FeasibilityComputeTrait: MatrixProvider<Column: IdentityColumn> {
     fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
         IM: InverseMaintener<F:
-            im_ops::InternalHR +
+            im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<Cost> +
             im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
@@ -44,7 +44,7 @@ where
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
         IM: InverseMaintener<F:
-            im_ops::InternalHR +
+            im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<Cost> +
             im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
@@ -86,7 +86,7 @@ where
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
         IM: InverseMaintener<F:
-            im_ops::InternalHR +
+            im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<Cost> +
             im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
@@ -126,20 +126,22 @@ pub(crate) fn primal<IM, K, MP, PR>(
     mut tableau: Tableau<IM, K>,
 ) -> RankedFeasibilityResult<IM>
 where
-    IM: InverseMaintener<F: im_ops::InternalHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Artificial,
     MP: MatrixProvider,
     PR: PivotRule,
 {
     let mut rule = PR::new();
     loop {
-        debug_assert!(is_in_basic_feasible_solution_state(&tableau));
+        debug_assert_in_basic_feasible_solution_state(&tableau);
 
         match rule.select_primal_pivot_column(&tableau) {
             Some((column_nr, cost)) => {
                 let column = tableau.generate_column(column_nr);
                 match tableau.select_primal_pivot_row(column.column()) {
-                    Some(row_nr) => tableau.bring_into_basis(column_nr, row_nr, column, cost),
+                    Some(row_nr) => {
+                        tableau.bring_into_basis(column_nr, row_nr, column, cost)
+                    },
                     None => panic!("Artificial cost can not be unbounded."),
                 }
             },
@@ -252,7 +254,7 @@ where
             rows_to_remove.push(artificial);
         }
 
-        debug_assert!(is_in_basic_feasible_solution_state(&tableau));
+        debug_assert_in_basic_feasible_solution_state(&tableau);
     }
 
     debug_assert!(rows_to_remove.is_sorted());
@@ -261,6 +263,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use relp_num::{Rational64, RationalBig};
+
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::phase_one::{primal, Rank, RankedFeasibilityResult};
     use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
@@ -268,7 +272,6 @@ mod test {
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
     use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
     use crate::algorithm::two_phase::tableau::Tableau;
-    use crate::data::number_types::rational::{Rational64, RationalBig};
     use crate::tests::problem_2::{create_matrix_data_data, matrix_data_form};
 
     #[test]

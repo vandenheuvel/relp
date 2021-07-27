@@ -14,11 +14,10 @@
 #![feature(trait_alias)]
 #![feature(generic_associated_types)]
 #![feature(const_generics)]
-#![feature(vecdeque_binary_search)]
 #![feature(map_first_last)]
-
-extern crate daggy;
-extern crate num;
+#![feature(unchecked_math)]
+#![feature(result_into_ok_or_err)]
+#![feature(label_break_value)]
 
 pub mod algorithm;
 pub mod data;

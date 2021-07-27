@@ -1,8 +1,7 @@
-use num::FromPrimitive;
+use relp_num::{Rational64, RationalBig};
+use relp_num::RB;
 
 use relp::data::linear_program::solution::Solution;
-use relp::data::number_types::rational::{Rational64, RationalBig};
-use relp::RB;
 
 use crate::unicamp::solve;
 
@@ -155,7 +154,7 @@ fn model_data_7() {
 }
 
 #[test]
-#[ignore = "Unsupported modification of to model_data_7."]
+#[ignore = "Unsupported modification of model_data_7."]
 fn model_data_8() {
     let _result = solve::<RationalBig, Rational64>("model_data_8");
 }

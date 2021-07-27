@@ -3,7 +3,9 @@
 //! From https://en.wikipedia.org/w/index.php?title=MPS_(format)&oldid=941892011
 use std::convert::TryInto;
 
-use num::FromPrimitive;
+use relp_num::{Rational64, RationalBig};
+use relp_num::R64;
+use relp_num::RB;
 
 use crate::algorithm::OptimizationResult;
 use crate::algorithm::two_phase::{phase_one, phase_two};
@@ -24,11 +26,8 @@ use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{ConstraintRelation, Objective, RangedConstraintRelation, VariableType};
 use crate::data::linear_program::general_form::{GeneralForm, Variable};
 use crate::data::linear_program::general_form::Variable as GeneralFormVariable;
-use crate::data::number_types::rational::{Rational64, RationalBig};
 use crate::io::mps::{Bound, BoundType, Column, MPS, Rhs, Row};
 use crate::io::mps::parse;
-use crate::R64;
-use crate::RB;
 
 type T = Rational64;
 type S = RationalBig;
@@ -49,16 +48,17 @@ fn conversion_pipeline() {
     let mut general_form_computed: GeneralForm<T> = result.unwrap();
     assert_eq!(general_form_computed, general_form());
 
-    assert!(general_form_computed.standardize().is_ok());
+    let result = general_form_computed.presolve();
+    assert!(result.is_ok());
+
+    let constraint_type_counts = general_form_computed.standardize();
     // General form, standardized
     assert_eq!(general_form_computed, general_form_standardized());
 
     // Matrix data form
-    let result = general_form_computed.derive_matrix_data();
-    assert!(result.is_ok());
+    let matrix_data_form_computed = general_form_computed.derive_matrix_data(constraint_type_counts);
 
     let (constraints, b, variables) = create_matrix_data_data();
-    let matrix_data_form_computed = result.unwrap();
     let matrix_data_form_expected = matrix_data_form(&constraints, &b, &variables);
     assert_eq!(matrix_data_form_computed, matrix_data_form_expected);
 
@@ -260,19 +260,19 @@ pub fn general_form() -> GeneralForm<T> {
 
 pub fn general_form_standardized() -> GeneralForm<T> {
     let data = vec![
-        vec![1, 0, 1],
         vec![0, -1, 1],
+        vec![1, 0, 1],
     ];
     let constraints = ColumnMajor::from_test_data(&data, 3);
 
     let constraint_types = vec![
-        RangedConstraintRelation::Greater,
         RangedConstraintRelation::Equal,
+        RangedConstraintRelation::Greater,
     ];
 
     let b = DenseVector::from_test_data(vec![
-        10,
         6,
+        10,
     ]);
 
     let variables = vec![

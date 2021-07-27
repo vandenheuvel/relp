@@ -1,7 +1,11 @@
 use std::convert::TryInto;
 use std::ops::{Add, Neg};
+use std::str::FromStr;
 
-use num::{One, Zero};
+use num_traits::{One, Zero};
+use relp_num::{NonZero, Rational64, RationalBig};
+use relp_num::OrderedField;
+use relp_num::RB;
 
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -11,14 +15,11 @@ use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper
 use relp::data::linear_algebra::traits::Element;
 use relp::data::linear_program::general_form::GeneralForm;
 use relp::data::linear_program::solution::Solution;
-use relp::data::number_types::rational::{Rational64, RationalBig};
-use relp::data::number_types::traits::OrderedField;
 use relp::io::import;
-use relp::RB;
 
 use super::get_test_file_path;
 
-fn to_general_form<T: From<Rational64> + Zero + One + Ord + Element + Neg<Output=T>>(
+fn to_general_form<T: From<Rational64> + Zero + NonZero + One + Ord + Element + Neg<Output=T>>(
     file_name: &str,
 ) -> GeneralForm<T>
 where
@@ -40,14 +41,16 @@ fn adlittle() {
     let result = import::<T>(&path).unwrap();
 
     let mut general = result.try_into().unwrap();
-    let data = general.derive_matrix_data().unwrap();
+    general.presolve().unwrap();
+    let constraint_type_counts = general.standardize();
+    let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<S, BasisInverseRows<_>>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
-            assert_eq!(solution.objective_value, S::from("24975305659811992079614961229/120651674036153428931840"));
+            assert_eq!(solution.objective_value, S::from_str("24975305659811992079614961229/120651674036153428931840").unwrap());
         },
         _ => assert!(false),
     }
@@ -59,7 +62,9 @@ fn afiro() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("afiro");
-    let data = general.derive_matrix_data().unwrap();
+    general.presolve().unwrap();
+    let constraint_type_counts = general.standardize();
+    let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<_, LUDecomposition<S>>>();
 
     match result {
@@ -125,7 +130,9 @@ fn maros() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("maros");
-    let data = general.derive_matrix_data().unwrap();
+    general.presolve().unwrap();
+    let constraint_type_counts = general.standardize();
+    let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<S, LUDecomposition<_>>>();
 
     match result {
@@ -133,12 +140,12 @@ fn maros() {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(solution, Solution::new(
-                S::new(385, 3),  // GLPK
+                S::new(385, 3).unwrap(),  // GLPK
                 vec![
-                    ("VOL1".to_string(), S::new(10, 3)),
-                    ("VOL2".to_string(), S::new(40, 3)),
-                    ("VOL3".to_string(), S::new(20, 1)),
-                    ("VOL4".to_string(), S::new(0, 1)),
+                    ("VOL1".to_string(), S::new(10, 3).unwrap()),
+                    ("VOL2".to_string(), S::new(40, 3).unwrap()),
+                    ("VOL3".to_string(), S::new(20, 1).unwrap()),
+                    ("VOL4".to_string(), S::new(0, 1).unwrap()),
                 ],
             ));
         },
@@ -152,7 +159,9 @@ fn nazareth() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("nazareth");
-    let data = general.derive_matrix_data().unwrap();
+    general.presolve().unwrap();
+    let constraint_type_counts = general.standardize();
+    let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<S, LUDecomposition<_>>>();
     assert_eq!(result, OptimizationResult::Unbounded);  // GLPK
 }
@@ -163,7 +172,9 @@ fn testprob() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("testprob");
-    let data = general.derive_matrix_data().unwrap();
+    general.presolve().unwrap();
+    let constraint_type_counts = general.standardize();
+    let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<S, LUDecomposition<_>>>();
 
     match result {
@@ -171,11 +182,11 @@ fn testprob() {
             let reconstructed = data.reconstruct_solution(vector);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(solution, Solution::new(
-                S::new(54, 1),  // GLPK
+                S::new(54, 1).unwrap(),  // GLPK
                 vec![
-                    ("X1".to_string(), S::new(4, 1)),
-                    ("X2".to_string(), S::new(-1, 1)),
-                    ("X3".to_string(), S::new(6, 1)),
+                    ("X1".to_string(), S::new(4, 1).unwrap()),
+                    ("X2".to_string(), S::new(-1, 1).unwrap()),
+                    ("X3".to_string(), S::new(6, 1).unwrap()),
                 ],
             ));
         },

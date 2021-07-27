@@ -1,12 +1,13 @@
 //! # Counters
 //!
 //! A set of counters that makes searching during presolving unnecessary.
+use relp_num::{Field, OrderedField, OrderedFieldRef};
+
 use crate::data::linear_algebra::matrix::{RowMajor, Sparse};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::presolve::NonZeroSign;
-use crate::data::number_types::traits::{Field, OrderedField, OrderedFieldRef};
 
 /// Avoiding searching during presolving.
 pub(super) struct Counters<'a, F: Field> {
@@ -60,7 +61,7 @@ where
                 row.iter()
                     .map(|&(j, coefficient)| {
                         let (lower, upper) =  (&general_form.variables[j].lower_bound, &general_form.variables[j].upper_bound);
-                        match NonZeroSign::from(coefficient) {
+                        match coefficient.signum() {
                             NonZeroSign::Positive => (lower, upper),
                             NonZeroSign::Negative => (upper, lower),
                         }

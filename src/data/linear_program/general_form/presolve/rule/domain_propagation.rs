@@ -4,12 +4,13 @@
 //! constraints to derive variable bounds.
 use std::cmp::Ordering;
 
+use relp_num::{OrderedField, OrderedFieldRef};
+
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::elements::{BoundDirection, InequalityRelation, LinearProgramType};
-use crate::data::linear_program::elements::{NonZeroSign, RangedConstraintRelation};
+use crate::data::linear_program::elements::RangedConstraintRelation;
 use crate::data::linear_program::general_form::presolve::{Change, Index};
 use crate::data::linear_program::general_form::presolve::updates::BoundChange;
-use crate::data::number_types::traits::{OrderedField, OrderedFieldRef};
 
 impl<'a, OF> Index<'a, OF>
 where
@@ -42,7 +43,7 @@ where
         };
         let nr_bounds_missing_in_row = self.counters.iter_active_row(constraint)
             .filter(|&(j, c)| {
-                let bound_direction = direction * NonZeroSign::from(c);
+                let bound_direction = direction * c.signum();
                 self.updates.variable_bound(j, bound_direction).is_none()
             })
             .count();
@@ -144,7 +145,7 @@ where
             *bound = Some(
                 self.counters.iter_active_row(constraint)
                     .map(|(variable, coefficient)| {
-                        let bound_direction = direction * NonZeroSign::from(coefficient);
+                        let bound_direction = direction * coefficient.signum();
                         let bound = updates.variable_bound(variable, bound_direction).unwrap();
                         coefficient * bound
                     })
@@ -166,7 +167,7 @@ where
         let constraint_update = self.constraint_update(constraint, &bound, direction)?;
         if let Some(change) = constraint_update {
             let (remove_constraint, apply_variable_part) = match change {
-                ConstraintUpdate::Remove => (true, true),
+                ConstraintUpdate::Remove => (true, true), // TODO(CORRECTNESS): Should the second value be changed to `false`?
                 ConstraintUpdate::Replace(new_inequality, right_hand_side_shift) => {
                     self.updates.constraints.insert(constraint, new_inequality.into());
                     self.updates.change_b(constraint, right_hand_side_shift);
@@ -176,7 +177,7 @@ where
                 ConstraintUpdate::SetVariablesToBound => {
                     let mut activity_counters_to_update = Vec::new();
                     for (variable, coefficient) in self.counters.iter_active_row(constraint) {
-                        let variable_direction = direction * NonZeroSign::from(coefficient);
+                        let variable_direction = direction * coefficient.signum();
                         let bound = self.updates.variable_bound(variable, variable_direction)
                             // This value exists because the activity bound we're working with is based on it.
                             .unwrap()
@@ -225,7 +226,7 @@ where
     /// # Arguments
     ///
     /// * `constraint`: Index of the constraint under consideration.
-    /// * `value`: Value of the activity lower- or upperbound.
+    /// * `bound_value`: Value of the activity lower- or upperbound.
     /// * `direction`: Whether it's the activity lower- or upperbound.
     ///
     /// # Return value
@@ -313,15 +314,23 @@ where
         }
     }
 
-    fn can_apply_variable_part(&self, constraint: usize, direction: BoundDirection) -> bool {
-        matches!(
-            (direction, self.updates.constraint_type(constraint)),
-            (_, RangedConstraintRelation::Equal)
-                | (BoundDirection::Lower, RangedConstraintRelation::Less)
-                | (BoundDirection::Upper, RangedConstraintRelation::Greater),
-        )
-    }
-
+    /// Apply domain propagation through activation bounds for a constraint where all of the
+    /// relevant variable bounds are known.
+    ///
+    /// # Arguments
+    ///
+    /// * `constraint`: Index of the constraint under consideration.
+    /// * `right_hand_side`: Nonzero coefficient of the variable in the constraint.
+    /// * `activity_bound`: Value of the activity lower- or upperbound.
+    /// * `activity_direction`: Whether the activity lower- or upperbound should be used.
+    ///
+    /// # Return value
+    ///
+    /// Tuple of:
+    ///
+    /// * Direction of the bound that was changed (lower or upper).
+    /// * Change that was done (any at all, and if so, by how much or was there no bound before? See
+    /// the `update_bound` method for more).
     fn variable_part(
         &mut self,
         constraint: usize,
@@ -334,7 +343,7 @@ where
             .map(|(i, v)| (i, v.clone())) // TODO(ARCHITECTURE): Avoid this clone
             .collect::<Vec<_>>();
         for (variable, coefficient) in targets {
-            let coefficient_sign = NonZeroSign::from(&coefficient);
+            let coefficient_sign = coefficient.signum();
             let new_variable_bound_direction = !activity_direction * coefficient_sign;
 
             let variable_bound_value = self.updates.variable_bound(variable, activity_direction * coefficient_sign)
@@ -346,7 +355,7 @@ where
             let change = self.updates.update_activity_variable_bound(
                 variable,
                 new_variable_bound_direction,
-                new_variable_bound_value,
+                new_variable_bound_value.clone(),
             );
 
             match change {
@@ -363,42 +372,6 @@ where
                 },
             }
         }
-    }
-
-    /// Apply domain propagation through activation bounds for a constraint where all of the
-    /// relevant variable bounds are known.
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint`: Index of the constraint under consideration.
-    /// * `variable`: Index of variable who's relevant variable bound is not known, with all other
-    /// variable bounds in this constraint being known.
-    /// * `coefficient`: Nonzero coefficient of the variable in the constraint.
-    /// * `direction`: Whether the activity lower- or upperbound should be used.
-    /// * `activity_bound`: Value of the activity lower- or upperbound.
-    ///
-    /// # Return value
-    ///
-    /// Tuple of:
-    ///
-    /// * Direction of the bound that was changed (lower or upper).
-    /// * Change that was done (any at all, and if so, by how much or was there no bound before? See
-    /// the `update_bound` method for more).
-    fn try_tighten_variable_bound(
-        &mut self,
-        constraint: usize,
-        variable: usize,
-        coefficient: &OF,
-        activity_direction: BoundDirection,
-        activity_bound: &OF,
-    ) -> (BoundDirection, BoundChange<OF>) {
-        let bound_direction = activity_direction * NonZeroSign::from(coefficient);
-        let bound_value = self.updates.variable_bound(variable, bound_direction).unwrap();
-        let bound = activity_bound - coefficient * bound_value;
-
-        let variable_bound = (self.updates.b(constraint) - bound) / coefficient;
-        let change = self.updates.update_activity_variable_bound(variable, !bound_direction, variable_bound);
-        (!bound_direction, change)
     }
 
     /// Apply domain propagation through activation bounds for a constraint where all but one of the
@@ -432,19 +405,19 @@ where
         // is the only one that doesn't have the relevant bound yet).
         let total_activity = self.counters.iter_active_row(constraint)
             .filter_map(|(variable, coefficient)| {
-                let bound_direction = activity_direction * NonZeroSign::from(coefficient);
+                let bound_direction = activity_direction * coefficient.signum();
                 self.updates.variable_bound(variable, bound_direction).map(|bound| coefficient * bound)
             })
             .sum::<OF>();
         let (target_column, target_coefficient) = self.counters.iter_active_row(constraint)
             .find(|&(variable, coefficient)| {
-                let bound_direction = activity_direction * NonZeroSign::from(coefficient);
+                let bound_direction = activity_direction * coefficient.signum();
                 self.updates.variable_bound(variable, bound_direction).is_none()
             }).unwrap();
 
         // Compute the variable bound and apply the change.
         let value = (right_hand_side - total_activity) / target_coefficient;
-        let bound_direction = !activity_direction * NonZeroSign::from(target_coefficient);
+        let bound_direction = !activity_direction * target_coefficient.signum();
         match self.updates.update_activity_variable_bound(target_column, bound_direction, value) {
             BoundChange::None => Change::None,
             BoundChange::NewBound => {
@@ -459,20 +432,18 @@ where
     }
 
     fn can_variable_rule_be_applied(&self, constraint: usize, activity_direction: BoundDirection) -> Option<OF> {
-        use RangedConstraintRelation::{Equal, Range, Less, Greater};
-
         let right_hand_side = self.updates.b(constraint).clone();
         match self.updates.constraint_type(constraint) {
-            Equal => Some(right_hand_side),
-            Range(range) => match activity_direction {
+            RangedConstraintRelation::Equal => Some(right_hand_side),
+            RangedConstraintRelation::Range(range) => match activity_direction {
                 BoundDirection::Lower => Some(right_hand_side),
                 BoundDirection::Upper => Some(right_hand_side - range),
             },
-            Less => match activity_direction {
+            RangedConstraintRelation::Less => match activity_direction {
                 BoundDirection::Lower => Some(right_hand_side),
                 BoundDirection::Upper => None,
             },
-            Greater => match activity_direction {
+            RangedConstraintRelation::Greater => match activity_direction {
                 BoundDirection::Lower => None,
                 BoundDirection::Upper => Some(right_hand_side),
             },
