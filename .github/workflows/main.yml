@@ -25,12 +25,6 @@ jobs:
         with:
           command: test
           
-      - name: Build binary
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --bin relp --features binaries
-          
       - name: Run integration tests
         uses: actions-rs/cargo@v1
         with:
