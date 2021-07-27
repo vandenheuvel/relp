@@ -13,12 +13,13 @@ pub use dense::Dense as DenseVector;
 pub use sparse::Sparse as SparseVector;
 
 use crate::data::linear_algebra::SparseTuple;
+use std::iter::FromIterator;
 
 mod dense;
 mod sparse;
 
 /// Defines basic ways to create or change a vector, regardless of back-end.
-pub trait Vector<F>: PartialEq + Display + Debug {
+pub trait Vector<F>: PartialEq + FromIterator<F> + Display + Debug {
     /// Items stored internally.
     type Inner;
 
@@ -93,7 +94,7 @@ pub mod test {
     }
     impl<F: SparseElement<C>, C: SparseComparator> TestVector<F> for SparseVector<F, C>
     where
-        F: Field + FromPrimitive,
+        F: Field + FromPrimitive + NonZero,
     {
         /// Create a `SparseVector` from the provided data.
         fn from_test_data<T: NonZero>(data: Vec<T>) -> Self where F: From<T> {
@@ -114,7 +115,7 @@ pub mod test {
 
     impl<F: SparseElement<C>, C: SparseComparator> SparseVector<F, C>
     where
-        F: FromPrimitive,
+        F: FromPrimitive + NonZero,
     {
         /// Create a `SparseVector` from the provided data.
         pub fn from_test_tuples<T: NumCast + Copy>(data: Vec<(usize, T)>, len: usize) -> Self {

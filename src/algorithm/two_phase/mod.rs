@@ -15,7 +15,7 @@ use crate::algorithm::two_phase::tableau::kind::artificial::Cost as ArtificialCo
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
 
-pub(crate) mod phase_one;
+pub mod phase_one;
 pub mod phase_two;
 
 pub mod tableau;

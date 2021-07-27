@@ -6,7 +6,7 @@ use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
-use std::iter::Sum;
+use std::iter::{Sum, FromIterator};
 use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Neg};
 use std::slice::{Iter, IterMut};
@@ -56,7 +56,7 @@ impl<F, C> Sparse<F, C> {
 
 impl<F, C> Vector<F> for Sparse<F, C>
 where
-    F: SparseElement<C>,
+    F: NonZero + SparseElement<C>,
     C: SparseComparator,
 {
     type Inner = SparseTuple<F>;
@@ -177,6 +177,22 @@ where
     }
 }
 
+impl<F: NonZero + SparseElement<C>, C: SparseComparator> FromIterator<F> for Sparse<F, C> {
+    fn from_iter<I: IntoIterator<Item=F>>(iter: I) -> Self {
+        let mut data = Vec::new();
+        let mut counter = 0;
+
+        for item in iter.into_iter() {
+            if item.is_not_zero() {
+                data.push((counter, item));
+            }
+            counter += 1;
+        }
+
+        Self::new(data, counter)
+    }
+}
+
 impl<F, C> Sparse<F, C>
 where
     F: SparseElement<C>,
@@ -192,7 +208,7 @@ where
     #[must_use]
     pub fn standard_basis_vector(i: usize, len: usize) -> Self
     where
-        F: One + Clone,
+        F: One + NonZero + Clone,
     {
         debug_assert!(i < len);
 
@@ -218,7 +234,7 @@ where
     pub fn add_multiple_of_row<H>(&mut self, multiple: &F, other: &Sparse<F, C>)
     where
         H: Zero + Add<F, Output=H>,
-        F: Add<F, Output=H> + From<H>,
+        F: Add<F, Output=H> + From<H> + NonZero,
         for<'r> &'r F: Mul<&'r F, Output=F>,
     {
         debug_assert_eq!(other.len(), self.len());
@@ -308,7 +324,7 @@ where
 
 impl<F, C> Sparse<F, C>
 where
-    F: SparseElement<C>,
+    F: SparseElement<C> + NonZero,
     C: SparseComparator,
 {
     /// Calculate the inner product between two vectors.
@@ -346,7 +362,7 @@ where
     pub fn inner_product<'a, O, F2>(&'a self, other: &'a Sparse<F2, C>) -> O
     where
         O: Zero + AddAssign<C>,
-        F2: SparseElement<C>,
+        F2: SparseElement<C> + NonZero,
         // We choose to have multiplication output at the C level, because it would also be nonzero
         // if both F and F2 values are not zero.
         &'a C: Mul<&'a C, Output=C>,

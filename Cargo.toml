@@ -24,8 +24,6 @@ enum-map = "1.1.1"
 # TODO(PACKAGING): Make this an optional dependency.
 daggy = "0.7.0"  # Currently only for debug asserts
 
-clap = { version = "3.0.0-beta.2", optional = true }
-
 [features]
 burkardt = []
 miplib = []
@@ -33,12 +31,5 @@ netlib = []
 unicamp = []
 cook = []
 
-binaries = ["clap"]
-
 [profile.release]
 lto = true
-
-[[bin]]
-name = "relp"
-path = "src/bin/main.rs"
-required-features = ["binaries"]

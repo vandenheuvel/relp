@@ -13,6 +13,7 @@ use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::vector::Vector;
 use std::vec::IntoIter;
+use std::iter::FromIterator;
 
 /// Uses a `Vec` as underlying data a structure. Length is fixed at creation.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -162,6 +163,14 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     /// The size of this vector in memory.
     fn size(&self) -> usize {
         self.data.len()
+    }
+}
+
+impl<T> FromIterator<T> for Dense<T> {
+    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
+        Self {
+            data: iter.into_iter().collect()
+        }
     }
 }
 

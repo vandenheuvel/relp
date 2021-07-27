@@ -1,24 +1,31 @@
 //! # Maximum Flow Problem
+#![feature(min_type_alias_impl_trait)]
+#![feature(generic_associated_types)]
+
 use std::iter;
 use std::ops::{Add, Mul, Range};
 
 use num_traits::Zero;
+use relp_num::{Rational64, RationalBig};
 use relp_num::NonZero;
 use relp_num::One;
-use relp_num::RationalBig;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn};
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
-use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
-use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
-use crate::algorithm::utilities::remove_sparse_indices;
-use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
-use crate::data::linear_algebra::SparseTuple;
-use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
-use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
-use crate::data::linear_program::elements::BoundDirection;
-use crate::data::linear_program::network::representation::{ArcDirection, ArcIncidenceMatrix};
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
+use relp::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn};
+use relp::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use relp::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
+use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use relp::algorithm::two_phase::phase_one::PartialInitialBasis;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::algorithm::utilities::remove_sparse_indices;
+use relp::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
+use relp::data::linear_algebra::matrix::Order;
+use relp::data::linear_algebra::SparseTuple;
+use relp::data::linear_algebra::traits::{SparseComparator, SparseElement};
+use relp::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
+use relp::data::linear_program::elements::BoundDirection;
+use relp::data::linear_program::network::representation::{ArcDirection, ArcIncidenceMatrix};
 
 /// Maximum flow problem.
 struct Primal<F> {
@@ -240,41 +247,27 @@ impl Mul<Cost> for RationalBig {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use relp_num::{Rational64, RationalBig};
+fn main() {
+    type T = Rational64;
+    type S = RationalBig;
 
-    use crate::algorithm::{OptimizationResult, SolveRelaxation};
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-    use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
-    use crate::data::linear_algebra::vector::SparseVector;
-    use crate::data::linear_algebra::vector::test::TestVector;
-    use crate::data::linear_program::network::max_flow::Primal;
+    // Example from Papadimitriou's Combinatorial Optimization.
+    let data = ColumnMajor::from_test_data::<T, T, _>(&vec![
+        // Directed; from is top, to is on the right
+        //   s  a  b  t
+        vec![0, 0, 0, 0], // s
+        vec![2, 0, 0, 0], // a
+        vec![1, 1, 0, 0], // b
+        vec![0, 1, 2, 0], // t
+    ], 4);
+    let problem = Primal::new(data, 0, 3);
 
-    #[test]
-    fn test_1() {
-        type T = Rational64;
-        type S = RationalBig;
+    SolveRelaxation::solve_relaxation::<Carry<S, BasisInverseRows<S>>>(&problem);
 
-        // Example from Papadimitriou's Combinatorial Optimization.
-        let data = ColumnMajor::from_test_data::<T, T, _>(&vec![
-            // Directed; from is top, to is on the right
-            //   s  a  b  t
-            vec![0, 0, 0, 0], // s
-            vec![2, 0, 0, 0], // a
-            vec![1, 1, 0, 0], // b
-            vec![0, 1, 2, 0], // t
-        ], 4);
-        let problem = Primal::new(data, 0, 3);
-
-        SolveRelaxation::solve_relaxation::<Carry<S, BasisInverseRows<S>>>(&problem);
-
-        debug_assert_eq!(
-            problem.solve_relaxation::<Carry<S, BasisInverseRows<S>>>(),
-            OptimizationResult::FiniteOptimum(SparseVector::from_test_data(
-                vec![2, 1, 1, 1, 2, 0, 0, 0, 0, 0]
-            )),
-        );
-    }
+    assert_eq!(
+        problem.solve_relaxation::<Carry<S, BasisInverseRows<S>>>(),
+        OptimizationResult::FiniteOptimum(
+            [2, 1, 1, 1, 2, 0, 0, 0, 0, 0].iter().map(|&v| RationalBig::from(v)).collect()
+        ),
+    );
 }
