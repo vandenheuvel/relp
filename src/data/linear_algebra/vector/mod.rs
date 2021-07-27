@@ -13,12 +13,13 @@ pub use dense::Dense as DenseVector;
 pub use sparse::Sparse as SparseVector;
 
 use crate::data::linear_algebra::SparseTuple;
+use std::iter::FromIterator;
 
 mod dense;
 mod sparse;
 
 /// Defines basic ways to create or change a vector, regardless of back-end.
-pub trait Vector<F>: PartialEq + Display + Debug {
+pub trait Vector<F>: PartialEq + FromIterator<F> + Display + Debug {
     /// Items stored internally.
     type Inner;
 

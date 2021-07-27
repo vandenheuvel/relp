@@ -44,7 +44,7 @@ pub(crate) fn remove_indices<T>(vector: &mut Vec<T>, indices: &[usize]) {
 ///
 /// * `vector`: `Vec` to remove indices from.
 /// * `indices`: A set of indices to remove from the vector, assumed sorted.
-pub(crate) fn remove_sparse_indices<T>(vector: &mut Vec<(usize, T)>, indices: &[usize]) {
+pub fn remove_sparse_indices<T>(vector: &mut Vec<(usize, T)>, indices: &[usize]) {
     debug_assert!(indices.is_sorted());
     // All values are unique
     debug_assert!(indices.iter().collect::<HashSet<_>>().len() == indices.len());

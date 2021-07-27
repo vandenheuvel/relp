@@ -5,6 +5,5 @@
 //! equality constraints only.
 pub mod elements;
 pub mod general_form;
-#[cfg(any(network, test))]
 pub mod network;
 pub mod solution;
