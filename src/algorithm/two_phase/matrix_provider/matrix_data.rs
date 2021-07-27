@@ -282,7 +282,7 @@ where
     type Cost<'a> = Option<&'a <Self::Column as ColumnTrait>::F>;
     type Rhs = F;
 
-    // TODO(PERFORMANCE): Consider inlining this method.
+    #[inline]
     fn column(&self, j: usize) -> Self::Column {
         debug_assert!(j < self.nr_columns());
 
@@ -515,6 +515,7 @@ where
     type F = F;
     type Iter<'a> = impl Iterator<Item = &'a SparseTuple<F>> + Clone;
 
+    #[inline]
     fn iter(&self) -> Self::Iter<'_> {
         match self {
             Column::Sparse {
