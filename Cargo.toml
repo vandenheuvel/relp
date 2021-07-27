@@ -1,6 +1,6 @@
 [package]
 name = "relp"
-version = "0.0.6"
+version = "0.0.7"
 authors = ["Bram van den Heuvel <bram@vandenheuvel.online>"]
 edition = "2018"
 description = "Rust Exact Linear Programming"
