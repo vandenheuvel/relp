@@ -20,7 +20,7 @@ use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 ///  avoided (e.g. flattening) avoided?
 #[allow(missing_docs)]
 #[derive(Eq, PartialEq, Debug, Clone)]
-pub struct Sparse<F, C, O: Order> {
+pub struct SparseMatrix<F, C, O: MatrixOrder> {
     pub data: Vec<SparseTupleVec<F>>,
     major_dimension_size: usize,
     minor_dimension_size: usize,
@@ -30,7 +30,7 @@ pub struct Sparse<F, C, O: Order> {
 }
 
 /// The backend of a `SparseMatrix` can either be column or row major.
-pub trait Order: Sized {
+pub trait MatrixOrder: Sized {
     /// Create a new matrix with this ordering, using specified data.
     ///
     /// Note that the dimensions specified should match the "dimensions" of the data given, and that
@@ -39,7 +39,7 @@ pub trait Order: Sized {
         data: Vec<SparseTupleVec<F>>,
         nr_rows: usize,
         nr_columns: usize,
-    ) -> Sparse<F, C, Self>
+    ) -> SparseMatrix<F, C, Self>
     where
         F: SparseElement<C>,
         C: SparseComparator,
@@ -52,7 +52,7 @@ pub trait Order: Sized {
     fn from_test_data<F: From<IT>, C, IT: NonZero + Clone>(
         rows: &[Vec<IT>],
         nr_columns: usize,
-    ) -> Sparse<F, C, Self>
+    ) -> SparseMatrix<F, C, Self>
     where
         F: SparseElement<C>,
         C: SparseComparator,
@@ -60,12 +60,12 @@ pub trait Order: Sized {
 
     /// Identity matrix of specified field type with this ordering.
     #[must_use]
-    fn identity<F, C>(n: usize) -> Sparse<F, C, Self>
+    fn identity<F, C>(n: usize) -> SparseMatrix<F, C, Self>
     where
         F: Field + Borrow<C> + SparseElement<C>,
         C: SparseComparator,
     {
-        Sparse::identity(n)
+        SparseMatrix::identity(n)
     }
 }
 
@@ -75,23 +75,23 @@ pub struct RowMajor;
 /// Column major sparse matrix ordering.
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub struct ColumnMajor;
-impl Order for RowMajor {
+impl MatrixOrder for RowMajor {
     fn new<F, C>(
         rows: Vec<SparseTupleVec<F>>,
         nr_rows: usize,
         nr_columns: usize,
-    ) -> Sparse<F, C, Self>
+    ) -> SparseMatrix<F, C, Self>
     where
         F: SparseElement<C>,
         C: SparseComparator,
     {
-        Sparse::from_major_ordered_tuples(rows, nr_rows, nr_columns)
+        SparseMatrix::from_major_ordered_tuples(rows, nr_rows, nr_columns)
     }
 
     fn from_test_data<F: From<IT>, C, IT: NonZero + Clone>(
         rows: &[Vec<IT>],
         nr_columns: usize,
-    ) -> Sparse<F, C, Self>
+    ) -> SparseMatrix<F, C, Self>
     where
         F: Borrow<C>,
         C: SparseComparator,
@@ -110,7 +110,7 @@ impl Order for RowMajor {
             }
         }
 
-        Sparse {
+        SparseMatrix {
             data,
             major_dimension_size: nr_rows,
             minor_dimension_size: nr_columns,
@@ -121,23 +121,23 @@ impl Order for RowMajor {
     }
 }
 
-impl Order for ColumnMajor {
+impl MatrixOrder for ColumnMajor {
     fn new<F, C>(
         columns: Vec<SparseTupleVec<F>>,
         nr_rows: usize,
         nr_columns: usize,
-    ) -> Sparse<F, C, Self>
+    ) -> SparseMatrix<F, C, Self>
     where
         F: SparseElement<C>,
         C: SparseComparator,
     {
-        Sparse::from_major_ordered_tuples(columns, nr_columns, nr_rows)
+        SparseMatrix::from_major_ordered_tuples(columns, nr_columns, nr_rows)
     }
 
     fn from_test_data<F: From<IT>, C, IT: NonZero + Clone>(
         rows: &[Vec<IT>],
         nr_columns: usize,
-    ) -> Sparse<F, C, Self>
+    ) -> SparseMatrix<F, C, Self>
     where
         F: SparseElement<C>,
         C: SparseComparator,
@@ -156,7 +156,7 @@ impl Order for ColumnMajor {
             }
         }
 
-        Sparse {
+        SparseMatrix {
             data,
             major_dimension_size: nr_columns,
             minor_dimension_size: nr_rows,
@@ -167,20 +167,20 @@ impl Order for ColumnMajor {
     }
 }
 
-impl<F> Sparse<F, F, RowMajor>
+impl<F> SparseMatrix<F, F, RowMajor>
 where
     F: SparseElement<F> + SparseComparator,
 {
     /// A copy in a different ordering by reference.
     #[must_use]
-    pub fn from_column_major_ordered_matrix_although_this_is_expensive(
-        data: &Sparse<F, F, ColumnMajor>,
-    ) -> Sparse<&F, F, RowMajor> {
-        Sparse::from_minor_ordered_tuples(&data.data, data.nr_rows())
+    pub fn from_column_major(
+        data: &SparseMatrix<F, F, ColumnMajor>,
+    ) -> SparseMatrix<&F, F, RowMajor> {
+        SparseMatrix::from_minor_ordered_tuples(&data.data, data.nr_rows())
     }
 }
 
-impl<F, C> Sparse<F, C, RowMajor>
+impl<F, C> SparseMatrix<F, C, RowMajor>
 where
     F: SparseElement<C>,
     C: SparseComparator,
@@ -251,7 +251,7 @@ where
     }
 }
 
-impl<F: Field, C> Sparse<F, C, ColumnMajor>
+impl<F: Field, C> SparseMatrix<F, C, ColumnMajor>
 where
     F: SparseElement<C>,
     C: SparseComparator,
@@ -274,7 +274,7 @@ where
     }
 }
 
-impl<F: SparseElement<C>, C: SparseComparator> Sparse<F, C, ColumnMajor> {
+impl<F: SparseElement<C>, C: SparseComparator> SparseMatrix<F, C, ColumnMajor> {
     /// Create a row major ordered version of this `SparseMatrix`.
     ///
     /// # Arguments
@@ -290,11 +290,11 @@ impl<F: SparseElement<C>, C: SparseComparator> Sparse<F, C, ColumnMajor> {
     pub fn from_row_ordered_tuples_although_this_is_expensive(
         rows: &[SparseTupleVec<F>],
         current_nr_columns: usize,
-    ) -> Sparse<&F, F, ColumnMajor>
+    ) -> SparseMatrix<&F, F, ColumnMajor>
     where
         F: SparseComparator,
     {
-        Sparse::from_minor_ordered_tuples(rows, current_nr_columns)
+        SparseMatrix::from_minor_ordered_tuples(rows, current_nr_columns)
     }
 
     /// Remove columns from the matrix.
@@ -376,7 +376,7 @@ impl<F: SparseElement<C>, C: SparseComparator> Sparse<F, C, ColumnMajor> {
     }
 }
 
-impl<F: SparseElement<C>, C: SparseComparator, MO: Order> Sparse<F, C, MO> {
+impl<F: SparseElement<C>, C: SparseComparator, MO: MatrixOrder> SparseMatrix<F, C, MO> {
     /// Create a new instance.
     ///
     /// # Arguments
@@ -400,7 +400,7 @@ impl<F: SparseElement<C>, C: SparseComparator, MO: Order> Sparse<F, C, MO> {
             .all(|m| m.map_or(true, |max_minor_index| max_minor_index < minor_dimension_size)));
         debug_assert!(data.iter().all(|minor| minor.iter().all(|(_, v)| v.borrow().is_not_zero())));
 
-        Sparse {
+        SparseMatrix {
             data,
             major_dimension_size,
             minor_dimension_size,
@@ -411,11 +411,11 @@ impl<F: SparseElement<C>, C: SparseComparator, MO: Order> Sparse<F, C, MO> {
     }
 }
 
-impl<'a, F, MO> Sparse<&'a F, F, MO>
+impl<'a, F, MO> SparseMatrix<&'a F, F, MO>
 where
     F: SparseElement<F> + 'a,
     F: SparseComparator, // Implied
-    MO: Order,
+    MO: MatrixOrder,
 {
     /// Transpose a sparse matrix.
     pub fn from_minor_ordered_tuples(
@@ -434,7 +434,7 @@ where
             }
         }
 
-        Sparse::from_major_ordered_tuples(
+        SparseMatrix::from_major_ordered_tuples(
             major_ordered,
             new_major_dimension_size,
             new_minor_dimension_size,
@@ -442,11 +442,11 @@ where
     }
 }
 
-impl<F, C, MO> Sparse<F, C, MO>
+impl<F, C, MO> SparseMatrix<F, C, MO>
 where
     F: SparseElement<C>,
     C: SparseComparator,
-    MO: Order,
+    MO: MatrixOrder,
 {
     /// Concatenate `SparseMatrix` instances along the major order direction.
     ///
@@ -464,7 +464,7 @@ where
     fn concatenate_major_indices(self, other: Self) -> Self {
         debug_assert_eq!(other.minor_dimension_size, self.minor_dimension_size);
 
-        Sparse::from_major_ordered_tuples(
+        SparseMatrix::from_major_ordered_tuples(
             self.data.into_iter().chain(other.data.into_iter()).collect(),
             self.major_dimension_size + other.major_dimension_size,
             self.minor_dimension_size,
@@ -536,17 +536,17 @@ where
     }
 }
 
-impl<F: Field, C, MO> Sparse<F, C, MO>
+impl<F: Field, C, MO> SparseMatrix<F, C, MO>
 where
     F: SparseElement<C>,
     C: SparseComparator,
-    MO: Order,
+    MO: MatrixOrder,
 {
     /// Create a dense square identity matrix of size `len`.
     fn identity(len: usize) -> Self {
         debug_assert_ne!(len, 0);
 
-        Sparse::from_major_ordered_tuples(
+        SparseMatrix::from_major_ordered_tuples(
             (0..len)
                 .map(|i| vec![(i, F::one())])
                 .collect(),
@@ -564,12 +564,12 @@ pub mod test {
     use relp_num::R32;
     use relp_num::Rational32;
 
-    use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
+    use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
     use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 
     type T = Rational32;
 
-    fn get_test_matrix<F: From<u8>, C>() -> Sparse<F, C, ColumnMajor>
+    fn get_test_matrix<F: From<u8>, C>() -> SparseMatrix<F, C, ColumnMajor>
     where
         F: Field + SparseElement<C>,
         C: SparseComparator,

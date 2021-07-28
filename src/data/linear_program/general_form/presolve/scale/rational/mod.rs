@@ -13,9 +13,9 @@ use relp_num::{Abs, NonZeroFactorizable, NonZeroFactorization, Sign, Signed};
 
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
+use crate::data::linear_algebra::vector::Vector;
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::presolve::scale::{Scalable, scale, Scaling};
-use crate::data::linear_algebra::vector::Vector;
 
 /// Multiplication traits necessary for scaling.
 pub trait Multiplication<F> =

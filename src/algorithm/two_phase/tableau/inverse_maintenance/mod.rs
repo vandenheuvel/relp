@@ -9,6 +9,8 @@
 //! TODO(ENHANCEMENT): A better inverse maintenance algorithm. Start with factorization?
 use std::fmt::{Debug, Display};
 
+use relp_num::Signed;
+
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -31,7 +33,7 @@ pub trait InverseMaintener: Display + Sized {
     ///
     /// Because the algorithm works with results from this object, many other parts of the code use
     /// the same number type. Examples are the tableau and pivot rules.
-    type F: ops::Field;
+    type F: ops::Field + Signed;
 
     /// Contains the computed column and potentially other information that can be reused from that
     /// process.

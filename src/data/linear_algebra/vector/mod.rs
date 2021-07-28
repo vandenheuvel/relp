@@ -3,6 +3,7 @@
 //! Sparse and dense vectors. These were written by hand, because a certain specific set of
 //! operations needs to be done quickly with these types.
 use std::fmt::{Debug, Display};
+use std::iter::FromIterator;
 use std::ops::{AddAssign, Mul};
 use std::slice::{Iter, IterMut};
 
@@ -13,7 +14,6 @@ pub use dense::Dense as DenseVector;
 pub use sparse::Sparse as SparseVector;
 
 use crate::data::linear_algebra::SparseTuple;
-use std::iter::FromIterator;
 
 mod dense;
 mod sparse;

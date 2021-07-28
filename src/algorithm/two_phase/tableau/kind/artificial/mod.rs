@@ -71,7 +71,7 @@ where
     }
 
     /// Get the indices of the artificial variables that are still in the basis.
-    pub fn artificial_basis_columns(&self) -> HashSet<usize> {
+    pub fn artificial_basis_columns(&self) -> Vec<usize> {
         self.basis_columns
             .iter()
             .filter(|&&v| v < self.nr_artificial_variables())
@@ -96,11 +96,6 @@ where
         self.kind.pivot_row_from_artificial(artificial_index)
     }
 
-    /// Number of artificial variables in this tableau.
-    pub fn nr_artificial_variables(&self) -> usize {
-        self.kind.nr_artificial_variables()
-    }
-
     /// Extract information necessary to construct a `NonArtificial` tableau.
     ///
     /// # Returns
@@ -113,5 +108,15 @@ where
     pub fn into_basis(self) -> (IM, usize, HashSet<usize>) {
         let nr_artificial = self.nr_artificial_variables();
         (self.inverse_maintainer, nr_artificial, self.basis_columns)
+    }
+}
+
+impl<'provider, IM, A> Tableau<IM, A>
+where
+    A: Artificial,
+{
+    /// Number of artificial variables in this tableau.
+    pub fn nr_artificial_variables(&self) -> usize {
+        self.kind.nr_artificial_variables()
     }
 }

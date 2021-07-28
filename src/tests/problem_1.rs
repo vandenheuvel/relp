@@ -20,7 +20,7 @@ use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inve
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
-use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
+use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{ConstraintRelation, Objective, RangedConstraintRelation, VariableType};
@@ -314,7 +314,7 @@ pub fn general_form_standardized() -> GeneralForm<T> {
     )
 }
 
-pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, DenseVector<T>, Vec<Variable<T>>) {
+pub fn create_matrix_data_data() -> (SparseMatrix<T, T, ColumnMajor>, DenseVector<T>, Vec<Variable<T>>) {
     let constraints = ColumnMajor::from_test_data(
         &vec![
             vec![0, -1, 1],
@@ -357,7 +357,7 @@ pub fn create_matrix_data_data() -> (Sparse<T, T, ColumnMajor>, DenseVector<T>, 
 }
 
 pub fn matrix_data_form<'a>(
-    constraints: &'a Sparse<T, T, ColumnMajor>,
+    constraints: &'a SparseMatrix<T, T, ColumnMajor>,
     b: &'a DenseVector<T>,
     variables: &'a Vec<Variable<T>>,
 ) -> MatrixData<'a, T> {

@@ -3,7 +3,7 @@
 //! A set of counters that makes searching during presolving unnecessary.
 use relp_num::{Field, OrderedField, OrderedFieldRef};
 
-use crate::data::linear_algebra::matrix::{RowMajor, Sparse};
+use crate::data::linear_algebra::matrix::{RowMajor, SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::general_form::GeneralForm;
@@ -24,7 +24,7 @@ pub(super) struct Counters<'a, F: Field> {
     pub activity: Vec<(usize, usize)>,
 
     /// Row major representation of the constraint matrix (a copy of `generalform.constraints`).
-    rows: Sparse<&'a F, F, RowMajor>,
+    rows: SparseMatrix<&'a F, F, RowMajor>,
     general_form: &'a GeneralForm<F>,
 }
 
@@ -46,9 +46,7 @@ where
     ///
     /// A new instance.
     pub fn new(general_form: &'a GeneralForm<OF>) -> Self {
-        let rows: Sparse<_, _, _> = Sparse::from_column_major_ordered_matrix_although_this_is_expensive(
-            &general_form.constraints,
-        );
+        let rows: SparseMatrix<_, _, _> = SparseMatrix::from_column_major(&general_form.constraints);
 
         Self {
             constraint: (0..general_form.nr_active_constraints())

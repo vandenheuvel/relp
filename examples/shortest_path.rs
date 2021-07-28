@@ -13,7 +13,7 @@ use relp::algorithm::two_phase::matrix_provider::column::Column;
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use relp::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse as SparseMatrix};
+use relp::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
 use relp::data::linear_algebra::vector::{DenseVector, SparseVector};
 use relp::data::linear_program::elements::BoundDirection;
 use relp::data::linear_program::network::representation::ArcIncidenceColumn;

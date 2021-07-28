@@ -123,7 +123,6 @@ fn test_BORE3D() {
 }
 
 #[test]
-#[ignore = "Incorrect optimal value."]
 fn test_SCORPION() {
     let result = solve("SCORPION");
     let expected = 0.18781248227381066296479411763586e4; // Koch - The final Netlib-LP results

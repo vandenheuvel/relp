@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use relp_num::R32;
 
-use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
+use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
 use crate::data::linear_program::elements::{Objective, VariableType};
 use crate::data::linear_program::elements::BoundDirection;

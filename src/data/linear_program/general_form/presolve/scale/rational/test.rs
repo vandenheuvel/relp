@@ -1,14 +1,16 @@
-use relp_num::{Rational16, Rational8, RationalBig, NonZeroFactorizable};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub};
+
+use num_traits::{One, Zero};
+use relp_num::{NonZeroFactorizable, Rational16, Rational8, RationalBig};
 use relp_num::{R16, R8, RB};
 
-use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
+use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
+use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::DenseVector;
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{Objective, RangedConstraintRelation, VariableType};
 use crate::data::linear_program::general_form::{GeneralForm, Scalable, Scaling, Variable};
 use crate::data::linear_program::general_form::presolve::scale::rational::GeneralFormFactorization;
-use std::ops::{Mul, Div, MulAssign, DivAssign, Neg, Sub, Add, AddAssign};
-use num_traits::{One, Zero};
 
 /// All unique prime numbers, any scaling would at best keep things the same.
 #[test]
@@ -487,7 +489,7 @@ where
         for<'r> &'r R: Mul<&'r R, Output=R> + Div<&'r R, Output=R>,
         R::Power: Addition + One + Ord,
 {}
-use crate::data::linear_algebra::traits::{SparseElement, SparseComparator};
+
 /// Multiplication traits necessary for scaling.
 pub trait Multiplication<F> =
 One +

@@ -4,16 +4,16 @@
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::fmt;
+use std::iter::FromIterator;
 use std::ops::{AddAssign, Index, IndexMut, Mul};
 use std::slice::{Iter, IterMut};
+use std::vec::IntoIter;
 
 use num_traits::Zero;
 
 use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::vector::Vector;
-use std::vec::IntoIter;
-use std::iter::FromIterator;
 
 /// Uses a `Vec` as underlying data a structure. Length is fixed at creation.
 #[derive(Debug, Clone, Eq, PartialEq)]
