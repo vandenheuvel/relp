@@ -6,7 +6,7 @@ use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
-use std::iter::{Sum, FromIterator};
+use std::iter::{FromIterator, Sum};
 use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Neg};
 use std::slice::{Iter, IterMut};

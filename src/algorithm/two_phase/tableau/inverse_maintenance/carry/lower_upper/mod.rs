@@ -193,6 +193,7 @@ where
     where
         Self::F: ops::Column<C::F>,
     {
+        // TODO(PERFORMANCE): Compute a single value only
         self.generate_column(original_column).into_column().get(i).cloned()
     }
 

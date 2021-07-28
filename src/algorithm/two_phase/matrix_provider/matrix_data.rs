@@ -15,7 +15,7 @@ use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoF
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 use crate::algorithm::utilities::remove_sparse_indices;
-use crate::data::linear_algebra::matrix::{ColumnMajor, Sparse as SparseMatrix};
+use crate::data::linear_algebra::matrix::{ColumnMajor, SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};

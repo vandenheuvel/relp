@@ -13,7 +13,7 @@ use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use crate::algorithm::utilities::remove_sparse_indices;
-use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse as SparseMatrix};
+use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};

@@ -12,7 +12,7 @@ use num_traits::{One, Zero};
 use relp_num::Abs;
 use relp_num::NonZero;
 
-use crate::data::linear_algebra::matrix::{ColumnMajor, Order as MatrixOrder, Sparse};
+use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
@@ -94,7 +94,7 @@ fn compute_variable_info<FI, FO: From<FI> + NonZero + Zero + One + Ord + Display
     cost_values: Vec<SparseTuple<FI>>,
     bounds: Vec<Bound<FI>>,
     nr_rows: usize,
-) -> Result<(Vec<ShiftedVariable<FO>>, Sparse<FO, FO, ColumnMajor>, Vec<String>), Inconsistency> {
+) -> Result<(Vec<ShiftedVariable<FO>>, SparseMatrix<FO, FO, ColumnMajor>, Vec<String>), Inconsistency> {
     // Reorder the column names.
     debug_assert_eq!(
         columns.iter().map(|variable| variable.name.as_str()).collect::<HashSet<_>>().len(),

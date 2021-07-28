@@ -6,7 +6,7 @@ use std::ops::{Add, AddAssign, Sub};
 use std::path::{Path, PathBuf};
 
 use num_traits::{One, Zero};
-use relp_num::{OrderedField, OrderedFieldRef};
+use relp_num::{OrderedField, OrderedFieldRef, Signed};
 use relp_num::Rational64;
 
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
@@ -51,7 +51,7 @@ fn solve<
 where
     for<'r> &'r GFT: OrderedFieldRef<GFT>,
     for<'r> &'r IMT: Add<&'r GFT, Output=IMT> + Sub<&'r IMT, Output=IMT>,
-    for<'r> IMT: im_ops::Cost<Option<&'r GFT>> + im_ops::Cost<Cost>,
+    for<'r> IMT: im_ops::Cost<Option<&'r GFT>> + im_ops::Cost<Cost> + Signed,
 {
     let path = get_test_file_path(file_name);
     let mps = import::<GFT>(&path).unwrap();

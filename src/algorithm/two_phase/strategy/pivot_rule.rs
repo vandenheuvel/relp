@@ -7,6 +7,7 @@ use num_traits::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::data::linear_algebra::SparseTuple;
@@ -32,6 +33,29 @@ pub trait PivotRule {
     ;
 }
 
+trait StartIndex {
+    fn start_index(&self) -> usize;
+}
+
+impl<IM, K> StartIndex for Tableau<IM, K>
+where
+    K: Kind,
+{
+    default fn start_index(&self) -> usize {
+        0
+    }
+}
+
+impl<IM, A> StartIndex for Tableau<IM, A>
+where
+    A: Artificial,
+{
+    fn start_index(&self) -> usize {
+        self.nr_artificial_variables()
+    }
+}
+
+
 /// Simply pivot on the first column, which has a negative relative cost.
 ///
 /// The behavior is the same for both the primal and dual simplex method.
@@ -49,8 +73,7 @@ impl PivotRule for FirstProfitable {
         IM: InverseMaintener<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
         K: Kind,
     {
-        // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
-        (0..tableau.nr_columns())
+        (tableau.start_index()..tableau.nr_columns())
             .filter(|&column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
             .find(|(_, cost)| cost < &<IM::F as Zero>::zero())
@@ -82,10 +105,8 @@ impl PivotRule for FirstProfitableWithMemory {
 
         let potential = self.last_selected
             .map_or_else(
-                // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
-                || find(0..tableau.nr_columns()),
-                // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
-                |last| find(last..tableau.nr_columns()).or_else(|| find(0..last)),
+                || find(tableau.start_index()..tableau.nr_columns()),
+                |last| find(last..tableau.nr_columns()).or_else(|| find(tableau.start_index()..last)),
             );
 
         self.last_selected = potential.as_ref().map(|&(i, _)| i);
@@ -109,8 +130,7 @@ impl PivotRule for SteepestDescent {
         K: Kind,
     {
         let mut smallest = None;
-        // TODO(ENHANCEMENT): For artificial tableaus it's a waste to start at 0
-        for (j, cost) in (0..tableau.nr_columns())
+        for (j, cost) in (tableau.start_index()..tableau.nr_columns())
             .filter(|&column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
             .filter(|(_, cost)| cost < &<IM::F as Zero>::zero()) {

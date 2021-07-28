@@ -31,7 +31,7 @@ use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintener;
 use relp::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use relp::algorithm::two_phase::tableau::Tableau;
-use relp::data::linear_algebra::matrix::{ColumnMajor, Order};
+use relp::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
 use relp::data::linear_algebra::vector::{DenseVector, Vector};
 use relp::data::linear_program::elements::VariableType;
 use relp::data::linear_program::general_form::Variable;

@@ -16,7 +16,7 @@ use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintener;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
-use crate::data::linear_algebra::matrix::{ColumnMajor, Order, Sparse};
+use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::VariableType;
@@ -67,7 +67,7 @@ fn conversion_pipeline() {
 }
 
 pub fn create_matrix_data_data<'a, T: Field + From<u8> + From<&'a u8> + NonZero>(
-) -> (Sparse<T, T, ColumnMajor>, DenseVector<T>, Vec<Variable<T>>) {
+) -> (SparseMatrix<T, T, ColumnMajor>, DenseVector<T>, Vec<Variable<T>>) {
     let constraints = ColumnMajor::from_test_data(
         &vec![
             vec![3, 2, 1, 0, 0],
@@ -98,7 +98,7 @@ pub fn create_matrix_data_data<'a, T: Field + From<u8> + From<&'a u8> + NonZero>
 }
 
 pub fn matrix_data_form<'a>(
-    constraints: &'a Sparse<T, T, ColumnMajor>,
+    constraints: &'a SparseMatrix<T, T, ColumnMajor>,
     b: &'a DenseVector<T>,
     variables: &'a Vec<Variable<T>>,
 ) -> MatrixData<'a, T> {

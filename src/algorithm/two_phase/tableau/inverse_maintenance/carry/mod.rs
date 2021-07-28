@@ -8,7 +8,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fmt;
 use std::ops::Neg;
 
-use relp_num::NonZero;
+use relp_num::{NonZero, Signed};
 use relp_num::One;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, OrderedColumn, SparseColumn};
@@ -350,7 +350,7 @@ where
 
 impl<F, BI> InverseMaintener for Carry<F, BI>
 where
-    F: ops::Field + ops::FieldHR,
+    F: ops::Field + ops::FieldHR + Signed,
     BI: BasisInverse<F=F>,
 {
     type F = F;
@@ -564,7 +564,7 @@ where
         self.update_minus_pi_and_obj(pivot_row_index, relative_cost);
 
         // Update the indices
-        let leaving_column = self.basis_indices[pivot_row_index];
+        let leaving_column = self.basis_column_index_for_row(pivot_row_index);
         self.basis_indices[pivot_row_index] = pivot_column_index;
 
         leaving_column
@@ -619,7 +619,7 @@ where
         let mut tuples = self.b.iter()
             .enumerate()
             .map(|(i, v)| (self.basis_column_index_for_row(i), v))
-            .filter(|(_, v)| !v.is_zero())
+            .filter(|(_, v)| v.is_not_zero())
             .map(|(i, v)| (i, v.clone()))
             .collect::<Vec<_>>();
         tuples.sort_by_key(|&(i, _)| i);
@@ -627,6 +627,9 @@ where
     }
 
     fn basis_column_index_for_row(&self, row: usize) -> usize {
+        let nr_rows = self.basis_indices.len();
+        debug_assert!(row < nr_rows);
+
         self.basis_indices[row]
     }
 
@@ -646,7 +649,7 @@ where
 
 impl<F, BI> InverseMaintener for Carry<F, BI>
 where
-    F: ops::Field + ops::FieldHR,
+    F: ops::Field + ops::FieldHR + Signed,
     BI: BasisInverse<F=F> + RemoveBasisPart,
 {
     fn from_artificial_remove_rows<'provider, MP: Filtered>(

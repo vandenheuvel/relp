@@ -2,7 +2,7 @@ use relp_num::R32;
 use relp_num::Rational32;
 
 use crate::data::linear_algebra::matrix::ColumnMajor;
-use crate::data::linear_algebra::matrix::Order;
+use crate::data::linear_algebra::matrix::MatrixOrder;
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, Objective, VariableType};

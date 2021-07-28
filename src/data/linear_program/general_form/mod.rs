@@ -19,8 +19,8 @@ pub use presolve::scale::{Scalable, Scaling};
 
 use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 use crate::algorithm::utilities::remove_indices;
-use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
-use crate::data::linear_algebra::matrix::Sparse;
+use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
+use crate::data::linear_algebra::matrix::SparseMatrix;
 use crate::data::linear_algebra::SparseTupleVec;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement as LinearAlgebraElement};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
@@ -52,7 +52,7 @@ pub struct GeneralForm<F> {
     ///
     /// Has size `constraint_types.len()` in the row direction, size `variables.len()` in the column
     /// direction.
-    constraints: Sparse<F, F, ColumnMajor>,
+    constraints: SparseMatrix<F, F, ColumnMajor>,
     /// The equation type of all rows, ordered by index.
     ///
     /// These are read "from constraint to constraint value", meaning:
@@ -211,7 +211,7 @@ impl<F: LinearAlgebraElement<F> + SparseComparator> GeneralForm<F> {
     /// Simple constructor except for two indices that get created.
     pub fn new(
         objective: Objective,
-        constraints: Sparse<F, F, ColumnMajor>,
+        constraints: SparseMatrix<F, F, ColumnMajor>,
         constraint_types: Vec<RangedConstraintRelation<F>>,
         b: DenseVector<F>,
         variables: Vec<Variable<F>>,
@@ -1120,7 +1120,7 @@ mod test {
     use relp_num::R32;
     use relp_num::Rational32;
 
-    use crate::data::linear_algebra::matrix::{ColumnMajor, Order};
+    use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
     use crate::data::linear_algebra::vector::DenseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
     use crate::data::linear_program::elements::{Objective, RangedConstraintRelation, VariableType};

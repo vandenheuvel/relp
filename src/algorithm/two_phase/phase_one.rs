@@ -2,6 +2,7 @@
 use std::collections::HashSet;
 
 use num_traits::Zero;
+use relp_num::Signed;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
@@ -242,8 +243,8 @@ where
             .filter(|&j| !tableau.is_in_basis(j))
             .map(|j| (j, tableau.relative_cost(j)))
             .filter(|(_, cost)| cost.is_zero())
-            .find_map(|(j, cost)| tableau.generate_element(pivot_row, j)
-                .map(|_| (j, cost)));
+            .find(|&(j, _)| tableau.generate_element(pivot_row, j)
+                .map_or(false, |element| element.is_positive()));
 
         if let Some((pivot_column, cost)) = column_and_cost {
             let column = tableau.generate_column(pivot_column);
