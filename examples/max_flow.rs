@@ -18,7 +18,7 @@ use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::phase_one::PartialInitialBasis;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use relp::algorithm::utilities::remove_sparse_indices;
+use index_utils::remove_sparse_indices;
 use relp::data::linear_algebra::matrix::{ColumnMajor, SparseMatrix};
 use relp::data::linear_algebra::matrix::MatrixOrder;
 use relp::data::linear_algebra::SparseTuple;

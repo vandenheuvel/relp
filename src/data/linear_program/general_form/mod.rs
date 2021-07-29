@@ -10,6 +10,7 @@ use std::ops::{Add, AddAssign, Mul, Neg, Sub};
 use cumsum::cumsum_array;
 use daggy::{Dag, WouldCycle};
 use daggy::petgraph::data::Element;
+use index_utils::remove_indices;
 use itertools::repeat_n;
 use num_traits::Zero;
 use relp_num::{OrderedField, OrderedFieldRef};
@@ -18,7 +19,6 @@ use relp_num::NonZero;
 pub use presolve::scale::{Scalable, Scaling};
 
 use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
-use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
 use crate::data::linear_algebra::matrix::SparseMatrix;
 use crate::data::linear_algebra::SparseTupleVec;
@@ -261,16 +261,19 @@ where
     ///
     /// In case the linear program gets solved during this presolve operation, a solution.
     pub fn derive_matrix_data(&self, constraint_type_counts: [usize; 4]) -> MatrixData<OF> {
-        debug_assert!('check: {
+        debug_assert!({
             let boundaries = cumsum_array(&constraint_type_counts);
-            for (i, ct) in self.constraint_types.iter().enumerate() {
-                use RangedConstraintRelation::*;
-                     if i < boundaries[0] { if !matches!(ct,    Equal) { break 'check false; } }
-                else if i < boundaries[1] { if !matches!(ct, Range(_)) { break 'check false; } }
-                else if i < boundaries[2] { if !matches!(ct,     Less) { break 'check false; } }
-                else if i < boundaries[3] { if !matches!(ct,  Greater) { break 'check false; } }
-            }
-            true
+            self.constraint_types.iter().enumerate()
+                .all(|(i, constraint_type)| {
+                    use RangedConstraintRelation::*;
+                         if i < boundaries[0] { matches!(constraint_type,    Equal) }
+                    else if i < boundaries[1] { matches!(constraint_type, Range(_)) }
+                    else if i < boundaries[2] { matches!(constraint_type,     Less) }
+                    else if i < boundaries[3] { matches!(constraint_type,  Greater) }
+                    else {
+                        panic!();
+                    }
+                })
         });
 
         let [

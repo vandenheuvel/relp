@@ -8,10 +8,10 @@ use std::collections::HashSet;
 use std::iter::Iterator;
 use std::marker::PhantomData;
 
+use index_utils::{remove_indices, remove_sparse_indices};
 use relp_num::Field;
 use relp_num::NonZero;
 
-use crate::algorithm::utilities::{remove_indices, remove_sparse_indices};
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 

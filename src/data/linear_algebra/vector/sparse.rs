@@ -11,10 +11,10 @@ use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Neg};
 use std::slice::{Iter, IterMut};
 
+use index_utils::remove_sparse_indices;
 use num_traits::{One, Zero};
 use relp_num::NonZero;
 
-use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};

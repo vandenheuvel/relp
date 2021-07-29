@@ -9,9 +9,9 @@ use std::ops::{AddAssign, Index, IndexMut, Mul};
 use std::slice::{Iter, IterMut};
 use std::vec::IntoIter;
 
+use index_utils::remove_indices;
 use num_traits::Zero;
 
-use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::vector::Vector;
 
