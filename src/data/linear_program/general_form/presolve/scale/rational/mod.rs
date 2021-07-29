@@ -182,7 +182,7 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
         let mut variable_changes = vec![0; self.c.len()];
 
         // Queues tracking which rows / columns still should be tested
-        let mut row_queue = (0..self.b.len()).map(|i| RowToIncrement::ConstraintRow(i))
+        let mut row_queue = (0..self.b.len()).map(RowToIncrement::ConstraintRow)
             .chain(once(RowToIncrement::CostRow))
             .collect::<FIFOSet<_>>();
         let mut column_queue = (0..self.c.len()).collect::<FIFOSet<_>>();
@@ -527,7 +527,7 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
         factorization.last()
             .filter(|(f, _)| f == factor)
             .map(|&(_, power)| power)
-            .unwrap_or(R::Power::zero())
+            .unwrap_or_else(R::Power::zero)
     }
 
     fn remove_factor_info(&mut self) -> R::Factor {
@@ -543,12 +543,10 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
         }
 
         let remove_from = |data: &mut [Option<Vec<(R::Factor, R::Power)>>]| {
-            for factorization in data {
-                if let Some(factorization) = factorization {
-                    match factorization.last() {
-                        Some((f, _)) if f == &factor => {factorization.pop();},
-                        _ => {},
-                    }
+            for factorization in data.iter_mut().flatten() {
+                match factorization.last() {
+                    Some((f, _)) if f == &factor => {factorization.pop();},
+                    _ => {},
                 }
             }
         };

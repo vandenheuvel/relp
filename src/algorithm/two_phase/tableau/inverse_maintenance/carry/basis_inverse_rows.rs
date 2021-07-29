@@ -76,10 +76,10 @@ where
         for (edit_row_index, column_value) in column.iter() {
              match edit_row_index.cmp(&pivot_row_index) {
                 Ordering::Less => rows_left[*edit_row_index]
-                    .add_multiple_of_row(&-column_value, &rows_middle),
+                    .add_multiple_of_row(&-column_value, rows_middle),
                 Ordering::Equal => {},
                 Ordering::Greater => rows_right[*edit_row_index - (pivot_row_index + 1)]
-                    .add_multiple_of_row(&-column_value, &rows_middle),
+                    .add_multiple_of_row(&-column_value, rows_middle),
             }
         }
     }
@@ -111,11 +111,10 @@ where
 
         let inverted_columns = (0..m)
             .map(|i| IdentityColumnStruct((i, One)))
-            .map(|column| lower_upper.generate_column(column))
-            .collect::<Vec<_>>();
+            .map(|column| lower_upper.generate_column(column));
 
         let mut row_major = vec![Vec::new(); m];
-        for (j, column) in inverted_columns.into_iter().enumerate() {
+        for (j, column) in inverted_columns.enumerate() {
             for (i, value) in column.into_column().into_iter() {
                 row_major[i].push((j, value));
             }
@@ -209,7 +208,7 @@ where
 
 impl<F: SparseElement<F>> ColumnComputationInfo<F> for SparseVector<F, F> {
     fn column(&self) -> &SparseVector<F, F> {
-        &self
+        self
     }
 
     fn into_column(self) -> SparseVector<F, F> {

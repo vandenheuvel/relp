@@ -50,8 +50,8 @@ pub trait Scalable<T> {
     fn scale_back(&mut self, scale_info: Scaling<T>);
 }
 
-const WARNING_MESSAGE: &'static str = "WARNING: Not scaling. Does your number type fulfill the \
-necessary bound constraints?";
+const WARNING_MESSAGE: &str = "WARNING: Not scaling. Does your number type fulfill the necessary \
+bound constraints?";
 
 /// A default scaling implementation that does not do anything.
 impl<T: One + SparseElement<T> + SparseComparator + Clone> Scalable<T> for GeneralForm<T> {

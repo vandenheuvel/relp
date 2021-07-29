@@ -223,7 +223,7 @@ where
         basis_columns: HashSet<usize>,
         column_to_row_artificials: Vec<usize>,
     ) -> Self {
-        debug_assert!(column_to_row_artificials.iter().all(|i| basis_columns.contains(&i)));
+        debug_assert!(column_to_row_artificials.iter().all(|i| basis_columns.contains(i)));
 
         Tableau {
             inverse_maintainer,

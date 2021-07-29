@@ -10,7 +10,7 @@ use std::iter::{FromIterator, Sum};
 use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Neg};
 use std::slice::{Iter, IterMut};
-
+use std::vec::IntoIter;
 use index_utils::remove_sparse_indices;
 use num_traits::{One, Zero};
 use relp_num::NonZero;
@@ -47,9 +47,13 @@ impl<F, C> Sparse<F, C> {
     pub fn extend(&mut self, extra_len: usize) {
         self.len += extra_len;
     }
+}
 
-    /// Convert the inner data structure into an iterator, consuming the struct.
-    pub fn into_iter(self) -> impl Iterator<Item=SparseTuple<F>> {
+impl<F, C> IntoIterator for Sparse<F, C> {
+    type Item = SparseTuple<F>;
+    type IntoIter = IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
         self.data.into_iter()
     }
 }
@@ -246,8 +250,7 @@ where
         let old_data = mem::replace(&mut self.data, Vec::with_capacity(0));
         for (i, value) in old_data {
             while j < other.data.len() && other.data[j].0 < i {
-                let new_value = multiple * &other.data[j].1;
-                new_tuples.push((other.data[j].0, new_value.into()));
+                new_tuples.push((other.data[j].0, multiple * &other.data[j].1));
                 j += 1;
             }
 

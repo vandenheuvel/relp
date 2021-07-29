@@ -88,7 +88,7 @@ where
 
             activity_bounds: vec![(None, None); general_form.nr_constraints()],
 
-            general_form: &general_form,
+            general_form,
         })
     }
 

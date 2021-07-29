@@ -17,13 +17,13 @@ use relp::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix}
 use relp::data::linear_algebra::vector::{DenseVector, SparseVector};
 use relp::data::linear_program::elements::BoundDirection;
 use relp::data::linear_program::network::representation::ArcIncidenceColumn;
-use relp::data::linear_program::network::representation::ArcIncidenceMatrix;
+use relp::data::linear_program::network::representation::IncidenceMatrix;
 
 /// Solving a shortest path problem as a linear program.
 #[derive(Debug, Clone, PartialEq)]
 struct Primal<F> {
     /// For each edge, two values indicating from which value the arc leaves, and where it goes to.
-    arc_incidence_matrix: ArcIncidenceMatrix,
+    arc_incidence_matrix: IncidenceMatrix,
     /// Length of the arc.
     cost: DenseVector<F>,
     /// Source node index.
@@ -45,7 +45,7 @@ where
         debug_assert!(s < nr_vertices && t < nr_vertices);
 
         // Remove one redundant row; the one with the negative constant, such that b is nonnegative
-        let (arc_incidence_matrix, cost) = ArcIncidenceMatrix::new(
+        let (arc_incidence_matrix, cost) = IncidenceMatrix::new(
             adjacency_matrix, vec![s],
         );
 
