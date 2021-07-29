@@ -30,7 +30,7 @@ where
 {
     let mut rule = PR::new();
     loop {
-        debug_assert_in_basic_feasible_solution_state(&tableau);
+        debug_assert_in_basic_feasible_solution_state(tableau);
 
         match rule.select_primal_pivot_column(tableau) {
             Some((column_index, cost)) => {

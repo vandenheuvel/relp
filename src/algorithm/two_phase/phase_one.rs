@@ -255,7 +255,7 @@ where
             rows_to_remove.push(artificial);
         }
 
-        debug_assert_in_basic_feasible_solution_state(&tableau);
+        debug_assert_in_basic_feasible_solution_state(tableau);
     }
 
     debug_assert!(rows_to_remove.is_sorted());

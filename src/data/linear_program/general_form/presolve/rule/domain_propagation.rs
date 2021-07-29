@@ -164,7 +164,7 @@ where
         direction: BoundDirection,
         made_change: &mut Change,
     ) -> Result<(bool, bool), LinearProgramType<OF>> {
-        let constraint_update = self.constraint_update(constraint, &bound, direction)?;
+        let constraint_update = self.constraint_update(constraint, bound, direction)?;
         if let Some(change) = constraint_update {
             let (remove_constraint, apply_variable_part) = match change {
                 ConstraintUpdate::Remove => (true, true), // TODO(CORRECTNESS): Should the second value be changed to `false`?

@@ -47,7 +47,7 @@ where
     // Choose the right parser
     match file_path.extension() {
         Some(extension) => match extension.to_str() {
-            Some("mps" | "SIF") => mps::parse(&program).map(DataTypes::MPS),
+            Some("mps" | "SIF") => mps::parse(&program).map(DataTypes::Mps),
             Some(extension_string) => Err(Import::FileExtension(format!(
                 "Could not recognise file extension \"{}\" of file: {:?}",
                 extension_string, file_path
@@ -65,7 +65,7 @@ where
 }
 
 enum DataTypes {
-    MPS(MPS<Rational64>),
+    Mps(MPS<Rational64>),
 }
 
 impl<F> TryInto<GeneralForm<F>> for DataTypes
@@ -78,7 +78,7 @@ where
 
     fn try_into(self) -> Result<GeneralForm<F>, Self::Error> {
         match self {
-            DataTypes::MPS(mps) => TryInto::try_into(mps),
+            DataTypes::Mps(mps) => TryInto::try_into(mps),
         }
     }
 }

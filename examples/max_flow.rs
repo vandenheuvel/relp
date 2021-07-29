@@ -25,12 +25,12 @@ use relp::data::linear_algebra::SparseTuple;
 use relp::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use relp::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use relp::data::linear_program::elements::BoundDirection;
-use relp::data::linear_program::network::representation::{ArcDirection, ArcIncidenceMatrix};
+use relp::data::linear_program::network::representation::{ArcDirection, IncidenceMatrix};
 
 /// Maximum flow problem.
 struct Primal<F> {
     /// For each edge, two values indicating from which value the arc leaves, and where it goes to.
-    arc_incidence_matrix: ArcIncidenceMatrix,
+    arc_incidence_matrix: IncidenceMatrix,
     capacity: DenseVector<F>,
 
     /// Source
@@ -61,7 +61,7 @@ where
         let arcs_before_s = adjacency_matrix.data[..s].iter().map(Vec::len).sum();
         let arcs_leaving_s = adjacency_matrix.data[s].len();
         let s_arc_range = arcs_before_s..(arcs_before_s + arcs_leaving_s);
-        let (arc_incidence_matrix, capacity) = ArcIncidenceMatrix::new(adjacency_matrix, vec![s, t]);
+        let (arc_incidence_matrix, capacity) = IncidenceMatrix::new(adjacency_matrix, vec![s, t]);
 
         Self {
             arc_incidence_matrix,

@@ -294,7 +294,7 @@ fn check_row_section_consistency(
 ) -> Result<(String, Vec<Row>), Inconsistency> {
     if let Some(cost_name) = cost_row_name {
         rows.sort_unstable_by(|row1, row2| row1.name.cmp(&row2.name));
-        if rows.binary_search_by_key(&cost_name.as_str(), |row| &row.name.as_str()).is_ok() {
+        if rows.binary_search_by_key(&cost_name.as_str(), |row| row.name.as_str()).is_ok() {
             return Err(Inconsistency::new("Cost row name found in other rows."));
         }
 

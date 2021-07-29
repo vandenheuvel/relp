@@ -51,9 +51,9 @@ impl<'a> ColumnRetriever<'a> for Fixed {
                 }
             } else {
                 Ok(ColumnLineContent::Data([
-                    &line[FIELDS[2].clone()].trim_end(),
-                    &line[FIELDS[3].clone()].trim_end(),
-                    &line[FIELDS[4].clone()].trim_start(),
+                    line[FIELDS[2].clone()].trim_end(),
+                    line[FIELDS[3].clone()].trim_end(),
+                    line[FIELDS[4].clone()].trim_start(),
                 ], &line[FIELDS[4].end..]))
             }
         } else {

@@ -18,14 +18,16 @@ use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
 
+/// An incidence matrix describes a directed graph.
+///
+/// See https://en.wikipedia.org/wiki/Incidence_matrix.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ArcIncidenceMatrix {
-    /// TODO(OPTIMIZATION): Use a simpler type, like a boolean, to represent to plus and minus one.
-    pub data: SparseMatrix<ArcDirection, ArcDirection, ColumnMajor>,
+pub struct IncidenceMatrix {
+    data: SparseMatrix<ArcDirection, ArcDirection, ColumnMajor>,
     removed: Vec<usize>,
 }
 
-impl ArcIncidenceMatrix {
+impl IncidenceMatrix {
     pub fn new<F: SparseElement<F> + SparseComparator>(
         adjacency_matrix: SparseMatrix<F, F, ColumnMajor>,
         mut removed: Vec<usize>,

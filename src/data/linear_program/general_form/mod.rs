@@ -368,7 +368,7 @@ where
             removed_variables,
         );
         self.remove_rows_and_columns(constraints_marked_removed, variable_indices_only);
-        debug_assert!(is_consistent(&self));
+        debug_assert!(is_consistent(self));
 
         self.compute_solution_where_possible();
         self.get_solution()
@@ -387,7 +387,7 @@ where
     fn compute_presolve_changes(
         &self
     ) -> Result<Changes<OF>, LinearProgramType<OF>> {
-        let mut index = PresolveIndex::new(&self)?;
+        let mut index = PresolveIndex::new(self)?;
 
         let mut iterations_without_meaningful_change = 0;
         while !index.are_queues_empty() && iterations_without_meaningful_change < {
@@ -493,7 +493,7 @@ where
         remove_indices(&mut self.constraint_types, &constraints);
         self.b.remove_indices(&constraints);
 
-        debug_assert!(is_consistent(&self));
+        debug_assert!(is_consistent(self));
     }
 
     /// Split free variables and shift all variables, such that the lower bound is zero.
@@ -507,7 +507,7 @@ where
     fn transform_variables(&mut self) {
         // After this call, all active variables have at least one bound.
         self.split_free_variables();
-        debug_assert!(is_consistent(&self));
+        debug_assert!(is_consistent(self));
 
         for j in 0..self.variables.len() {
             let variable = &mut self.variables[j];
@@ -543,7 +543,7 @@ where
             }
         }
 
-        debug_assert!(is_consistent(&self));
+        debug_assert!(is_consistent(self));
     }
 
     /// Split all free variables.
@@ -617,7 +617,7 @@ where
             };
         }
 
-        debug_assert!(is_consistent(&self));
+        debug_assert!(is_consistent(self));
     }
 
     /// Make this a minimization problem by multiplying the cost function by `-1`.
@@ -711,7 +711,7 @@ where
             column.sort_unstable_by_key(|&(i, _)| i);
         }
 
-        debug_assert!(is_consistent(&self));
+        debug_assert!(is_consistent(self));
 
         [e_counter, r_counter, l_counter, g_counter]
     }
