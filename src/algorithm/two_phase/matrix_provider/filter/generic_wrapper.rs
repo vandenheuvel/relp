@@ -10,12 +10,13 @@ use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fmt;
 
+use index_utils::remove_sparse_indices;
+
 use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
 use crate::algorithm::two_phase::matrix_provider::filter::{Filtered, ToFiltered};
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::variable::FeasibilityLogic;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
-use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use crate::data::linear_program::elements::BoundDirection;

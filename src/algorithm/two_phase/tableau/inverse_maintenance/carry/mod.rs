@@ -8,6 +8,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fmt;
 use std::ops::Neg;
 
+use index_utils::remove_indices;
 use relp_num::{NonZero, Signed};
 use relp_num::One;
 
@@ -17,7 +18,6 @@ use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
-use crate::algorithm::utilities::remove_indices;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};

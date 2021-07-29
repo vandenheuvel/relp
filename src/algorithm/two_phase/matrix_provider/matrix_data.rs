@@ -6,6 +6,7 @@ use std::fmt;
 
 use cumsum::cumsum_array_owned;
 use enum_map::{Enum, enum_map, EnumMap};
+use index_utils::remove_sparse_indices;
 use relp_num::{Field, FieldRef};
 use relp_num::NonZero;
 
@@ -14,7 +15,6 @@ use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColu
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
-use crate::algorithm::utilities::remove_sparse_indices;
 use crate::data::linear_algebra::matrix::{ColumnMajor, SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};

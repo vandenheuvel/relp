@@ -6,18 +6,12 @@
 
 #![allow(incomplete_features)]
 #![feature(is_sorted)]
-#![feature(drain_filter)]
-#![feature(result_cloned)]
 #![feature(specialization)]
 #![feature(type_alias_impl_trait)]
 #![feature(associated_type_bounds)]
 #![feature(trait_alias)]
 #![feature(generic_associated_types)]
-#![feature(const_generics)]
 #![feature(map_first_last)]
-#![feature(unchecked_math)]
-#![feature(result_into_ok_or_err)]
-#![feature(label_break_value)]
 
 pub mod algorithm;
 pub mod data;

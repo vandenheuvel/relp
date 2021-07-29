@@ -7,9 +7,6 @@ use crate::algorithm::two_phase::tableau::kind::artificial::Cost as ArtificialCo
 use crate::data::linear_algebra::vector::SparseVector;
 
 pub mod two_phase;
-pub mod criss_cross;
-pub mod primal_dual;
-pub mod utilities;
 
 /// A problem formulation of which a relaxation can be solved.
 /// 
