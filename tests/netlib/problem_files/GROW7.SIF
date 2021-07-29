@@ -1532,7 +1532,6 @@ COLUMNS
     SI1907    PRI1907            -1.   
     SI2007    PRI2007            -1.   
 RHS
-    RHS       REVENUE             0.   
 BOUNDS
  UP YSBOUND   XI0401           9092.   
  UP YSBOUND   XI0501         170945.   

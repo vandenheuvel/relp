@@ -127,9 +127,11 @@ where
     pub(super) fn presolve_step(&mut self) -> Result<Change, LinearProgramType<OF>> {
         // Rules that are guaranteed to make the problem smaller
         if let Some(variable) = self.queues.substitution.pop() {
-            return self.presolve_fixed_variable(variable)
-                // always removes a variable
-                .map(|()| Change::Meaningful);
+            if self.counters.is_variable_still_active(variable) {
+                return self.presolve_fixed_variable(variable)
+                    // always removes a variable
+                    .map(|()| Change::Meaningful);
+            }
         }
         while let Some(constraint) = self.queues.bound.pop() {
             if self.counters.is_constraint_still_active(constraint) {
