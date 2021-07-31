@@ -9,7 +9,7 @@ use std::fmt::{Debug, Display, Formatter, Result as FormatResult};
 use num_traits::One;
 use num_traits::Zero;
 
-use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::column::{Column, SparseSliceIterator};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::vector::{SparseVector, Vector};
@@ -49,15 +49,19 @@ where
         &mut self,
         pivot_column_index: usize,
         pivot_row_index: usize,
-        column: IM::ColumnComputationInfo,
+        column_computation_info: IM::ColumnComputationInfo,
         cost: IM::F
-    ) {
+    ) -> BasisChangeComputationInfo<IM::F> {
         debug_assert!(pivot_column_index < self.kind.nr_columns());
         debug_assert!(pivot_row_index < self.nr_rows());
 
-        let leaving_column = self.inverse_maintainer.change_basis(pivot_row_index, pivot_column_index, column, cost);
-        self.update_basis_indices(pivot_column_index, leaving_column);
+        let basis_change_computation_info = self.inverse_maintainer.change_basis(
+            pivot_row_index, pivot_column_index, column_computation_info, cost,
+        );
+        self.update_basis_indices(pivot_column_index, basis_change_computation_info.leaving_column_index);
         self.inverse_maintainer.after_basis_change(&self.kind);
+
+        basis_change_computation_info
     }
 
     /// Update the basis index.
@@ -134,6 +138,12 @@ where
         self.inverse_maintainer.generate_element(i, self.kind.original_column(j))
     }
 
+    pub fn original_column(&self, j: usize) -> K::Column {
+        debug_assert!(j < self.nr_columns());
+
+        self.kind.original_column(j)
+    }
+
     /// Whether a column is in the basis.
     ///
     /// # Return value
@@ -147,6 +157,19 @@ where
         debug_assert!(column < self.nr_columns());
 
         self.basis_columns.contains(&column)
+    }
+
+    pub fn variable_value(&self, column: usize) -> IM::F {
+        debug_assert!(column < self.nr_columns());
+
+        if self.is_in_basis(column) {
+            let row = (0..self.nr_rows())
+                .find(|&i| self.inverse_maintainer.basis_column_index_for_row(i) == column)
+                .unwrap();
+            self.inverse_maintainer.get_constraint_value(row).clone()
+        } else {
+            IM::F::zero()
+        }
     }
 
     /// Get the current basic feasible solution.
@@ -171,7 +194,21 @@ where
     pub fn objective_function_value(&self) -> IM::F {
         self.inverse_maintainer.get_objective_function_value()
     }
+}
 
+pub struct BasisChangeComputationInfo<F> {
+    pub pivot_row_index: usize,
+    pub pivot_column_index: usize,
+    pub leaving_column_index: usize,
+    pub column_before_change: SparseVector<F, F>,
+    pub w: SparseVector<F, F>, // w (3.10)
+    pub y: SparseVector<F, F>, // y (3.11)
+}
+
+impl<IM, K> Tableau<IM, K>
+where
+    K: Kind
+{
     /// Number of rows in the tableau.
     ///
     /// # Return value
@@ -224,7 +261,7 @@ where
 
         // (chosen index, minimum ratio, corresponding leaving_column (for Bland's algorithm))
         let mut min_values: Option<(usize, IM::F, usize)> = None;
-        for (row, xij) in column.iter() {
+        for (row, xij) in SparseSliceIterator::new(&column) {
             if xij > &IM::F::zero() {
                 let ratio = self.inverse_maintainer.get_constraint_value(row) / xij;
                 // Bland's anti cycling algorithm
@@ -533,7 +570,7 @@ mod test {
         let (constraints, b, variables) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
         let bfs_tableau = bfs_tableau(&matrix_data_form);
-        let mut rule = <FirstProfitable as PivotRule>::new();
+        let mut rule = <FirstProfitable as PivotRule<_>>::new(&bfs_tableau);
         assert!(rule.select_primal_pivot_column(&bfs_tableau).is_none());
     }
 }

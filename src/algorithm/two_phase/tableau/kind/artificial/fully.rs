@@ -3,7 +3,7 @@
 //! When no initial pivots can be derived, this module is used. It is slightly quicker than the
 //! partially artificial tableau kind.
 use crate::algorithm::two_phase::matrix_provider::column::Column;
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Cost};
@@ -21,7 +21,7 @@ pub struct Fully<'a, MP: MatrixProvider> {
 
 impl<'provider, MP> Kind for Fully<'provider, MP>
 where
-    MP: MatrixProvider<Column: Column + IdentityColumn>,
+    MP: MatrixProvider<Column: Column + Identity>,
 {
     type Column = MP::Column;
     type Cost = Cost;
@@ -38,7 +38,7 @@ where
         if j < self.nr_rows() {
             // TODO(ENHANCEMENT): Would it be possible to specialize the code where this identity
             //  column is used?
-            <Self::Column as IdentityColumn>::identity(j, self.nr_rows())
+            <Self::Column as Identity>::identity(j, self.nr_rows())
         } else {
             self.provider.column(j - self.nr_rows())
         }
@@ -55,7 +55,7 @@ where
 
 impl<'provider, MP> Artificial for Fully<'provider, MP>
 where
-    MP: MatrixProvider<Column: IdentityColumn>,
+    MP: MatrixProvider<Column: Identity>,
 {
     fn nr_artificial_variables(&self) -> usize {
         self.nr_rows()

@@ -194,10 +194,15 @@ where
         mut basis: HashSet<usize>,
         provider: &'provider MP,
     ) -> Self {
-        debug_assert!(basis.iter().all(|&v| v >= nr_artificial || provider.filtered_rows().contains(&v)));
+        debug_assert!(
+            basis.iter().all(|&v| v >= nr_artificial || provider.filtered_rows().iter()
+                .any(|&row| inverse_maintainer.basis_column_index_for_row(row) == v)
+            ),
+        );
 
         for &row in provider.filtered_rows() {
-            let was_there = basis.remove(&inverse_maintainer.basis_column_index_for_row(row));
+            let column = inverse_maintainer.basis_column_index_for_row(row);
+            let was_there = basis.remove(&column);
             debug_assert!(was_there);
         }
         let basis_columns = basis.into_iter().map(|j| j - nr_artificial).collect();

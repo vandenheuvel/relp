@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use relp_num::Binary;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -31,7 +31,7 @@ pub type Cost = Binary;
 ///
 /// There are currently two implementations; either all variables are artificial, or not necessarily
 /// all variables are. See the two submodules.
-pub trait Artificial: Kind<Column: IdentityColumn, Cost=Cost> {
+pub trait Artificial: Kind<Column: Identity, Cost=Cost> {
     /// How many artificial variables are in the tableau.
     ///
     /// This number varies, because slack variables might have been recognized as practical
@@ -71,12 +71,16 @@ where
     }
 
     /// Get the indices of the artificial variables that are still in the basis.
-    pub fn artificial_basis_columns(&self) -> Vec<usize> {
-        self.basis_columns
-            .iter()
-            .filter(|&&v| v < self.nr_artificial_variables())
-            .copied()
+    pub fn artificial_basis_columns(&self) -> Vec<(usize, usize)> {
+        (0..self.nr_rows())
+            .map(|i| (i, self.inverse_maintainer.basis_column_index_for_row(i)))
+            .filter(|&(_, j)| j < self.nr_artificial_variables())
             .collect()
+        // self.basis_columns
+        //     .iter()
+        //     .filter(|&&v| v < self.nr_artificial_variables())
+        //     .copied()
+        //     .collect()
     }
 
     /// At which row is the pivot from a specific artificial variable located?

@@ -6,7 +6,7 @@
 //! The `Tableau` type and algorithm logic in the parent modules is independent or whether a tableau
 //! contains artificial variables, or not. This module enables those abstractions.
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
 
 pub mod artificial;
 pub mod non_artificial;
@@ -18,7 +18,7 @@ pub trait Kind {
     ///
     /// TODO(ENHANCEMENT): Drop the Ordered requirement once specialization on generic type
     ///  type arguments of trait methods is possible.
-    type Column: Column + OrderedColumn;
+    type Column: Column;
     /// Cost row type.
     ///
     /// For artificial tableaus, this type is always the zero-one cost type in the artificial

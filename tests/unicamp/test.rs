@@ -75,15 +75,7 @@ fn model_data_3_3() {
 #[test]
 fn model_data_3_4() {
     let result = solve::<RationalBig, Rational64>("model_data_3_4");
-    assert_eq!(result, Solution::new(  // GLPK
-        RB!(2250),
-        vec![
-            ("RAW1".to_string(), RB!(5)),
-            ("RAW2".to_string(), RB!(3)),
-            ("RAW3".to_string(), RB!(4)),
-            ("PRODUCT".to_string(), RB!(500)),
-        ],
-    ));
+    assert_eq!(result.objective_value, RB!(2250)); // GLPK
 }
 
 #[test]

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::fmt;
 use std::iter::FromIterator;
-use std::ops::{AddAssign, Index, IndexMut, Mul};
+use std::ops::{AddAssign, Deref, Index, IndexMut, Mul};
 use std::slice::{Iter, IterMut};
 use std::vec::IntoIter;
 
@@ -77,6 +77,14 @@ impl<F: PartialEq + Display + Debug> IndexMut<usize> for Dense<F> {
         debug_assert!(index < self.len());
 
         &mut self.data[index]
+    }
+}
+
+impl<F> Deref for Dense<F> {
+    type Target = [F];
+
+    fn deref(&self) -> &Self::Target {
+        self.data.deref()
     }
 }
 

@@ -7,10 +7,9 @@ use std::cmp::{max, Ordering};
 use std::fmt;
 
 use index_utils::remove_indices;
-use relp_num::One;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumnStruct;
+use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnIterator, ColumnNumber};
+use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, ops};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, RemoveBasisPart};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
@@ -62,11 +61,14 @@ where
     /// # Note
     ///
     /// This method requires a normalized pivot element.
-    fn row_reduce(
+    fn row_reduce<'a>(
         &mut self,
         pivot_row_index: usize,
-        column: &SparseVector<F, F>,
-    ) {
+        column: &'a SparseVector<F, F>,
+    )
+    where
+        // for<'r> &'a F: Mul<&'r F, Output=F>,
+    {
         debug_assert!(pivot_row_index < self.m());
 
         // TODO(OPTIMIZATION): Improve the below algorithm; when does SIMD kick in?
@@ -102,16 +104,16 @@ where
         }
     }
 
-    fn invert<C: Column + OrderedColumn>(columns: Vec<C>) -> Self
-    where
-        Self::F: ops::Column<C::F>,
+    fn invert<C: Column>(columns: Vec<C>) -> Self
+        where
+            Self::F: ops::Column<C::F>,
     {
         let m = columns.len();
         let lower_upper = LUDecomposition::invert(columns);
 
         let inverted_columns = (0..m)
-            .map(|i| IdentityColumnStruct((i, One)))
-            .map(|column| lower_upper.generate_column(column));
+            .map(IdentityColumn::new)
+            .map(|column| lower_upper.left_multiply_by_basis_inverse(column.iter()));
 
         let mut row_major = vec![Vec::new(); m];
         for (j, column) in inverted_columns.enumerate() {
@@ -133,21 +135,26 @@ where
         &mut self,
         pivot_row_index: usize,
         column: Self::ColumnComputationInfo,
-    ) {
+    ) -> SparseVector<Self::F, Self::F> {
         debug_assert!(pivot_row_index < self.m());
         debug_assert_eq!(column.column().len(), self.m());
 
+        let column = column.into_column();
         // The order of these calls matters: the first of the two normalizes the pivot row
-        self.normalize_pivot_row(pivot_row_index, column.column());
-        self.row_reduce(pivot_row_index, column.column());
+        self.normalize_pivot_row(pivot_row_index, &column);
+        self.row_reduce(pivot_row_index, &column);
+
+        column
     }
 
-    fn generate_column<C: Column + OrderedColumn>(&self, original_column: C) -> Self::ColumnComputationInfo
+    fn left_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+        &self, column: I,
+    ) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<C::F>,
+        Self::F: ops::Column<G>,
     {
         let tuples = (0..self.m())
-            .map(|i| self.generate_element(i, original_column.clone()))
+            .map(|i| self.generate_element(i, column.clone()))
             .enumerate()
             .filter_map(|(i, v)| v.map(|inner| (i, inner)))
             .collect();
@@ -155,17 +162,34 @@ where
         SparseVector::new(tuples, self.m())
     }
 
-    fn generate_element<C: Column + OrderedColumn>(
+    fn right_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+        &self, mut row: I,
+    ) -> SparseVector<Self::F, Self::F>
+    where
+        Self::F: ops::Column<G>,
+    {
+        let (index, factor) = row.next().unwrap();
+        let items = self.rows[index].iter().map(|(j, value)| (j, value * factor)).collect();
+        let mut total = SparseVector::new(items, self.m());
+
+        for (index, factor) in row {
+            total.add_multiple_of_row(factor, &self.rows[index]);
+        }
+
+        total
+    }
+
+    fn generate_element<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
         &self,
         i: usize,
-        original_column: C,
+        original_column: I,
     ) -> Option<Self::F>
     where
-        Self::F: ops::Column<C::F>,
+        Self::F: ops::Column<G>,
     {
         debug_assert!(i < self.m());
 
-        let element = self.rows[i].sparse_inner_product::<Self::F, _, _>(original_column.iter());
+        let element = self.rows[i].sparse_inner_product::<Self::F, _, _>(original_column);
         if element.is_not_zero() {
             Some(element)
         } else {
@@ -199,9 +223,10 @@ where
         remove_indices(&mut self.rows, indices);
         // Remove the columns
         for element in &mut self.rows {
-            element.remove_indices(indices);
+            element.remove_indices(&indices);
         }
 
+        self.rows.iter().all(|row| row.len() == self.rows.len());
         debug_assert_eq!(self.m(), old_m - indices.len());
     }
 }
@@ -259,12 +284,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use relp_num::RationalBig;
-    use relp_num::RB;
+    use relp_num::{Rational8, RationalBig, RB};
 
     use crate::algorithm::two_phase::matrix_provider::matrix_data;
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, RemoveBasisPart};
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
     use crate::data::linear_algebra::vector::{SparseVector, Vector};
 
     #[test]
@@ -299,5 +323,12 @@ mod test {
             ],
         };
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_remove_basis_part() {
+        let mut bi2 = BasisInverseRows::<Rational8>::identity(2);
+        bi2.remove_basis_part(&[1]);
+        assert_eq!(bi2, BasisInverseRows::identity(1));
     }
 }

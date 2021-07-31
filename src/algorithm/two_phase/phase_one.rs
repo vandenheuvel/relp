@@ -2,12 +2,12 @@
 use std::collections::HashSet;
 
 use num_traits::Zero;
-use relp_num::Signed;
+use relp_num::{NonZero, Signed};
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
-use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitableWithMemory, PivotRule};
+use crate::algorithm::two_phase::strategy::pivot_rule::{PivotRule, SteepestDescentAlongObjective};
 use crate::algorithm::two_phase::tableau::{debug_assert_in_basic_feasible_solution_state, Tableau};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
@@ -20,7 +20,7 @@ use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially
 /// This can happen either using the simplex method, or some more specialized method.
 ///
 /// TODO(ENHANCEMENT): Problems that can only have full rank
-pub trait FeasibilityComputeTrait: MatrixProvider<Column: IdentityColumn> {
+pub trait FeasibilityComputeTrait: MatrixProvider<Column: Identity> {
     /// Compute a basic feasible solution.
     ///
     /// # Returns
@@ -40,7 +40,7 @@ pub trait FeasibilityComputeTrait: MatrixProvider<Column: IdentityColumn> {
 /// Most generic implementation: finding a basic feasible solution using the Simplex method.
 impl<MP> FeasibilityComputeTrait for MP
 where
-    MP: MatrixProvider<Column: IdentityColumn>
+    MP: MatrixProvider<Column: Identity>
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
@@ -51,12 +51,11 @@ where
             im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
         >,
     {
-        // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
-        //  dynamically
-        type PivotRule = FirstProfitableWithMemory;
 
         let artificial_tableau = Tableau::<_, FullyArtificial<_>>::new(self);
-        primal::<_, _, MP, PivotRule>(artificial_tableau)
+        // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
+        //  dynamically
+        primal::<_, _, MP, SteepestDescentAlongObjective<_>>(artificial_tableau)
     }
 }
 
@@ -82,7 +81,7 @@ pub trait PartialInitialBasis: MatrixProvider {
 
 impl<MP: PartialInitialBasis> FeasibilityComputeTrait for MP
 where
-    MP: MatrixProvider<Column: IdentityColumn>,
+    MP: MatrixProvider<Column: Identity>,
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
@@ -93,12 +92,10 @@ where
             im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
         >,
     {
+        let artificial_tableau = Tableau::<_, PartiallyArtificial<_>>::new(self);
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
-        type PivotRule = FirstProfitableWithMemory;
-
-        let artificial_tableau = Tableau::<_, PartiallyArtificial<_>>::new(self);
-        primal::<_, _, MP, PivotRule>(artificial_tableau)
+        primal::<_, _, MP, SteepestDescentAlongObjective<_>>(artificial_tableau)
     }
 }
 
@@ -130,28 +127,34 @@ where
     IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Artificial,
     MP: MatrixProvider,
-    PR: PivotRule,
+    PR: PivotRule<IM::F>,
 {
-    let mut rule = PR::new();
+    let mut rule = PR::new(&tableau);
+
     loop {
         debug_assert_in_basic_feasible_solution_state(&tableau);
 
         match rule.select_primal_pivot_column(&tableau) {
-            Some((column_nr, cost)) => {
-                let column = tableau.generate_column(column_nr);
-                match tableau.select_primal_pivot_row(column.column()) {
-                    Some(row_nr) => {
-                        tableau.bring_into_basis(column_nr, row_nr, column, cost)
-                    },
+            Some((pivot_column_index, cost)) => {
+                let column_with_info = tableau.generate_column(pivot_column_index);
+                match tableau.select_primal_pivot_row(column_with_info.column()) {
+                    Some(pivot_row_index) => {
+                        let basis_change_computation_info = tableau.bring_into_basis(
+                            pivot_column_index, pivot_row_index,
+                            column_with_info, cost,
+                        );
+                        rule.after_basis_update(basis_change_computation_info, &tableau);
+                    }
                     None => panic!("Artificial cost can not be unbounded."),
                 }
-            },
+            }
             None => break if tableau.objective_function_value().is_zero() {
                 let rank = if tableau.has_artificial_in_basis() {
                     let rows_to_remove = remove_artificial_basis_variables(&mut tableau);
                     if rows_to_remove.is_empty() {
                         Rank::Full
                     } else {
+
                         Rank::Deficient(rows_to_remove)
                     }
                 } else {
@@ -230,21 +233,29 @@ where
     IM: InverseMaintener<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Artificial,
 {
-    let mut artificial_variable_indices = tableau.artificial_basis_columns().into_iter().collect::<Vec<_>>();
-    artificial_variable_indices.sort_unstable();
+    let artificial_variable_indices = tableau.artificial_basis_columns();
+    debug_assert!(artificial_variable_indices.is_sorted_by_key(|&(i, _)| i));
     let mut rows_to_remove = Vec::new();
 
-    for artificial in artificial_variable_indices {
+    for (pivot_row, artificial) in artificial_variable_indices {
         // The problem was initialized with the artificial variable as a basis column, and it is still in the basis
         debug_assert!(tableau.is_in_basis(artificial));
 
-        let pivot_row = tableau.pivot_row_from_artificial(artificial);
-        let column_and_cost = (tableau.nr_artificial_variables()..tableau.nr_columns())
+        let mut candidates = (tableau.nr_artificial_variables()..tableau.nr_columns())
             .filter(|&j| !tableau.is_in_basis(j))
-            .map(|j| (j, tableau.relative_cost(j)))
-            .filter(|(_, cost)| cost.is_zero())
-            .find(|&(j, _)| tableau.generate_element(pivot_row, j)
-                .map_or(false, |element| element.is_positive()));
+            .map(|j| (j, tableau.relative_cost(j)));
+
+        let constraint_value = tableau.variable_value(artificial);
+        let column_and_cost = if constraint_value.is_not_zero() {
+            candidates
+                .filter(|(_, cost)| cost.is_zero())
+                .find(|&(j, _)| tableau.generate_element(pivot_row, j)
+                    .map_or(false, |element| IM::F::is_positive(&element)))
+        } else {
+            candidates
+                .find(|&(j, _)| tableau.generate_element(pivot_row, j)
+                    .map_or(false, |element| element.is_not_zero()))
+        };
 
         if let Some((pivot_column, cost)) = column_and_cost {
             let column = tableau.generate_column(pivot_column);
@@ -252,8 +263,9 @@ where
 
             debug_assert!(!tableau.is_in_basis(artificial));
         } else {
-            rows_to_remove.push(artificial);
+            rows_to_remove.push(pivot_row);
         }
+
 
         debug_assert_in_basic_feasible_solution_state(tableau);
     }

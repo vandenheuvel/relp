@@ -1,8 +1,10 @@
+cargo-features = ["edition2021"]
+
 [package]
 name = "relp"
 version = "0.1.0"
 authors = ["Bram van den Heuvel <bram@vandenheuvel.online>"]
-edition = "2018"
+edition = "2021"
 description = "Rust Exact Linear Programming"
 repository = "https://github.com/vandenheuvel/relp"
 license = "GPL-3.0-only"
@@ -13,7 +15,7 @@ categories = ["algorithms", "science"]
 exclude = ["tests"]
 
 [dependencies]
-relp-num = "0.1.1"
+relp-num = "0.1.2"
 num-traits = "0.2.14"
 
 itertools = "0.10.0"

@@ -12,7 +12,7 @@ use std::fmt;
 
 use index_utils::remove_sparse_indices;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::filter::{Filtered, ToFiltered};
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::variable::FeasibilityLogic;
@@ -32,7 +32,7 @@ pub trait IntoFilteredColumn: Column {
     /// This type has no lifetime attached to it, because it is likely better to filter once and
     /// then iterate over references of the filtered object, rather than to filter repeatedly while
     /// iterating.
-    type Filtered: Column<F=Self::F> + OrderedColumn;
+    type Filtered: Column<F=Self::F>;
 
     /// Filter the column.
     ///
@@ -70,7 +70,6 @@ where
 impl<MP: 'static> ToFiltered for MP
 where
     MP: MatrixProvider<Column: IntoFilteredColumn>,
-    <<MP as MatrixProvider>::Column as IntoFilteredColumn>::Filtered: OrderedColumn,
 {
     type Filtered<'provider> = RemoveRows<'provider, MP>;
 
@@ -324,7 +323,6 @@ where
 impl<'provider, MP> Display for RemoveRows<'provider, MP>
 where
     MP: MatrixProvider<Column: IntoFilteredColumn>,
-    <<MP as MatrixProvider>::Column as IntoFilteredColumn>::Filtered: OrderedColumn,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 8;
