@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::iter::{FromIterator, Sum};
 use std::marker::PhantomData;
-use std::ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Neg};
+use std::ops::{Add, AddAssign, Deref, DivAssign, Mul, MulAssign, Neg};
 use std::slice::{Iter, IterMut};
 use std::vec::IntoIter;
 
@@ -16,7 +16,7 @@ use index_utils::remove_sparse_indices;
 use num_traits::{One, Zero};
 use relp_num::NonZero;
 
-use crate::algorithm::two_phase::matrix_provider::column::{ColumnNumber, SparseSliceIterator};
+use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, SparseSliceIterator};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
@@ -51,12 +51,29 @@ impl<F, C> Sparse<F, C> {
     }
 }
 
+impl<F, C> Sparse<F, C>
+where
+    F: ColumnNumber,
+{
+    pub fn iter(&self) -> SparseSliceIterator<F> {
+        SparseSliceIterator::new(&self.data)
+    }
+}
+
 impl<F, C> IntoIterator for Sparse<F, C> {
     type Item = SparseTuple<F>;
     type IntoIter = IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.data.into_iter()
+    }
+}
+
+impl<F, C> Deref for Sparse<F, C> {
+    type Target = [(usize, F)];
+
+    fn deref(&self) -> &Self::Target {
+        self.data.deref()
     }
 }
 
@@ -199,13 +216,23 @@ impl<F: NonZero + SparseElement<C>, C: SparseComparator> FromIterator<F> for Spa
     }
 }
 
-impl<F, C> Sparse<F, C>
+impl<F: 'static, C> Column for Sparse<F, C>
 where
-    F: SparseElement<C> + ColumnNumber,
+    F: ColumnNumber,
     C: SparseComparator,
 {
-    pub fn iter(&self) -> SparseSliceIterator<F> {
+    type F = F;
+    type Iter<'a> = SparseSliceIterator<'a, F>;
+
+    fn iter(&self) -> Self::Iter<'_> {
         SparseSliceIterator::new(&self.data)
+    }
+
+    fn index_to_string(&self, i: usize) -> String {
+        match self.data.binary_search_by_key(&i, |&(ii, _)| ii) {
+            Ok(index) => self.data[index].1.to_string(),
+            Err(_) => "0".to_string(),
+        }
     }
 }
 
@@ -247,14 +274,13 @@ where
     /// The implementation of this method doesn't look pretty, but it seems to be reasonably fast.
     /// If this method is too slow, it might be wise to consider the switching of the `SparseVector`
     /// storage backend from a `Vec` to a `HashMap`.
-    pub fn add_multiple_of_row<H>(&mut self, multiple: &F, other: &Sparse<F, C>)
+    pub fn add_multiple_of_row<'a, G>(&mut self, multiple: G, other: &'a Sparse<F, C>)
     where
-        H: Zero + Add<F, Output=H>,
-        F: Add<F, Output=H> + From<H> + NonZero,
-        for<'r> &'r F: Mul<&'r F, Output=F>,
+        F: Add<F, Output=F> + NonZero,
+        G: Copy,
+        &'a F: Mul<G, Output=F>,
     {
         debug_assert_eq!(other.len(), self.len());
-        debug_assert!(multiple.borrow().is_not_zero());
 
         let mut new_tuples = Vec::new();
 
@@ -262,13 +288,13 @@ where
         let old_data = mem::replace(&mut self.data, Vec::with_capacity(0));
         for (i, value) in old_data {
             while j < other.data.len() && other.data[j].0 < i {
-                new_tuples.push((other.data[j].0, multiple * &other.data[j].1));
+                new_tuples.push((other.data[j].0, &other.data[j].1 * multiple));
                 j += 1;
             }
 
             if j < other.data.len() && i == other.data[j].0 {
-                let new_value = value + multiple * &other.data[j].1;
-                if !new_value.is_zero() {
+                let new_value = value + &other.data[j].1 * multiple;
+                if new_value.is_not_zero() {
                     new_tuples.push((i, new_value.into()));
                 }
                 j += 1;
@@ -277,7 +303,7 @@ where
             }
         }
         for (j, value) in &other.data[j..] {
-            new_tuples.push((*j, multiple * value));
+            new_tuples.push((*j, value * multiple));
         }
 
         self.data = new_tuples;
@@ -364,6 +390,45 @@ where
         self.data.iter().map(|(i, value)| other[*i].borrow() * value.borrow()).sum()
     }
 
+    pub fn inner_product_with_iter<'a, I, T>(&'a self, mut iter: I) -> F
+    where
+        I: Iterator<Item=SparseTuple<T>>,
+        &'a F: Mul<T, Output=F>,
+        F: Zero + AddAssign,
+    {
+        debug_assert!(!self.data.is_empty());
+
+        let mut total = F::zero();
+
+        let when_equal = |data_index: &mut usize, total: &mut F, value: T| {
+            *total += &self.data[*data_index].1 * value;
+            *data_index += 1;
+        };
+
+        let mut data_index = 0;
+        while let Some((iter_index, value)) = iter.next() {
+            match iter_index.cmp(&self.data[data_index].0) {
+                Ordering::Less => {}
+                Ordering::Equal => when_equal(&mut data_index, &mut total, value),
+                Ordering::Greater => {
+                    while data_index < self.data.len() && self.data[data_index].0 < iter_index {
+                        data_index += 1;
+                    }
+
+                    if data_index < self.data.len() && self.data[data_index].0 == iter_index {
+                        when_equal(&mut data_index, &mut total, value);
+                    }
+                }
+            }
+
+            if data_index == self.data.len() {
+                break;
+            }
+        }
+
+        total
+    }
+
     /// Calculate the inner product between two vectors.
     ///
     /// # Arguments
@@ -432,11 +497,57 @@ where
     }
 }
 
+impl<F, C> Sparse<F, C>
+where
+    for<'r> &'r F: Mul<&'r F, Output=F>,
+    F: Sum,
+{
+    pub fn squared_norm(&self) -> F {
+        self.data.iter()
+            .map(|(_, value)| value * value)
+            .sum()
+    }
+}
+
 impl<F: SparseElement<C>, C: SparseComparator> Display for Sparse<F, C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[")?;
         for (index, value) in &self.data {
-            writeln!(f, "({} {}), ", index, value)?;
+            write!(f, "({} {})", index, value)?;
+            if *index < self.data.len() - 1 {
+                write!(f, ", ")?;
+            }
         }
-        writeln!(f)
+        write!(f, "]")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::data::linear_algebra::vector::{SparseVector, Vector};
+
+    #[test]
+    fn test_inner_product_iter() {
+        assert_eq!(
+            SparseVector::new(vec![(0, 1)], 2).inner_product_with_iter(std::iter::empty::<(_, &i32)>()),
+            0,
+        );
+
+        assert_eq!(
+            SparseVector::new(vec![(0, 1)], 2).inner_product_with_iter([(0, 1)].into_iter()),
+            1,
+        );
+
+        assert_eq!(
+            SparseVector::new(vec![(0, 1)], 2).inner_product_with_iter([(2, 1)].into_iter()),
+            0,
+        );
+
+        assert_eq!(
+            SparseVector::new(vec![(0, 1), (3, 1), (12, 1), (13, 1)], 15).inner_product_with_iter(
+                [(0, -1), (1, 1), (2, 1), (12, 1)].into_iter(),
+            ),
+            0,
+        );
     }
 }

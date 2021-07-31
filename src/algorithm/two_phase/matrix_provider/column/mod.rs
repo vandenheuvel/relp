@@ -26,7 +26,7 @@ pub mod identity;
 /// TODO(ARCHITECTURE): Many basis inverse maintenance algorithms require reallocation of the
 ///  column. Is this more complex set-up worth it?
 // TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
-pub trait Column: Clone {
+pub trait Column: Debug + Clone {
     /// Input data type.
     ///
     /// Items of this type get read and used in additions and multiplications often.
@@ -36,7 +36,7 @@ pub trait Column: Clone {
     /// Type of struct to iterate over this column.
     ///
     /// It should be somewhat cheaply cloneable and as such not be too large.
-    type Iter<'a>: Iterator<Item=SparseTuple<&'a Self::F>> + Clone;
+    type Iter<'a>: ColumnIterator<'a, Self::F>;
 
     /// Derive the iterator object.
     ///
@@ -49,6 +49,8 @@ pub trait Column: Clone {
     /// Note that this index might not be explicitly stored due to the column being sparse.
     fn index_to_string(&self, i: usize) -> String;
 }
+
+pub trait ColumnIterator<'a, F: 'a + ColumnNumber> = Iterator<Item=SparseTuple<&'a F>> + Clone;
 
 /// Basic operations that should be possible with the type of the values of the column.
 ///
@@ -64,20 +66,8 @@ pub trait ColumnNumber =
     Debug +
 ;
 
-/// Column that can be iterated over in-order.
-///
-/// This trait is simply a marker trait to be used in specialization.
-///
-/// TODO(ENHANCEMENT): At the time of writing, it is not possible to specialize the generic
-///  arguments of trait methods. That is why this trait and the standard `Column` trait are
-///  currently both needed.
-///
-// TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
-pub trait OrderedColumn: Column {
-}
-
 /// Wrapping a sparse vector of tuples.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SparseColumn<F> {
     inner: Vec<SparseTuple<F>>
 }
@@ -92,7 +82,7 @@ impl<F> SparseColumn<F> {
 
 impl<F: 'static + ColumnNumber> Column for SparseColumn<F> {
     type F = F;
-    type Iter<'a> = impl Iterator<Item=SparseTuple<&'a Self::F>> + Clone;
+    type Iter<'a> = impl ColumnIterator<'a, F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         SparseSliceIterator::new(&self.inner)
@@ -138,10 +128,7 @@ impl<'a, F> Iterator for SparseSliceIterator<'a, F> {
     }
 }
 
-impl<F: 'static + ColumnNumber> OrderedColumn for SparseColumn<F> {
-}
-
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct DenseColumn<F> {
     inner: Vec<F>,
 }
@@ -158,7 +145,7 @@ impl<F: ColumnNumber> DenseColumn<F> {
 
 impl<F: 'static + ColumnNumber> Column for DenseColumn<F> {
     type F = F;
-    type Iter<'a> = impl Iterator<Item=SparseTuple<&'a Self::F>> + Clone;
+    type Iter<'a> = impl ColumnIterator<'a, F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         DenseSliceIterator::new(&self.inner)
@@ -202,9 +189,6 @@ impl<'a, F: ColumnNumber> Iterator for DenseSliceIterator<'a, F> {
 
         None
     }
-}
-
-impl<F: 'static + ColumnNumber> OrderedColumn for DenseColumn<F> {
 }
 
 #[cfg(test)]

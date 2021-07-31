@@ -300,10 +300,10 @@ fn count_non_zeros<T>(rows: &[Vec<(usize, T)>]) -> (Vec<usize>, Vec<usize>) {
 
 #[cfg(test)]
 mod test {
-    use relp_num::One;
     use relp_num::RB;
 
-    use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumnStruct;
+    use crate::algorithm::two_phase::matrix_provider::column::Column;
+    use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::FullPermutation;
@@ -415,11 +415,11 @@ mod test {
         assert_eq!(result, expected);
 
         assert_eq!(
-            expected.generate_column(IdentityColumnStruct((0, One))).into_column(),
+            expected.left_multiply_by_basis_inverse(IdentityColumn::new(0).iter()).into_column(),
             SparseVector::new(vec![(0, RB!(2)), (1, RB!(2))], 2),
         );
         assert_eq!(
-            expected.generate_column(IdentityColumnStruct((1, One))).into_column(),
+            expected.left_multiply_by_basis_inverse(IdentityColumn::new(1).iter()).into_column(),
             SparseVector::new(vec![(0, RB!(3)), (1, RB!(2))], 2),
         );
     }

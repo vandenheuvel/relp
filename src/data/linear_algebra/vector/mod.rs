@@ -4,7 +4,7 @@
 //! operations needs to be done quickly with these types.
 use std::fmt::{Debug, Display};
 use std::iter::FromIterator;
-use std::ops::{AddAssign, Mul};
+use std::ops::{AddAssign, Deref, Mul};
 use std::slice::{Iter, IterMut};
 
 use num_traits::Zero;
@@ -19,7 +19,7 @@ mod dense;
 mod sparse;
 
 /// Defines basic ways to create or change a vector, regardless of back-end.
-pub trait Vector<F>: PartialEq + FromIterator<F> + Display + Debug {
+pub trait Vector<F>: Deref<Target=[Self::Inner]> + PartialEq + FromIterator<F> + Display + Debug {
     /// Items stored internally.
     type Inner;
 

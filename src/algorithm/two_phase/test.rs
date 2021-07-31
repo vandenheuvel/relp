@@ -132,3 +132,81 @@ fn redundant_row() {
         [RB!(3, 4), RB!(1, 4), RB!(0)].iter().cloned().collect()
     ));
 }
+
+#[test]
+fn empty_row_at_eq() {
+    let constraints = ColumnMajor::from_test_data(&[
+        vec![1, 1],
+        vec![0, 0],
+    ], 2);
+    let b = DenseVector::new(vec![RB!(1), RB!(0)], 2);
+    let variables = vec![
+        Variable {
+            variable_type: VariableType::Continuous,
+            cost: RB!(-2),
+            lower_bound: Some(RB!(0)), // Implicitly assumed
+            upper_bound: Some(RB!(3, 4)),
+            shift: RB!(0),
+            flipped: false,
+        },
+        Variable {
+            variable_type: VariableType::Continuous,
+            cost: RB!(-1),
+            lower_bound: Some(RB!(0)), // Implicitly assumed
+            upper_bound: None,
+            shift: RB!(0),
+            flipped: false,
+        },
+    ];
+
+    let matrix = MatrixData::new(
+        &constraints,
+        &b,
+        vec![],
+        2, 0, 0, 0,
+        &variables
+    );
+    let result = matrix.solve_relaxation::<Carry<RationalBig, BasisInverseRows<_>>>();
+    assert_eq!(result, OptimizationResult::FiniteOptimum(
+        [RB!(3, 4), RB!(1, 4), RB!(0)].iter().cloned().collect()
+    ));
+}
+
+#[test]
+fn empty_row_at_ineq() {
+    let constraints = ColumnMajor::from_test_data(&[
+        vec![1, 1],
+        vec![0, 0],
+    ], 2);
+    let b = DenseVector::new(vec![RB!(1), RB!(1)], 2);
+    let variables = vec![
+        Variable {
+            variable_type: VariableType::Continuous,
+            cost: RB!(-2),
+            lower_bound: Some(RB!(0)), // Implicitly assumed
+            upper_bound: Some(RB!(3, 4)),
+            shift: RB!(0),
+            flipped: false,
+        },
+        Variable {
+            variable_type: VariableType::Continuous,
+            cost: RB!(-1),
+            lower_bound: Some(RB!(0)), // Implicitly assumed
+            upper_bound: None,
+            shift: RB!(0),
+            flipped: false,
+        },
+    ];
+
+    let matrix = MatrixData::new(
+        &constraints,
+        &b,
+        vec![],
+        1, 0, 1, 0,
+        &variables
+    );
+    let result = matrix.solve_relaxation::<Carry<RationalBig, BasisInverseRows<_>>>();
+    assert_eq!(result, OptimizationResult::FiniteOptimum(
+        [RB!(3, 4), RB!(1, 4), RB!(1), RB!(0)].iter().cloned().collect()
+    ));
+}

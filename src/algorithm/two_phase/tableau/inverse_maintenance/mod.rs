@@ -9,11 +9,10 @@
 //! TODO(ENHANCEMENT): A better inverse maintenance algorithm. Start with factorization?
 use std::fmt::{Debug, Display};
 
-use relp_num::Signed;
-
-use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::tableau::BasisChangeComputationInfo;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
@@ -33,7 +32,7 @@ pub trait InverseMaintener: Display + Sized {
     ///
     /// Because the algorithm works with results from this object, many other parts of the code use
     /// the same number type. Examples are the tableau and pivot rules.
-    type F: ops::Field + Signed;
+    type F: ops::Field;
 
     /// Contains the computed column and potentially other information that can be reused from that
     /// process.
@@ -182,14 +181,14 @@ pub trait InverseMaintener: Display + Sized {
         pivot_column_index: usize,
         column: Self::ColumnComputationInfo,
         cost: Self::F,
-    ) -> usize;
+    ) -> BasisChangeComputationInfo<Self::F>;
 
     /// Calculates the cost difference `c_j`.
     ///
     /// This cost difference is the inner product of `minus_pi` and the column.
     // TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
     //  it.
-    fn cost_difference<G, C: Column<F=G> + OrderedColumn>(&self, original_column: &C) -> Self::F
+    fn cost_difference<G, C: Column<F=G>>(&self, original_column: &C) -> Self::F
     where
         Self::F: ops::Column<G>,
         G: Display + Debug,
@@ -206,12 +205,12 @@ pub trait InverseMaintener: Display + Sized {
     /// A `SparseVector<T>` of length `m`.
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
-    fn generate_column<G, C: Column<F=G> + OrderedColumn>(
+    fn generate_column<C: Column>(
         &self,
         original_column: C,
     ) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<G>,
+        Self::F: ops::Column<C::F>,
     ;
 
     /// Generate a single element in the tableau with respect to the current basis.
@@ -222,7 +221,7 @@ pub trait InverseMaintener: Display + Sized {
     /// * `original_column`: Column with respect to the original basis.
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
-    fn generate_element<C: Column + OrderedColumn>(
+    fn generate_element<C: Column>(
         &self,
         i: usize,
         original_column: C,

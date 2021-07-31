@@ -5,11 +5,11 @@
 //! by Christos H. Papadimitriou and Kenneth Steiglitz.
 use crate::algorithm::{OptimizationResult, SolveRelaxation};
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber};
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{IntoFilteredColumn, RemoveRows};
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::{FeasibilityComputeTrait, FullInitialBasis, Rank, RankedFeasibilityResult};
-use crate::algorithm::two_phase::strategy::pivot_rule::SteepestDescent;
+use crate::algorithm::two_phase::strategy::pivot_rule::SteepestDescentAlongObjective;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::artificial::Cost as ArtificialCost;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
@@ -24,7 +24,7 @@ pub mod strategy;
 
 impl<MP> SolveRelaxation for MP
 where
-    MP: MatrixProvider<Column: IdentityColumn + IntoFilteredColumn>,
+    MP: MatrixProvider<Column: Identity + IntoFilteredColumn>,
 {
     // TODO(ENHANCEMENT): Specialize for MatrixProviders that can be filtered directly.
     default fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
@@ -38,11 +38,6 @@ where
         >,
         for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     {
-        // Default choice
-        // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
-        //  dynamically
-        type NonArtificialPR = SteepestDescent;
-
         match self.compute_bfs_giving_im::<IM>() {
             RankedFeasibilityResult::Feasible {
                 rank,
@@ -58,7 +53,9 @@ where
                         basis,
                         &rows_removed,
                     );
-                    phase_two::primal::<_, _, NonArtificialPR>(&mut non_artificial)
+                    // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these
+                    //  strategies dynamically
+                    phase_two::primal::<_, _, SteepestDescentAlongObjective<_>>(&mut non_artificial)
                 },
                 _ => {
                     let mut non_artificial_tableau = Tableau::<_, NonArtificial<_>>::from_artificial(
@@ -67,7 +64,9 @@ where
                         basis,
                         self,
                     );
-                    phase_two::primal::<_, _, NonArtificialPR>(&mut non_artificial_tableau)
+                    // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these
+                    //  strategies dynamically
+                    phase_two::primal::<_, _, SteepestDescentAlongObjective<_>>(&mut non_artificial_tableau)
                 },
             },
             RankedFeasibilityResult::Infeasible => OptimizationResult::Infeasible,
@@ -83,7 +82,7 @@ impl<MP: FullInitialBasis> SolveRelaxation for MP
 where
     // TODO(ARCHITECTURE): The <MP as MatrixProvider>::Column: IdentityColumn bound is needed
     //  because of limitations of the specialization feature; overlap is not (yet) allowed.
-    MP: MatrixProvider<Column: IdentityColumn + IntoFilteredColumn>,
+    MP: MatrixProvider<Column: Identity + IntoFilteredColumn>,
     MP::Rhs: 'static + ColumnNumber,
 {
     fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
@@ -96,10 +95,6 @@ where
         >,
         for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     {
-        // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
-        //  dynamically
-        type NonArtificialPR = SteepestDescent;
-
         let basis_indices = self.pivot_element_indices();
         // Sorting of identity matrix columns
         let inverse_maintainer = IM::from_basis_pivots(&basis_indices, self);
@@ -108,7 +103,9 @@ where
         let mut tableau = Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
             self, inverse_maintainer, basis_indices,
         );
-        phase_two::primal::<_, _, NonArtificialPR>(&mut tableau)
+        // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
+        //  dynamically
+        phase_two::primal::<_, _, SteepestDescentAlongObjective<_>>(&mut tableau)
     }
 }
 

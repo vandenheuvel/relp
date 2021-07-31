@@ -26,27 +26,27 @@ where
     IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<MP::Column as Column>::F>>,
     for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     MP: MatrixProvider,
-    PR: PivotRule,
+    PR: PivotRule<IM::F>,
 {
-    let mut rule = PR::new();
+    let mut rule = PR::new(tableau);
+
     loop {
         debug_assert_in_basic_feasible_solution_state(tableau);
 
         match rule.select_primal_pivot_column(tableau) {
-            Some((column_index, cost)) => {
-                let column = tableau.generate_column(column_index);
-                match tableau.select_primal_pivot_row(column.column()) {
-                    Some(row_index) => {
-                        tableau.bring_into_basis(
-                            column_index,
-                            row_index,
-                            column,
-                            cost,
-                        )
-                    },
+            Some((pivot_column_index, cost)) => {
+                let column_with_info = tableau.generate_column(pivot_column_index);
+                match tableau.select_primal_pivot_row(column_with_info.column()) {
+                    Some(pivot_row_index) => {
+                        let basis_change_computation_info = tableau.bring_into_basis(
+                            pivot_column_index, pivot_row_index,
+                            column_with_info, cost,
+                        );
+                        rule.after_basis_update(basis_change_computation_info,&tableau);
+                    }
                     None => break OptimizationResult::Unbounded,
                 }
-            },
+            }
             None => break OptimizationResult::FiniteOptimum(tableau.current_bfs()),
         }
     }

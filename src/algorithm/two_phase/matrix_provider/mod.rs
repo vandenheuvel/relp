@@ -3,7 +3,7 @@
 //! The Simplex method algorithms work on a tableau. Because this tableau is very sparse in
 //! practice, we store in a matrix that describes the current basis together with the original
 //! (also sparse) matrix data. This module contains structures that can provide a matrix.
-use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
@@ -40,9 +40,7 @@ pub trait MatrixProvider {
     /// TODO(ARCHITECTURE): When GATs are working, cloning can be avoided in some implementations,
     ///  such as the ones that explicitly store the column data, by giving this associated type a
     ///  lifetime parameter. Keep an eye on <https://github.com/rust-lang/rust/issues/44265>.
-    /// TODO(ARCHITECTURE): When specializing on the generic arguments of trait methods is possible,
-    ///  the columns no longer need to be ordered necessarily and the bound can be removed here.
-    type Column: Column + OrderedColumn;
+    type Column: Column;
     /// Cost row type.
     ///
     /// This type will often be of the form `Option<_>` so to not have to store any zero values, the
