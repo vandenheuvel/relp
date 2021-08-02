@@ -851,7 +851,7 @@ where
         debug_assert_eq!(reduced_solution.len(), self.variables.len());
 
         let cost = reduced_solution.iter()
-            .map(|(j, v)| v * &self.variables[*j].cost)
+            .map(|(j, v)| v * &self.variables[j].cost)
             .sum::<G>() + &self.fixed_cost;
         self.reshift_solution(&mut reduced_solution);
 

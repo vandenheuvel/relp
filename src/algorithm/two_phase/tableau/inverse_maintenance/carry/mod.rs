@@ -303,11 +303,11 @@ where
         for (edit_row_index, column_value) in column.iter() {
             match edit_row_index.cmp(&pivot_row_index) {
                 Ordering::Less => {
-                    b_left[*edit_row_index] -= column_value * &*b_middle;
+                    b_left[edit_row_index] -= column_value * &*b_middle;
                 },
                 Ordering::Equal => {},
                 Ordering::Greater => {
-                    b_right[*edit_row_index - (pivot_row_index + 1)] -= column_value * &*b_middle;
+                    b_right[edit_row_index - (pivot_row_index + 1)] -= column_value * &*b_middle;
                 }
             }
         }
@@ -327,7 +327,7 @@ where
     fn update_minus_pi_and_obj(&mut self, pivot_row_index: usize, relative_cost: F) {
         let basis_inverse_row = self.basis_inverse.basis_inverse_row(pivot_row_index);
         for (column_index, value) in basis_inverse_row.iter() {
-            self.minus_pi[*column_index] -= &relative_cost * value;
+            self.minus_pi[column_index] -= &relative_cost * value;
         }
 
         self.minus_objective -= relative_cost * &self.b[pivot_row_index];
@@ -443,7 +443,7 @@ where
             .into_iter().enumerate()
             .filter(|(_, v)| v.is_not_zero())
             .collect::<Vec<_>>();
-        let b_column = SparseColumn { inner: b_data, };
+        let b_column = SparseColumn::new(b_data);
         let mut b_values = vec![F::zero(); provider.nr_rows()];
         for (i, v) in basis_inverse.generate_column(b_column)
             .into_column().into_iter() {

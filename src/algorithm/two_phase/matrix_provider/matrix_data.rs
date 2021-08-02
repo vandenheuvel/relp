@@ -3,14 +3,17 @@
 //! A combination of a sparse matrix of constraints and a list of upper bounds for variables.
 use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::ops::Neg;
 
 use cumsum::cumsum_array_owned;
 use enum_map::{Enum, enum_map, EnumMap};
 use index_utils::remove_sparse_indices;
+use num_traits::One;
 use relp_num::{Field, FieldRef};
 use relp_num::NonZero;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn, SparseSliceIterator};
+use crate::algorithm::two_phase::matrix_provider::column::ColumnNumber;
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -141,7 +144,7 @@ enum ColumnType {
 
 impl<'a, F: 'static> MatrixData<'a, F>
 where
-    F: SparseElement<F> + Field + NonZero,
+    F: SparseElement<F> + ColumnNumber + One + Neg<Output=F>,
     for <'r> &'r F: FieldRef<F>,
 {
     /// Create a new `MatrixData` instance.
@@ -275,7 +278,7 @@ where
 
 impl<'data, F: 'static> MatrixProvider for MatrixData<'data, F>
 where
-    F: Field + SparseElement<F> + NonZero,
+    F: ColumnNumber + One + Neg<Output=F> + SparseElement<F>,
     for<'r> &'r F: FieldRef<F>,
 {
     type Column = Column<F>;
@@ -492,7 +495,7 @@ pub enum Column<F> {
 
 impl<F: 'static> IdentityColumn for Column<F>
 where
-    F: Field,
+    F: ColumnNumber + One,
 {
     #[must_use]
     fn identity(i: usize, len: usize) -> Self {
@@ -510,10 +513,10 @@ where
     //  entire codebase. Once this is done, remove the `clippy::type_repetition_in_bounds`
     //  annotation.
     F: 'static,
-    F: Field,
+    F: ColumnNumber,
 {
     type F = F;
-    type Iter<'a> = impl Iterator<Item = &'a SparseTuple<F>> + Clone;
+    type Iter<'a> = impl Iterator<Item=SparseTuple<&'a F>> + Clone;
 
     #[inline]
     fn iter(&self) -> Self::Iter<'_> {
@@ -524,14 +527,14 @@ where
                 mock_array
             } => {
                 match slack {
-                    Some(slack) => constraint_values.iter().chain(slack.iter()),
-                    None => constraint_values.iter().chain(mock_array.iter()),
+                    Some(slack) => SparseSliceIterator::new(constraint_values).chain(SparseSliceIterator::new(slack)),
+                    None => SparseSliceIterator::new(constraint_values).chain(SparseSliceIterator::new(mock_array)),
                 }
             },
             Column::Slack(single_value, mock_array) =>
-                single_value.iter().chain(mock_array.iter()),
+                SparseSliceIterator::new(single_value).chain(SparseSliceIterator::new(mock_array)),
             Column::TwoSlack(two_values, mock_array) =>
-                two_values.iter().chain(mock_array.iter()),
+                SparseSliceIterator::new(two_values).chain(SparseSliceIterator::new(mock_array)),
         }
     }
 
@@ -571,13 +574,13 @@ where
 /// Mark this column implementation as ordered.
 impl<F: 'static> OrderedColumn for Column<F>
 where
-    F: Field,
+    F: ColumnNumber,
 {
 }
 
 impl<F: 'static> IntoFilteredColumn for Column<F>
 where
-    F: Field,
+    F: ColumnNumber,
 {
     type Filtered = Column<F>;
 
@@ -608,7 +611,7 @@ where
 
 impl<'a, F: 'static> Display for MatrixData<'a, F>
 where
-    F: Field + SparseElement<F> + NonZero + 'a,
+    F: ColumnNumber + One + Neg<Output=F> + 'a,
     for<'r> &'r F: FieldRef<F>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -646,7 +649,7 @@ where
                     write!(f, "|")?;
                 }
                 let value = self.column(column).iter()
-                    .find(|&&(index, _)| index == row)
+                    .find(|&(index, _)| index == row)
                     .map_or_else(|| "0".to_string(), |(_, value)| value.to_string());
                 write!(f, "{:^width$}", value, width = width)?;
             }

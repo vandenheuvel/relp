@@ -81,7 +81,7 @@ where
         let mut rows = vec![Vec::new(); m];
         for (j, column) in columns.into_iter().enumerate() {
             for (i, value) in column.iter() {
-                rows[*i].push((j, value.into()));
+                rows[i].push((j, value.into()));
             }
         }
         debug_assert!(rows.iter().all(|row| row.is_sorted_by_key(|&(j, _)| j)));

@@ -90,14 +90,14 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
         Self { data, }
     }
 
-    fn sparse_inner_product<'a, H, G: 'a, V: Iterator<Item=&'a SparseTuple<G>>>(&self, column: V) -> H
+    fn sparse_inner_product<'a, H, G: 'a, V: Iterator<Item=SparseTuple<&'a G>>>(&self, column: V) -> H
         where
             H: Zero + AddAssign<F>,
             for<'r> &'r F: Mul<&'r G, Output=F>,
     {
         let mut total = H::zero();
         for (i, v) in column {
-            total += &self.data[*i] * v;
+            total += &self.data[i] * v;
         }
 
         total
