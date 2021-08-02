@@ -11,7 +11,7 @@ use relp_num::NonZero;
 use relp_num::One;
 
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
-use relp::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn};
+use relp::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn, SparseSliceIterator};
 use relp::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use relp::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -90,10 +90,11 @@ struct Column {
 
 impl ColumnTrait for Column {
     type F = ArcDirection;
-    type Iter<'a> = impl Iterator<Item = &'a SparseTuple<Self::F>> + Clone;
+    type Iter<'a> = impl Iterator<Item=SparseTuple<&'a Self::F>> + Clone;
 
     fn iter(&self) -> Self::Iter<'_> {
-        self.constraint_values.iter().chain(iter::once(&self.slack))
+        SparseSliceIterator::new(&self.constraint_values)
+            .chain(iter::once((self.slack.0, &self.slack.1)))
     }
 
     fn index_to_string(&self, i: usize) -> String {

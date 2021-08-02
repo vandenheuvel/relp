@@ -32,10 +32,10 @@ pub struct IdentityColumnStruct(pub (usize, One));
 
 impl Column for IdentityColumnStruct {
     type F = One;
-    type Iter<'a> = std::iter::Once<&'a (usize, Self::F)>;
+    type Iter<'a> = std::iter::Once<(usize, &'a Self::F)>;
 
     fn iter(&self) -> Self::Iter<'_> {
-        iter::once(&self.0)
+        iter::once((self.0.0, &self.0.1))
     }
 
     fn index_to_string(&self, i: usize) -> String {

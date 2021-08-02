@@ -3,14 +3,13 @@
 //! Representing network data.
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul};
-use std::slice::Iter;
 
 use index_utils::remove_sparse_indices;
 use relp_num::Field;
 use relp_num::NonZero;
 use relp_num::RationalBig;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn, SparseSliceIterator};
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
@@ -104,10 +103,10 @@ impl IncidenceMatrix {
 pub struct ArcIncidenceColumn(pub Vec<SparseTuple<ArcDirection>>);
 impl Column for ArcIncidenceColumn {
     type F = ArcDirection;
-    type Iter<'a> = ArcIncidenceColumnIter<'a>;
+    type Iter<'a> = SparseSliceIterator<'a, ArcDirection>;
 
     fn iter(&self) -> Self::Iter<'_> {
-        ArcIncidenceColumnIter(self.0.iter())
+        SparseSliceIterator::new(&self.0)
     }
 
     fn index_to_string(&self, i: usize) -> String {
@@ -130,15 +129,6 @@ impl IntoFilteredColumn for ArcIncidenceColumn {
     }
 }
 impl OrderedColumn for ArcIncidenceColumn {
-}
-#[derive(Debug, Clone)]
-pub struct ArcIncidenceColumnIter<'a>(Iter<'a, SparseTuple<ArcDirection>>);
-impl<'a> Iterator for ArcIncidenceColumnIter<'a> {
-    type Item = &'a SparseTuple<ArcDirection>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
-    }
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]

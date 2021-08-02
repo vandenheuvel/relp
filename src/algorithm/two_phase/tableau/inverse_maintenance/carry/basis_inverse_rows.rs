@@ -75,10 +75,10 @@ where
 
         for (edit_row_index, column_value) in column.iter() {
              match edit_row_index.cmp(&pivot_row_index) {
-                Ordering::Less => rows_left[*edit_row_index]
+                Ordering::Less => rows_left[edit_row_index]
                     .add_multiple_of_row(&-column_value, rows_middle),
                 Ordering::Equal => {},
-                Ordering::Greater => rows_right[*edit_row_index - (pivot_row_index + 1)]
+                Ordering::Greater => rows_right[edit_row_index - (pivot_row_index + 1)]
                     .add_multiple_of_row(&-column_value, rows_middle),
             }
         }

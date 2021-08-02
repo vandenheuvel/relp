@@ -10,7 +10,7 @@ use index_utils::remove_sparse_indices;
 use relp_num::{Field, FieldRef};
 use relp_num::NonZero;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn, SparseSliceIterator};
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -513,7 +513,7 @@ where
     F: Field,
 {
     type F = F;
-    type Iter<'a> = impl Iterator<Item = &'a SparseTuple<F>> + Clone;
+    type Iter<'a> = impl Iterator<Item=SparseTuple<&'a F>> + Clone;
 
     #[inline]
     fn iter(&self) -> Self::Iter<'_> {
@@ -524,14 +524,14 @@ where
                 mock_array
             } => {
                 match slack {
-                    Some(slack) => constraint_values.iter().chain(slack.iter()),
-                    None => constraint_values.iter().chain(mock_array.iter()),
+                    Some(slack) => SparseSliceIterator::new(constraint_values).chain(SparseSliceIterator::new(slack)),
+                    None => SparseSliceIterator::new(constraint_values).chain(SparseSliceIterator::new(mock_array)),
                 }
             },
             Column::Slack(single_value, mock_array) =>
-                single_value.iter().chain(mock_array.iter()),
+                SparseSliceIterator::new(single_value).chain(SparseSliceIterator::new(mock_array)),
             Column::TwoSlack(two_values, mock_array) =>
-                two_values.iter().chain(mock_array.iter()),
+                SparseSliceIterator::new(two_values).chain(SparseSliceIterator::new(mock_array)),
         }
     }
 
@@ -646,7 +646,7 @@ where
                     write!(f, "|")?;
                 }
                 let value = self.column(column).iter()
-                    .find(|&&(index, _)| index == row)
+                    .find(|&(index, _)| index == row)
                     .map_or_else(|| "0".to_string(), |(_, value)| value.to_string());
                 write!(f, "{:^width$}", value, width = width)?;
             }

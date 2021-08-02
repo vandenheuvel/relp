@@ -226,20 +226,20 @@ where
         let mut min_values: Option<(usize, IM::F, usize)> = None;
         for (row, xij) in column.iter() {
             if xij > &IM::F::zero() {
-                let ratio = self.inverse_maintainer.get_constraint_value(*row) / xij;
+                let ratio = self.inverse_maintainer.get_constraint_value(row) / xij;
                 // Bland's anti cycling algorithm
-                let leaving_column = self.inverse_maintainer.basis_column_index_for_row(*row);
+                let leaving_column = self.inverse_maintainer.basis_column_index_for_row(row);
                 if let Some((min_index, min_ratio, min_leaving_column)) = &mut min_values {
                     if &ratio == min_ratio && leaving_column < *min_leaving_column {
-                        *min_index = *row;
+                        *min_index = row;
                         *min_leaving_column = leaving_column;
                     } else if &ratio < min_ratio {
-                        *min_index = *row;
+                        *min_index = row;
                         *min_ratio = ratio;
                         *min_leaving_column = leaving_column;
                     }
                 } else {
-                    min_values = Some((*row, ratio, leaving_column))
+                    min_values = Some((row, ratio, leaving_column))
                 }
             }
         }

@@ -11,10 +11,12 @@ use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, DivAssign, Mul, MulAssign, Neg};
 use std::slice::{Iter, IterMut};
 use std::vec::IntoIter;
+
 use index_utils::remove_sparse_indices;
 use num_traits::{One, Zero};
 use relp_num::NonZero;
 
+use crate::algorithm::two_phase::matrix_provider::column::SparseSliceIterator;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
@@ -83,7 +85,7 @@ where
         }
     }
 
-    fn sparse_inner_product<'a, H, G: 'a, I: Iterator<Item=&'a SparseTuple<G>>>(&self, column: I) -> H
+    fn sparse_inner_product<'a, H, G: 'a, I: Iterator<Item=SparseTuple<&'a G>>>(&self, column: I) -> H
     where
         H: Zero + AddAssign<F> + Display + Debug,
         G: Display + Debug,
@@ -93,11 +95,11 @@ where
 
         let mut i = 0;
         for (index, value) in column {
-            while i < self.data.len() && self.data[i].0 < *index {
+            while i < self.data.len() && self.data[i].0 < index {
                 i += 1;
             }
 
-            if i < self.data.len() && self.data[i].0 == *index {
+            if i < self.data.len() && self.data[i].0 == index {
                 total += &self.data[i].1 * value;
                 i += 1;
             }
@@ -217,6 +219,10 @@ where
         debug_assert!(i < len);
 
         Self::new(vec![(i, F::one())], len)
+    }
+
+    pub fn iter(&self) -> SparseSliceIterator<F> {
+        SparseSliceIterator::new(&self.data)
     }
 
     /// Add the multiple of another row to this row.

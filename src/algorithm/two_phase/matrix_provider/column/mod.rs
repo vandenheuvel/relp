@@ -34,7 +34,7 @@ pub trait Column: Clone {
     /// Type of struct to iterate over this column.
     ///
     /// It should be somewhat cheaply cloneable and as such not be too large.
-    type Iter<'a>: Iterator<Item = &'a SparseTuple<Self::F>> + Clone;
+    type Iter<'a>: Iterator<Item=SparseTuple<&'a Self::F>> + Clone;
 
     /// Derive the iterator object.
     ///
@@ -76,14 +76,23 @@ pub trait OrderedColumn: Column {
 #[derive(Clone)]
 #[allow(missing_docs)]
 pub struct SparseColumn<F> {
-    pub inner: Vec<SparseTuple<F>>
+    inner: Vec<SparseTuple<F>>
 }
+
+impl<F> SparseColumn<F> {
+    pub fn new(data: Vec<SparseTuple<F>>) -> Self {
+        Self {
+            inner: data,
+        }
+    }
+}
+
 impl<F: 'static + ColumnNumber> Column for SparseColumn<F> {
     type F = F;
-    type Iter<'a> = impl Iterator<Item = &'a SparseTuple<Self::F>> + Clone;
+    type Iter<'a> = impl Iterator<Item=SparseTuple<&'a Self::F>> + Clone;
 
     fn iter(&self) -> Self::Iter<'_> {
-        self.inner.iter()
+        SparseSliceIterator::new(&self.inner)
     }
 
     fn index_to_string(&self, i: usize) -> String {
@@ -93,5 +102,36 @@ impl<F: 'static + ColumnNumber> Column for SparseColumn<F> {
         }
     }
 }
+
+#[derive(Clone)]
+pub struct SparseSliceIterator<'a, F> {
+    creator: &'a [SparseTuple<F>],
+    data_index: usize,
+}
+
+impl<'a, F> SparseSliceIterator<'a, F> {
+    pub fn new(slice: &'a [SparseTuple<F>]) -> Self {
+        Self {
+            creator: slice,
+            data_index: 0,
+        }
+    }
+}
+
+impl<'a, F> Iterator for SparseSliceIterator<'a, F> {
+    type Item = SparseTuple<&'a F>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.data_index < self.creator.len() {
+            let (index, value) = &self.creator[self.data_index];
+            self.data_index += 1;
+
+            Some((*index, value))
+        } else {
+            None
+        }
+    }
+}
+
 impl<F: 'static + ColumnNumber> OrderedColumn for SparseColumn<F> {
 }
