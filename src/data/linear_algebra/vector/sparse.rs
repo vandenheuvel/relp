@@ -16,7 +16,7 @@ use index_utils::remove_sparse_indices;
 use num_traits::{One, Zero};
 use relp_num::NonZero;
 
-use crate::algorithm::two_phase::matrix_provider::column::SparseSliceIterator;
+use crate::algorithm::two_phase::matrix_provider::column::{ColumnNumber, SparseSliceIterator};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
@@ -201,6 +201,16 @@ impl<F: NonZero + SparseElement<C>, C: SparseComparator> FromIterator<F> for Spa
 
 impl<F, C> Sparse<F, C>
 where
+    F: SparseElement<C> + ColumnNumber,
+    C: SparseComparator,
+{
+    pub fn iter(&self) -> SparseSliceIterator<F> {
+        SparseSliceIterator::new(&self.data)
+    }
+}
+
+impl<F, C> Sparse<F, C>
+where
     F: SparseElement<C>,
     C: SparseComparator,
 {
@@ -219,10 +229,6 @@ where
         debug_assert!(i < len);
 
         Self::new(vec![(i, F::one())], len)
-    }
-
-    pub fn iter(&self) -> SparseSliceIterator<F> {
-        SparseSliceIterator::new(&self.data)
     }
 
     /// Add the multiple of another row to this row.

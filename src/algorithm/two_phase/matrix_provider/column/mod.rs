@@ -4,6 +4,8 @@
 //! w.r.t. the latest basis.
 use std::fmt::{Debug, Display};
 
+use relp_num::NonZero;
+
 use crate::data::linear_algebra::SparseTuple;
 
 pub mod identity;
@@ -52,6 +54,8 @@ pub trait Column: Clone {
 ///
 /// This trait was introduced to avoid some verbose trait bounds throughout the codebase.
 pub trait ColumnNumber =
+    NonZero +
+
     Eq +
     PartialEq +
 
@@ -74,7 +78,6 @@ pub trait OrderedColumn: Column {
 
 /// Wrapping a sparse vector of tuples.
 #[derive(Clone)]
-#[allow(missing_docs)]
 pub struct SparseColumn<F> {
     inner: Vec<SparseTuple<F>>
 }
@@ -109,8 +112,10 @@ pub struct SparseSliceIterator<'a, F> {
     data_index: usize,
 }
 
-impl<'a, F> SparseSliceIterator<'a, F> {
+impl<'a, F: ColumnNumber> SparseSliceIterator<'a, F> {
     pub fn new(slice: &'a [SparseTuple<F>]) -> Self {
+        debug_assert!(slice.iter().all(|(_, v)| v.is_not_zero()));
+
         Self {
             creator: slice,
             data_index: 0,
@@ -134,4 +139,87 @@ impl<'a, F> Iterator for SparseSliceIterator<'a, F> {
 }
 
 impl<F: 'static + ColumnNumber> OrderedColumn for SparseColumn<F> {
+}
+
+#[derive(Clone)]
+struct DenseColumn<F> {
+    inner: Vec<F>,
+}
+
+impl<F: ColumnNumber> DenseColumn<F> {
+    pub fn new(data: Vec<F>) -> Self {
+        debug_assert!(data.iter().any(|v| v.is_not_zero()));
+
+        Self {
+            inner: data,
+        }
+    }
+}
+
+impl<F: 'static + ColumnNumber> Column for DenseColumn<F> {
+    type F = F;
+    type Iter<'a> = impl Iterator<Item=SparseTuple<&'a Self::F>> + Clone;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        DenseSliceIterator::new(&self.inner)
+    }
+
+    fn index_to_string(&self, i: usize) -> String {
+        debug_assert!(i < self.inner.len());
+
+        self.inner[i].to_string()
+    }
+}
+
+#[derive(Clone)]
+pub struct DenseSliceIterator<'a, F> {
+    creator: &'a [F],
+    data_index: usize,
+}
+
+impl<'a, F> DenseSliceIterator<'a, F> {
+    pub fn new(slice: &'a [F]) -> Self {
+        Self {
+            creator: slice,
+            data_index: 0,
+        }
+    }
+}
+
+impl<'a, F: ColumnNumber> Iterator for DenseSliceIterator<'a, F> {
+    type Item = SparseTuple<&'a F>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.data_index < self.creator.len() {
+            let value = &self.creator[self.data_index];
+            if value.is_not_zero() {
+                let index = self.data_index;
+                self.data_index += 1;
+                return Some((index, value));
+            }
+            self.data_index += 1;
+        }
+
+        None
+    }
+}
+
+impl<F: 'static + ColumnNumber> OrderedColumn for DenseColumn<F> {
+}
+
+#[cfg(test)]
+mod test {
+    use crate::algorithm::two_phase::matrix_provider::column::{Column, DenseColumn};
+
+    #[test]
+    fn test_dense() {
+        let data = vec![1, 2, 3, 0, 5];
+        let column = DenseColumn::new(data);
+        let mut column_iter = column.iter();
+        assert_eq!(column_iter.next(), Some((0, &1)));
+        assert_eq!(column_iter.next(), Some((1, &2)));
+        assert_eq!(column_iter.next(), Some((2, &3)));
+        assert_eq!(column_iter.next(), Some((4, &5)));
+        assert_eq!(column_iter.next(), None);
+    }
 }

@@ -414,7 +414,7 @@ pub mod test {
             assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(15));
 
             let v = SparseVector::<T, T>::from_test_data(vec![0]);
-            let w = vec![(0, R32!(0))];
+            let w = vec![(0, R32!(1))];
             assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(0));
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2]);
