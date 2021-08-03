@@ -564,9 +564,8 @@ where
         debug_assert!(pivot_row_index < self.m());
         debug_assert_eq!(column_computation_info.column().len(), self.m());
 
-        let c: &SparseVector<Self::F, Self::F> = column_computation_info.column();
-        let iter: SparseSliceIterator<Self::F> = SparseSliceIterator::new(c);
-        let work_vector = self.basis_inverse.right_multiply_by_basis_inverse::<Self::F, SparseSliceIterator<Self::F>>(iter);
+        let iter = SparseSliceIterator::new(column_computation_info.column());
+        let work_vector = self.basis_inverse.right_multiply_by_basis_inverse::<Self::F, _>(iter);
 
         // The order of these calls matters: the first of the two normalizes the pivot row
         self.update_b(pivot_row_index, column_computation_info.column());
