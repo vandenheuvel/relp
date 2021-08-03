@@ -7,8 +7,8 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use num_traits::{One, Zero};
-use relp_num;
 use relp_num::NonZero;
+use relp_num::Signed;
 
 use crate::data::linear_algebra::traits::SparseElement;
 
@@ -18,8 +18,10 @@ pub trait Field =
     NonZero +
     One +
 
+    Signed +
     Neg<Output=Self> +
 
+    Add<Self, Output=Self> +
     for<'r> Add<&'r Self, Output=Self> +
     AddAssign +
     for<'r> AddAssign<&'r Self> +
@@ -29,6 +31,7 @@ pub trait Field =
     SubAssign +
     for<'r> SubAssign<&'r Self> +
 
+    Mul<Self, Output=Self> +
     for<'r> Mul<&'r Self, Output=Self> +
     MulAssign +
     for<'r> MulAssign<&'r Self> +
@@ -49,6 +52,7 @@ pub trait Field =
 
     SparseElement<Self> +
 
+    for<'r> From<&'r Self> +
     Clone +
     Debug +
     Display +
@@ -68,6 +72,7 @@ where
 pub trait Column<Rhs> =
     for<'r> AddAssign<&'r Rhs> +
     for<'r> Add<&'r Rhs, Output=Self> +
+    for<'r> Mul<&'r Rhs, Output=Self> +
 
     From<Rhs> +
     for<'r> From<&'r Rhs> +

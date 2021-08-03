@@ -10,13 +10,13 @@ use std::iter;
 
 use relp_num::One;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn};
+use crate::algorithm::two_phase::matrix_provider::column::Column;
 
 /// Identity columns are needed for artificial matrices.
 ///
 /// When a matrix provider is to be used in the first phase, it should be possible to represent
 /// identity columns.
-pub trait IdentityColumn: Column {
+pub trait Identity: Column {
     /// Create an identity column, placing a "1" at a certain index and "0"'s otherwise.
     ///
     /// # Arguments
@@ -26,26 +26,35 @@ pub trait IdentityColumn: Column {
     fn identity(i: usize, len: usize) -> Self;
 }
 
-/// A simple identity column useful for debugging, mostly.
-#[derive(Clone)]
-pub struct IdentityColumnStruct(pub (usize, One));
+const ONE: One = One;
 
-impl Column for IdentityColumnStruct {
+/// A simple identity column useful for debugging, mostly.
+#[derive(Debug, Copy, Clone)]
+pub struct IdentityColumn {
+    index: usize,
+}
+
+impl IdentityColumn {
+    pub fn new(index: usize) -> Self {
+        Self {
+            index,
+        }
+    }
+}
+
+impl Column for IdentityColumn {
     type F = One;
     type Iter<'a> = std::iter::Once<(usize, &'a Self::F)>;
 
     fn iter(&self) -> Self::Iter<'_> {
-        iter::once((self.0.0, &self.0.1))
+        iter::once((self.index, &ONE))
     }
 
     fn index_to_string(&self, i: usize) -> String {
-        if i == self.0.0 {
+        if i == self.index {
             "1"
         } else {
             "0"
         }.to_string()
     }
-}
-
-impl OrderedColumn for IdentityColumnStruct {
 }

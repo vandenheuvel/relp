@@ -4,7 +4,7 @@
 //! solution is found quicker. Less variables need to be driven out of the basis.
 use std::collections::HashSet;
 
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
@@ -35,7 +35,7 @@ where
 }
 impl<'a, MP> Kind for Partially<'a, MP>
 where
-    MP: MatrixProvider<Column: IdentityColumn>,
+    MP: MatrixProvider<Column: Identity>,
 {
     type Column = MP::Column;
     type Cost = Cost;
@@ -73,7 +73,7 @@ where
         debug_assert!(j < self.nr_columns());
 
         if j < self.nr_artificial_variables() {
-            <Self::Column as IdentityColumn>::identity(self.column_to_row[j], self.nr_rows())
+            <Self::Column as Identity>::identity(self.column_to_row[j], self.nr_rows())
         } else {
             self.provider.column(j - self.nr_artificial_variables())
         }
@@ -89,7 +89,7 @@ where
 }
 impl<'provider, MP> Artificial for Partially<'provider, MP>
 where
-    MP: MatrixProvider<Column: IdentityColumn>,
+    MP: MatrixProvider<Column: Identity>,
 {
     fn nr_artificial_variables(&self) -> usize {
         self.column_to_row.len()

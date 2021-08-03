@@ -10,12 +10,12 @@ use std::ops::Neg;
 
 use index_utils::remove_indices;
 use relp_num::{NonZero, Signed};
-use relp_num::One;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, OrderedColumn, SparseColumn};
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumnStruct;
+use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnIterator, ColumnNumber, SparseColumn, SparseSliceIterator};
+use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::tableau::BasisChangeComputationInfo;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::SparseTuple;
@@ -86,7 +86,7 @@ pub trait BasisInverse: Display {
     ///
     /// Note that the implementor can choose to internally permute the columns in order to improve
     /// sparsity.
-    fn invert<C: Column + OrderedColumn>(columns: Vec<C>) -> Self
+    fn invert<C: Column>(columns: Vec<C>) -> Self
     where
         Self::F: ops::Column<C::F>,
     ;
@@ -104,7 +104,7 @@ pub trait BasisInverse: Display {
         &mut self,
         pivot_row_index: usize,
         column: Self::ColumnComputationInfo,
-    );
+    ) -> SparseVector<Self::F, Self::F>;
 
     /// Compute a column w.r.t. the current basis by computing `B^-1 c`.
     ///
@@ -118,12 +118,19 @@ pub trait BasisInverse: Display {
     /// A `SparseVector<T>` of length `m`.
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it, some implementations don't need it.
-    fn generate_column<C: Column + OrderedColumn>(
+    fn left_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
         &self,
-        original_column: C,
+        column: I,
     ) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<C::F>,
+        Self::F: ops::Column<G>,
+    ;
+
+    fn right_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+        &self, row: I,
+    ) -> SparseVector<Self::F, Self::F>
+    where
+        Self::F: ops::Column<G>
     ;
 
     /// Generate a single element in the tableau with respect to the current basis.
@@ -134,13 +141,13 @@ pub trait BasisInverse: Display {
     /// * `original_column`: Column with respect to the original basis.
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
-    fn generate_element<C: Column + OrderedColumn>(
+    fn generate_element<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
         &self,
         i: usize,
-        original_column: C,
+        original_column: I,
     ) -> Option<Self::F>
     where
-        Self::F: ops::Column<C::F>,
+        Self::F: ops::Column<G>,
     ;
 
     /// Whether this basis inverse should be recomputed.
@@ -225,8 +232,8 @@ where
         debug_assert_eq!(basis.len(), m);
 
         let b_inverse_columns = (0..m)
-            .map(|i| IdentityColumnStruct((i, One)))
-            .map(|column| basis_inverse.generate_column(column))
+            .map(IdentityColumn::new)
+            .map(|column| basis_inverse.left_multiply_by_basis_inverse(column.iter()))
             .map(BI::ColumnComputationInfo::into_column)
             .map(SparseVector::into_iter);
         let mut b_inverse_rows = vec![Vec::new(); m];
@@ -300,7 +307,7 @@ where
         let (b_left, b_right) = self.b.inner_mut().split_at_mut(pivot_row_index);
         let (b_middle, b_right) = b_right.split_first_mut().unwrap();
 
-        for (edit_row_index, column_value) in column.iter() {
+        for (edit_row_index, column_value) in SparseSliceIterator::new(&column) {
             match edit_row_index.cmp(&pivot_row_index) {
                 Ordering::Less => {
                     b_left[edit_row_index] -= column_value * &*b_middle;
@@ -326,7 +333,7 @@ where
     /// This method requires a normalized pivot element.
     fn update_minus_pi_and_obj(&mut self, pivot_row_index: usize, relative_cost: F) {
         let basis_inverse_row = self.basis_inverse.basis_inverse_row(pivot_row_index);
-        for (column_index, value) in basis_inverse_row.iter() {
+        for (column_index, value) in SparseSliceIterator::new(&basis_inverse_row) {
             self.minus_pi[column_index] -= &relative_cost * value;
         }
 
@@ -445,7 +452,7 @@ where
             .collect::<Vec<_>>();
         let b_column = SparseColumn::new(b_data);
         let mut b_values = vec![F::zero(); provider.nr_rows()];
-        for (i, v) in basis_inverse.generate_column(b_column)
+        for (i, v) in basis_inverse.left_multiply_by_basis_inverse(b_column.iter())
             .into_column().into_iter() {
             b_values[i] = v;
         }
@@ -551,26 +558,40 @@ where
         &mut self,
         pivot_row_index: usize,
         pivot_column_index: usize,
-        column: Self::ColumnComputationInfo,
+        column_computation_info: Self::ColumnComputationInfo,
         relative_cost: Self::F,
-    ) -> usize {
+    ) -> BasisChangeComputationInfo<Self::F> {
         debug_assert!(pivot_row_index < self.m());
-        debug_assert_eq!(column.column().len(), self.m());
+        debug_assert_eq!(column_computation_info.column().len(), self.m());
+
+        let c: &SparseVector<Self::F, Self::F> = column_computation_info.column();
+        let iter: SparseSliceIterator<Self::F> = SparseSliceIterator::new(c);
+        let work_vector = self.basis_inverse.right_multiply_by_basis_inverse::<Self::F, SparseSliceIterator<Self::F>>(iter);
 
         // The order of these calls matters: the first of the two normalizes the pivot row
-        self.update_b(pivot_row_index, column.column());
+        self.update_b(pivot_row_index, column_computation_info.column());
 
-        self.basis_inverse.change_basis(pivot_row_index, column);
+        let column_before_change = self.basis_inverse.change_basis(pivot_row_index, column_computation_info);
         self.update_minus_pi_and_obj(pivot_row_index, relative_cost);
 
         // Update the indices
-        let leaving_column = self.basis_column_index_for_row(pivot_row_index);
+        let leaving_column_index = self.basis_column_index_for_row(pivot_row_index);
         self.basis_indices[pivot_row_index] = pivot_column_index;
 
-        leaving_column
+        let column = IdentityColumn::new(pivot_row_index);
+        let basis_inverse_row = self.basis_inverse.right_multiply_by_basis_inverse(column.iter()).into_column();
+
+        BasisChangeComputationInfo {
+            pivot_row_index,
+            pivot_column_index,
+            leaving_column_index,
+            column_before_change,
+            work_vector,
+            basis_inverse_row,
+        }
     }
 
-    fn cost_difference<G, C: Column<F=G> + OrderedColumn>(&self, original_column: &C) -> Self::F
+    fn cost_difference<G, C: Column<F=G>>(&self, original_column: &C) -> Self::F
     where
         Self::F: ops::Column<G>,
         G: Display + Debug,
@@ -578,17 +599,17 @@ where
         self.minus_pi.sparse_inner_product::<Self::F, _, _>(original_column.iter())
     }
 
-    fn generate_column<G, C: Column<F=G> + OrderedColumn>(
+    fn generate_column<C: Column>(
         &self,
         original_column: C,
     ) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<G>,
+        Self::F: ops::Column<C::F>,
     {
-        self.basis_inverse.generate_column(original_column)
+        self.basis_inverse.left_multiply_by_basis_inverse(original_column.iter())
     }
 
-    fn generate_element<C: Column + OrderedColumn>(
+    fn generate_element<C: Column>(
         &self,
         i: usize,
         original_column: C,
@@ -598,7 +619,7 @@ where
     {
         debug_assert!(i < self.m());
 
-        self.basis_inverse.generate_element(i, original_column)
+        self.basis_inverse.generate_element(i, original_column.iter())
     }
 
     fn after_basis_change<K: Kind>(&mut self, kind: &K)
@@ -620,9 +641,9 @@ where
             .enumerate()
             .map(|(i, v)| (self.basis_column_index_for_row(i), v))
             .filter(|(_, v)| v.is_not_zero())
-            .map(|(i, v)| (i, v.clone()))
+            .map(|(j, v)| (j, v.clone()))
             .collect::<Vec<_>>();
-        tuples.sort_by_key(|&(i, _)| i);
+        tuples.sort_by_key(|&(j, _)| j);
         tuples
     }
 

@@ -12,9 +12,9 @@ use num_traits::One;
 use relp_num::{Field, FieldRef};
 use relp_num::NonZero;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn, SparseSliceIterator};
+use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, SparseSliceIterator};
 use crate::algorithm::two_phase::matrix_provider::column::ColumnNumber;
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
@@ -493,7 +493,7 @@ pub enum Column<F> {
     TwoSlack([(usize, F); 2], [(usize, F); 0]),
 }
 
-impl<F: 'static> IdentityColumn for Column<F>
+impl<F: 'static> Identity for Column<F>
 where
     F: ColumnNumber + One,
 {
@@ -569,13 +569,6 @@ where
             }
         }
     }
-}
-
-/// Mark this column implementation as ordered.
-impl<F: 'static> OrderedColumn for Column<F>
-where
-    F: ColumnNumber,
-{
 }
 
 impl<F: 'static> IntoFilteredColumn for Column<F>

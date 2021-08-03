@@ -9,8 +9,8 @@ use relp_num::Field;
 use relp_num::NonZero;
 use relp_num::RationalBig;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, OrderedColumn, SparseSliceIterator};
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::column::{Column, SparseSliceIterator};
+use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
@@ -115,7 +115,7 @@ impl Column for ArcIncidenceColumn {
             .map_or_else(|| "0".to_string(), |(_, v)| v.to_string())
     }
 }
-impl IdentityColumn for ArcIncidenceColumn {
+impl Identity for ArcIncidenceColumn {
     fn identity(i: usize, _len: usize) -> Self {
         Self(vec![(i, ArcDirection::Incoming)])
     }
@@ -127,8 +127,6 @@ impl IntoFilteredColumn for ArcIncidenceColumn {
         remove_sparse_indices(&mut self.0, to_remove);
         self
     }
-}
-impl OrderedColumn for ArcIncidenceColumn {
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]

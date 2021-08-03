@@ -3,7 +3,6 @@
 ***************************
 
 NAME          FIT1P    
-                                                         
 *   An LP, contributed by Robert Fourer.
 *   It is the primal version of a problem that originates from
 *   a model for fitting linear inequalities to data, by

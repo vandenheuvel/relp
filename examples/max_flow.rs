@@ -11,8 +11,8 @@ use relp_num::NonZero;
 use relp_num::One;
 
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
-use relp::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, OrderedColumn, SparseSliceIterator};
-use relp::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use relp::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, SparseSliceIterator};
+use relp::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use relp::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::phase_one::PartialInitialBasis;
@@ -82,7 +82,7 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct Column {
     constraint_values: Vec<(usize, ArcDirection)>,
     slack: (usize, ArcDirection),
@@ -108,9 +108,7 @@ impl ColumnTrait for Column {
         }
     }
 }
-impl OrderedColumn for Column {
-}
-impl IdentityColumn for Column {
+impl Identity for Column {
     fn identity(i: usize, _len: usize) -> Self {
         Self {
             constraint_values: Vec::with_capacity(0),
