@@ -86,7 +86,7 @@ pub trait BasisInverse: Display {
     ///
     /// Note that the implementor can choose to internally permute the columns in order to improve
     /// sparsity.
-    fn invert<C: Column>(columns: Vec<C>) -> Self
+    fn invert<C: Column>(columns: impl ExactSizeIterator<Item=C>) -> Self
     where
         Self::F: ops::Column<C::F>,
     ;
@@ -447,8 +447,7 @@ where
         ,
         MP::Rhs: 'static,
     {
-        let columns = basis.iter().map(|&j| provider.column(j)).collect::<Vec<_>>();
-        let basis_inverse = BI::invert(columns);
+        let basis_inverse = BI::invert(basis.iter().map(|&j| provider.column(j)));
 
         let b_data = provider.right_hand_side()
             .into_iter().enumerate()
@@ -536,10 +535,7 @@ where
             *basis_column -= nr_artificial;
         }
 
-        let basis_columns = artificial.basis_indices.iter()
-            .map(|&j| rows_removed.column(j))
-            .collect();
-        let basis_inverse = BI::invert(basis_columns);
+        let basis_inverse = BI::invert(artificial.basis_indices.iter().map(|&j| rows_removed.column(j)));
 
         let minus_pi = Carry::create_minus_pi_from_artificial(
             &basis_inverse,
@@ -582,10 +578,9 @@ where
         self.basis_indices[pivot_row_index] = pivot_column_index;
 
         let column_before_change = if self.basis_inverse.should_refactor() {
-            let columns = self.basis_indices.iter()
-                .map(|&j| kind.original_column(j))
-                .collect::<Vec<_>>();
-            self.basis_inverse = BI::invert(columns);
+            self.basis_inverse = BI::invert(
+                self.basis_indices.iter().map(|&j| kind.original_column(j)),
+            );
             column_computation_info.into_column()
         } else {
             self.basis_inverse.change_basis(pivot_row_index, column_computation_info)
