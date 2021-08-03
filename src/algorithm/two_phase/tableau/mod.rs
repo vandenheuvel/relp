@@ -56,10 +56,9 @@ where
         debug_assert!(pivot_row_index < self.nr_rows());
 
         let basis_change_computation_info = self.inverse_maintainer.change_basis(
-            pivot_row_index, pivot_column_index, column_computation_info, cost,
+            pivot_row_index, pivot_column_index, column_computation_info, cost, &self.kind,
         );
         self.update_basis_indices(pivot_column_index, basis_change_computation_info.leaving_column_index);
-        self.inverse_maintainer.after_basis_change(&self.kind);
 
         basis_change_computation_info
     }

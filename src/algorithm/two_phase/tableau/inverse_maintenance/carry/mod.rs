@@ -86,7 +86,7 @@ pub trait BasisInverse: Display {
     ///
     /// Note that the implementor can choose to internally permute the columns in order to improve
     /// sparsity.
-    fn invert<C: Column>(columns: Vec<C>) -> Self
+    fn invert<C: Column>(columns: impl ExactSizeIterator<Item=C>) -> Self
     where
         Self::F: ops::Column<C::F>,
     ;
@@ -126,6 +126,10 @@ pub trait BasisInverse: Display {
         Self::F: ops::Column<G>,
     ;
 
+    /// Multiply a row vector with the basis inverse matrix from the right.
+    ///
+    /// This is the same as multiplying with the transpose of the basis inverse matrix from the left
+    /// when you consider the input vector a column vector: B^-T v = (v^T B^-1)^T.
     fn right_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
         &self, row: I,
     ) -> SparseVector<Self::F, Self::F>
@@ -443,8 +447,7 @@ where
         ,
         MP::Rhs: 'static,
     {
-        let columns = basis.iter().map(|&j| provider.column(j)).collect::<Vec<_>>();
-        let basis_inverse = BI::invert(columns);
+        let basis_inverse = BI::invert(basis.iter().map(|&j| provider.column(j)));
 
         let b_data = provider.right_hand_side()
             .into_iter().enumerate()
@@ -532,10 +535,7 @@ where
             *basis_column -= nr_artificial;
         }
 
-        let basis_columns = artificial.basis_indices.iter()
-            .map(|&j| rows_removed.column(j))
-            .collect();
-        let basis_inverse = BI::invert(basis_columns);
+        let basis_inverse = BI::invert(artificial.basis_indices.iter().map(|&j| rows_removed.column(j)));
 
         let minus_pi = Carry::create_minus_pi_from_artificial(
             &basis_inverse,
@@ -554,13 +554,17 @@ where
         Self::new(minus_obj, minus_pi, artificial.b, artificial.basis_indices, basis_inverse)
     }
 
-    fn change_basis(
+    fn change_basis<K: Kind>(
         &mut self,
         pivot_row_index: usize,
         pivot_column_index: usize,
         column_computation_info: Self::ColumnComputationInfo,
         relative_cost: Self::F,
-    ) -> BasisChangeComputationInfo<Self::F> {
+        kind: &K,
+    ) -> BasisChangeComputationInfo<Self::F>
+    where
+        Self::F: ops::Column<<<K as Kind>::Column as Column>::F>,
+    {
         debug_assert!(pivot_row_index < self.m());
         debug_assert_eq!(column_computation_info.column().len(), self.m());
 
@@ -570,12 +574,19 @@ where
         // The order of these calls matters: the first of the two normalizes the pivot row
         self.update_b(pivot_row_index, column_computation_info.column());
 
-        let column_before_change = self.basis_inverse.change_basis(pivot_row_index, column_computation_info);
-        self.update_minus_pi_and_obj(pivot_row_index, relative_cost);
-
-        // Update the indices
         let leaving_column_index = self.basis_column_index_for_row(pivot_row_index);
         self.basis_indices[pivot_row_index] = pivot_column_index;
+
+        let column_before_change = if self.basis_inverse.should_refactor() {
+            self.basis_inverse = BI::invert(
+                self.basis_indices.iter().map(|&j| kind.original_column(j)),
+            );
+            column_computation_info.into_column()
+        } else {
+            self.basis_inverse.change_basis(pivot_row_index, column_computation_info)
+        };
+
+        self.update_minus_pi_and_obj(pivot_row_index, relative_cost);
 
         let column = IdentityColumn::new(pivot_row_index);
         let basis_inverse_row = self.basis_inverse.right_multiply_by_basis_inverse(column.iter()).into_column();
@@ -619,20 +630,6 @@ where
         debug_assert!(i < self.m());
 
         self.basis_inverse.generate_element(i, original_column.iter())
-    }
-
-    fn after_basis_change<K: Kind>(&mut self, kind: &K)
-    where
-        Self::F: ops::Column<<<K as Kind>::Column as Column>::F>,
-    {
-        // TODO(ENHANCEMENT): Refactoring after the basis change means that the last change was made
-        //  is discarded.
-        if self.basis_inverse.should_refactor() {
-            let columns = self.basis_indices.iter()
-                .map(|&j| kind.original_column(j))
-                .collect::<Vec<_>>();
-            self.basis_inverse = BI::invert(columns);
-        }
     }
 
     fn current_bfs(&self) -> Vec<SparseTuple<Self::F>> {

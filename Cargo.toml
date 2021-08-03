@@ -2,7 +2,7 @@ cargo-features = ["edition2021"]
 
 [package]
 name = "relp"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Bram van den Heuvel <bram@vandenheuvel.online>"]
 edition = "2021"
 description = "Rust Exact Linear Programming"

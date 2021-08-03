@@ -101,7 +101,7 @@ where
         }
     }
 
-    fn invert<C: Column>(columns: Vec<C>) -> Self
+    fn invert<C: Column>(columns: impl ExactSizeIterator<Item=C>) -> Self
     where
         Self::F: ops::Column<C::F>,
     {
@@ -290,12 +290,12 @@ mod test {
 
     #[test]
     fn invert_identity() {
-        let columns = vec![
+        let columns = [
             matrix_data::Column::Slack([(0, RB!(1))], []),
             matrix_data::Column::Slack([(1, RB!(1))], []),
         ];
 
-        let result = BasisInverseRows::<RationalBig>::invert(columns);
+        let result = BasisInverseRows::<RationalBig>::invert(columns.into_iter());
         let expected = BasisInverseRows {
             rows: vec![
                 SparseVector::standard_basis_vector(0, 2),
@@ -307,12 +307,12 @@ mod test {
 
     #[test]
     fn invert_non_identity() {
-        let columns = vec![
+        let columns = [
             matrix_data::Column::TwoSlack([(0, RB!(1)), (1, RB!(1))], []),
             matrix_data::Column::Slack([(1, RB!(1))], []),
         ];
 
-        let result = BasisInverseRows::<RationalBig>::invert(columns);
+        let result = BasisInverseRows::<RationalBig>::invert(columns.into_iter());
         let expected = BasisInverseRows {
             rows: vec![
                 SparseVector::standard_basis_vector(0, 2),
