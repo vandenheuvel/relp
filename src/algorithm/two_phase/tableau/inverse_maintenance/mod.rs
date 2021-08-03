@@ -168,20 +168,26 @@ pub trait InverseMaintener: Display + Sized {
     /// # Arguments
     ///
     /// * `pivot_row_index`: Index of the pivot row.
+    /// * `pivot_column_index`: Index of the pivot column.
     /// * `column`: Column relative to the current basis to be entered into that basis.
     /// * `cost`: Relative cost of that column. The objective function value will change by this
     /// amount.
+    /// * `kind`: Provides access to the matrix being solved, can be used to retrieve columns.
     ///
     /// # Return value
     ///
     /// The index of the column being removed from the basis.
-    fn change_basis(
+    fn change_basis<K: Kind>(
         &mut self,
         pivot_row_index: usize,
         pivot_column_index: usize,
         column: Self::ColumnComputationInfo,
         cost: Self::F,
-    ) -> BasisChangeComputationInfo<Self::F>;
+        kind: &K,
+    ) -> BasisChangeComputationInfo<Self::F>
+    where
+        Self::F: ops::Column<<<K as Kind>::Column as Column>::F>,
+    ;
 
     /// Calculates the cost difference `c_j`.
     ///
@@ -228,16 +234,6 @@ pub trait InverseMaintener: Display + Sized {
     ) -> Option<Self::F>
     where
         Self::F: ops::Column<C::F>,
-    ;
-
-    /// Housekeeping that needs to happen after a basis change.
-    ///
-    /// # Arguments
-    ///
-    /// * `kind`: Provides access to the matrix being solved, can be used to retrieve columns.
-    fn after_basis_change<K: Kind>(&mut self, kind: &K)
-    where
-        Self::F: ops::Column<<<K as Kind>::Column as Column>::F>,
     ;
 
     /// Extract the current basic feasible solution.
