@@ -768,7 +768,7 @@ fn is_part_of_same_section(line: &str) -> bool {
     line.starts_with(' ')
 }
 
-impl<'a> FromStr for Section {
+impl FromStr for Section {
     type Err = ParseError;
 
     /// Try to read a `Section` from a `Vec` slice of `Atom`s.
