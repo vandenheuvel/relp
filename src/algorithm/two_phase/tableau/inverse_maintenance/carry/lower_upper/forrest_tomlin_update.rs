@@ -82,7 +82,7 @@ where
         let pivot_column_index = {
             // Column with a pivot in `pivot_row_index` is leaving
             let mut pivot_column_index = pivot_row_index;
-            self.column_permutation.forward(&mut pivot_column_index);
+            self.column_permutation.backward(&mut pivot_column_index);
             for ForrestTomlinUpdate { rotation, .. } in &self.updates {
                 rotation.forward(&mut pivot_column_index);
             }
@@ -165,7 +165,7 @@ where
         for ForrestTomlinUpdate { eta_file: _, rotation } in self.updates.iter().rev() {
             rotation.backward_unsorted(&mut column);
         }
-        self.column_permutation.backward_unsorted(&mut column);
+        self.column_permutation.forward_unsorted(&mut column);
         column.sort_unstable_by_key(|&(i, _)| i);
 
         Self::ColumnComputationInfo {
@@ -182,7 +182,7 @@ where
     {
         let mut lhs = row
             .map(|(mut i, v)| {
-                self.column_permutation.forward(&mut i);
+                self.column_permutation.backward(&mut i);
                 (i, v.into())
             })
             .collect::<Vec<_>>();

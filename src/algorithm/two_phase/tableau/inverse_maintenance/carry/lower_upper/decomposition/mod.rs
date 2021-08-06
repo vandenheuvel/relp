@@ -18,7 +18,7 @@ impl<F, Update> LUDecomposition<F, Update>
 where
     F: ops::Field + ops::FieldHR,
 {
-    /// Compute the factorization `PBQ = LU`.
+    /// Compute the factorization `PBQ^{-1} = LU`.
     ///
     /// # Arguments
     ///
@@ -121,12 +121,11 @@ where
             }
         }
 
-        // Compute the inverse permutations and invert
+        // We collected the inverse row and column permutations, but we need the inverse row
+        // permutation
         let mut row_permutation = FullPermutation::new(row_permutation);
         row_permutation.invert();
-        let mut column_permutation = FullPermutation::new(column_permutation);
-        column_permutation.invert();
-
+        let column_permutation = FullPermutation::new(column_permutation);
 
         Self {
             row_permutation,
