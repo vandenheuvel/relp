@@ -335,9 +335,13 @@ where
     /// # Note
     ///
     /// This method requires a normalized pivot element.
-    fn update_minus_pi_and_obj(&mut self, pivot_row_index: usize, relative_cost: F) {
-        let basis_inverse_row = self.basis_inverse.basis_inverse_row(pivot_row_index);
-        for (column_index, value) in SparseSliceIterator::new(&basis_inverse_row) {
+    fn update_minus_pi_and_obj(
+        &mut self,
+        pivot_row_index: usize,
+        relative_cost: F,
+        basis_inverse_row: &SparseVector<F, F>,
+    ) {
+        for (column_index, value) in SparseSliceIterator::new(basis_inverse_row) {
             self.minus_pi[column_index] -= &relative_cost * value;
         }
 
@@ -586,10 +590,8 @@ where
             self.basis_inverse.change_basis(pivot_row_index, column_computation_info)
         };
 
-        self.update_minus_pi_and_obj(pivot_row_index, relative_cost);
-
-        let column = IdentityColumn::new(pivot_row_index);
-        let basis_inverse_row = self.basis_inverse.right_multiply_by_basis_inverse(column.iter()).into_column();
+        let basis_inverse_row = self.basis_inverse.basis_inverse_row(pivot_row_index);
+        self.update_minus_pi_and_obj(pivot_row_index, relative_cost, &basis_inverse_row);
 
         BasisChangeComputationInfo {
             pivot_row_index,
