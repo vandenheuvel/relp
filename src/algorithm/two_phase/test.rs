@@ -7,6 +7,7 @@ use crate::algorithm::two_phase::phase_two;
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::forrest_tomlin_update::ForrestTomlinUpdate;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
@@ -34,7 +35,7 @@ fn solve_matrix() {
     let (constraints, b, variables) = create_matrix_data_data();
     let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
 
-    let result = SolveRelaxation::solve_relaxation::<Carry<S, LUDecomposition<S>>>(&matrix_data_form);
+    let result = SolveRelaxation::solve_relaxation::<Carry<S, LUDecomposition<_, ForrestTomlinUpdate<_>>>>(&matrix_data_form);
     //  Optimal value: R64!(4.5)
     assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
         (1, 0.5f64),
@@ -86,7 +87,7 @@ fn solve_relaxation_1() {
         &variables,
     );
 
-    let result = data.solve_relaxation::<Carry<S, LUDecomposition<S>>>();
+    let result = data.solve_relaxation::<Carry<S, LUDecomposition<_, ForrestTomlinUpdate<_>>>>();
     assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
         (0, 3f64 / 2f64),
         (1, 1f64),

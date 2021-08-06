@@ -12,6 +12,7 @@ use relp::data::linear_program::general_form::GeneralForm;
 use relp::io::import;
 
 use crate::cook::get_test_file_path;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::forrest_tomlin_update::ForrestTomlinUpdate;
 
 /// Note that the OBJNAME section was removed from the original problem.
 #[test]
@@ -24,7 +25,7 @@ fn small_example() {
     general.presolve().unwrap();
     let constraint_type_counts = general.standardize();
     let data = general.derive_matrix_data(constraint_type_counts);
-    let result = data.solve_relaxation::<Carry<RationalBig, LUDecomposition<_>>>();
+    let result = data.solve_relaxation::<Carry<RationalBig, LUDecomposition<_, ForrestTomlinUpdate<_>>>>();
 
     match result {
         OptimizationResult::FiniteOptimum(solution) => {

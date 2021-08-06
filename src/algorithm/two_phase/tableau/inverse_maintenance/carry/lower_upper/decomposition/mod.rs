@@ -14,7 +14,7 @@ use crate::algorithm::two_phase::tableau::inverse_maintenance::ops;
 
 mod pivoting;
 
-impl<F> LUDecomposition<F>
+impl<F, Update> LUDecomposition<F, Update>
 where
     F: ops::Field + ops::FieldHR,
 {
@@ -302,18 +302,15 @@ fn count_non_zeros<T>(rows: &[Vec<(usize, T)>]) -> (Vec<usize>, Vec<usize>) {
 mod test {
     use relp_num::RB;
 
-    use crate::algorithm::two_phase::matrix_provider::column::Column;
-    use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::FullPermutation;
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::ColumnComputationInfo;
-    use crate::data::linear_algebra::vector::{SparseVector, Vector};
+    use crate::data::linear_algebra::vector::Vector;
 
     #[test]
     fn identity_2() {
         let rows = vec![vec![(0, RB!(1))], vec![(1, RB!(1))]];
-        let result = LUDecomposition::rows(rows);
+        let result = LUDecomposition::<_, ()>::rows(rows);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::identity(2),
             column_permutation: FullPermutation::identity(2),
@@ -328,7 +325,7 @@ mod test {
     #[test]
     fn identity_3() {
         let rows = vec![vec![(0, RB!(1))], vec![(1, RB!(1))], vec![(2, RB!(1))]];
-        let result = LUDecomposition::rows(rows);
+        let result = LUDecomposition::<_, ()>::rows(rows);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::identity(3),
             column_permutation: FullPermutation::identity(3),
@@ -343,7 +340,7 @@ mod test {
     #[test]
     fn offdiagonal_2_upper() {
         let rows = vec![vec![(0, RB!(1)), (1, RB!(1))], vec![(1, RB!(1))]];
-        let result = LUDecomposition::rows(rows);
+        let result = LUDecomposition::<_, ()>::rows(rows);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::identity(2),
             column_permutation: FullPermutation::identity(2),
@@ -358,7 +355,7 @@ mod test {
     #[test]
     fn offdiagonal_2_lower() {
         let rows = vec![vec![(0, RB!(1))], vec![(0, RB!(1)), (1, RB!(1))]];
-        let result = LUDecomposition::rows(rows);
+        let result = LUDecomposition::<_, ()>::rows(rows);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::identity(2),
             column_permutation: FullPermutation::identity(2),
@@ -373,7 +370,7 @@ mod test {
     #[test]
     fn offdiagonal_2_both() {
         let rows = vec![vec![(0, RB!(1)), (1, RB!(1))], vec![(0, RB!(1))]];
-        let result = LUDecomposition::rows(rows);
+        let result = LUDecomposition::<_, ()>::rows(rows);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::new(vec![1, 0]),
             column_permutation: FullPermutation::identity(2),
@@ -388,7 +385,7 @@ mod test {
     #[test]
     fn wikipedia_example() {
         let columns = vec![vec![(0, RB!(4)), (1, RB!(3))], vec![(0, RB!(6)), (1, RB!(3))]];
-        let result = LUDecomposition::rows(columns);
+        let result = LUDecomposition::<_, ()>::rows(columns);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::identity(2),
             column_permutation: FullPermutation::identity(2),
@@ -398,30 +395,6 @@ mod test {
         };
 
         assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn wikipedia_example2() {
-        let rows = vec![vec![(0, RB!(-1)), (1, RB!(3, 2))], vec![(0, RB!(1)), (1, RB!(-1))]];
-        let result = LUDecomposition::rows(rows);
-        let expected = LUDecomposition {
-            row_permutation: FullPermutation::identity(2),
-            column_permutation: FullPermutation::identity(2),
-            lower_triangular: vec![vec![(1, RB!(-1))]],
-            upper_triangular: vec![vec![(0, RB!(-1))], vec![(0, RB!(3, 2)), (1, RB!(1, 2))]],
-            updates: vec![],
-        };
-
-        assert_eq!(result, expected);
-
-        assert_eq!(
-            expected.left_multiply_by_basis_inverse(IdentityColumn::new(0).iter()).into_column(),
-            SparseVector::new(vec![(0, RB!(2)), (1, RB!(2))], 2),
-        );
-        assert_eq!(
-            expected.left_multiply_by_basis_inverse(IdentityColumn::new(1).iter()).into_column(),
-            SparseVector::new(vec![(0, RB!(3)), (1, RB!(2))], 2),
-        );
     }
 
     mod subtract_multiple_of_column_from_other_column {

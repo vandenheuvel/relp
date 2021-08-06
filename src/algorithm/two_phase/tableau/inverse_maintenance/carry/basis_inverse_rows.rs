@@ -12,6 +12,7 @@ use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnIterato
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, ops};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, RemoveBasisPart};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::forrest_tomlin_update::ForrestTomlinUpdate;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_algebra::vector::{SparseVector, Vector};
@@ -106,15 +107,16 @@ where
         Self::F: ops::Column<C::F>,
     {
         let m = columns.len();
-        let lower_upper = LUDecomposition::invert(columns);
+        let lower_upper = LUDecomposition::<_, ForrestTomlinUpdate<_>>::invert(columns);
 
         let inverted_columns = (0..m)
             .map(IdentityColumn::new)
-            .map(|column| lower_upper.left_multiply_by_basis_inverse(column.iter()));
+            .map(|column| lower_upper.left_multiply_by_basis_inverse(column.iter()))
+            .map(|column_info| column_info.into_column());
 
         let mut row_major = vec![Vec::new(); m];
         for (j, column) in inverted_columns.enumerate() {
-            for (i, value) in column.into_column().into_iter() {
+            for (i, value) in column {
                 row_major[i].push((j, value));
             }
         }

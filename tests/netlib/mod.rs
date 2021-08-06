@@ -16,6 +16,7 @@ use relp::data::linear_program::solution::Solution;
 use relp::io::error::Import;
 use relp::io::mps::parse_fixed;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::forrest_tomlin_update::ForrestTomlinUpdate;
 
 /// # Generation and execution
 #[allow(missing_docs)]
@@ -59,7 +60,7 @@ fn solve(file_name: &str) -> Solution<S> {
     let constraint_type_counts = general.standardize();
 
     let data = general.derive_matrix_data(constraint_type_counts);
-    let result = data.solve_relaxation::<Carry<S, LUDecomposition<_>>>();
+    let result = data.solve_relaxation::<Carry<S, LUDecomposition<_, ForrestTomlinUpdate<_>>>>();
 
     match result {
         OptimizationResult::FiniteOptimum(vector) => {
