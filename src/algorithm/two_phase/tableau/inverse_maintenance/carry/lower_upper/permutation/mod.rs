@@ -1,15 +1,21 @@
 /// # Permutations
 ///
 /// Logic for permuting and more specifically rotating column and row indices.
+mod full;
 pub use full::Full as FullPermutation;
+
+mod identity;
 pub use identity::Identity as IdentityPermutation;
+
+mod rotate_to_back;
 pub use rotate_to_back::RotateToBack as RotateToBackPermutation;
+
+mod swap;
 pub use swap::Swap as SwapPermutation;
 
-mod full;
-mod identity;
-mod rotate_to_back;
-mod swap;
+mod rotate;
+pub use rotate::RotateLeft as RotateLeftPermutation;
+pub use rotate::RotateRight as RotateRightPermutation;
 
 /// Basic permutation behavior.
 ///
