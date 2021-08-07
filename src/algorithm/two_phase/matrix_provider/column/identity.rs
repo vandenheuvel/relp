@@ -11,6 +11,7 @@ use std::iter;
 use relp_num::One;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
+use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
 
 /// Identity columns are needed for artificial matrices.
 ///
@@ -44,7 +45,7 @@ impl IdentityColumn {
 
 impl Column for IdentityColumn {
     type F = One;
-    type Iter<'a> = std::iter::Once<(usize, &'a Self::F)>;
+    type Iter<'a> = impl ColumnIterator<'a, Self::F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         iter::once((self.index, &ONE))

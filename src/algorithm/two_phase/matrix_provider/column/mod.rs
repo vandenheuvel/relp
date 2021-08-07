@@ -26,7 +26,7 @@ pub mod identity;
 /// TODO(ARCHITECTURE): Many basis inverse maintenance algorithms require reallocation of the
 ///  column. Is this more complex set-up worth it?
 // TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
-pub trait Column: Debug + Clone {
+pub trait Column: Debug {
     /// Input data type.
     ///
     /// Items of this type get read and used in additions and multiplications often.
