@@ -71,6 +71,7 @@ where
     /// * `vector`: Sparse vector of size `self.len`.
     pub fn apply_right(&self, vector: &mut Vec<(usize, F)>) {
         debug_assert!(vector.windows(2).all(|w| w[0].0 < w[1].0));
+        debug_assert!(vector.last().map_or(true, |&(i, _)| i < self.len));
 
         // We don't modify `vector` below this index
         let pivot_index = vector.binary_search_by_key(&self.pivot, |&(i, _)| i);
@@ -110,6 +111,7 @@ where
     /// is affected by that.
     pub fn update_spike_pivot_value(&self, spike: &mut Vec<(usize, F)>) {
         debug_assert!(spike.windows(2).all(|w| w[0].0 < w[1].0));
+        debug_assert!(spike.last().unwrap().0 < self.len);
 
         let has_pivot_index = spike.binary_search_by_key(&self.pivot, |&(i, _)| i);
         let search_index = match has_pivot_index {
