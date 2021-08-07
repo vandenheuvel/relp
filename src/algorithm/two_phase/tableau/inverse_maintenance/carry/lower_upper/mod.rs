@@ -1,10 +1,12 @@
 //! # LU decomposition
+use std::cell::RefCell;
 use std::cmp::max;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::Display;
 use std::iter;
+use std::ops::DerefMut;
 
 use num_traits::Zero;
 
@@ -13,12 +15,15 @@ use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputatio
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::eta_file::EtaFile;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{FullPermutation, Permutation, RotateToBackPermutation};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::triangular_solve::{triangle_discover, triangle_process};
+use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_algebra::vector::{SparseVector, Vector};
 
 mod decomposition;
 mod permutation;
 mod eta_file;
+mod triangular_solve;
 
 /// Decompose a matrix `B` into `PBQ = LU` where
 ///
@@ -56,6 +61,45 @@ pub struct LUDecomposition<F> {
     // TODO(PERFORMANCE): Consider an Option<Permutation> instead to avoid doing identities
     // TODO(ARCHITECTURE): Consider grouping pivot index and eta file in a single update struct.
     updates: Vec<(EtaFile<F>, RotateToBackPermutation)>,
+
+    work: RefCell<WorkSpace<F>>,
+}
+
+#[derive(Eq, PartialEq, Clone, Debug)]
+struct WorkSpace<F> {
+    pub discovered: Vec<usize>,
+    pub marked: Vec<bool>,
+    pub stack: Vec<(usize, usize)>,
+    pub scattered: Vec<F>,
+}
+
+impl<F: Default + Clone> WorkSpace<F> {
+    fn new(m: usize) -> Self {
+        Self {
+            /// Topologically ordered indices.
+            discovered: Vec::with_capacity(m),
+            /// Whether the index was already discovered.
+            marked: vec![false; m],
+            /// Stack of columns that still need to happen.
+            stack: Vec::with_capacity(m),
+            /// Space to scatter in.
+            scattered: vec![F::default(); m],
+        }
+    }
+}
+
+impl<F> WorkSpace<F> {
+    fn len(&self) -> usize {
+        let m = self.discovered.capacity();
+
+        debug_assert_eq!(self.stack.capacity(), m);
+        debug_assert_eq!(self.marked.capacity(), m);
+        debug_assert_eq!(self.marked.len(), m);
+        debug_assert_eq!(self.scattered.capacity(), m);
+        debug_assert_eq!(self.scattered.len(), m);
+
+        m
+    }
 }
 
 impl<F> BasisInverse for LUDecomposition<F>
@@ -73,6 +117,7 @@ where
             upper_triangular: vec![vec![]; m - 1],
             upper_diagonal: vec![F::one(); m],
             updates: vec![],
+            work: RefCell::new(WorkSpace::new(m)),
         }
     }
 
@@ -183,10 +228,9 @@ where
         Self::F: ops::Column<I::F>,
     {
         let rhs = iter
-            .map(|(i, v)| (self.row_permutation[i], v.into()))
-            // Also sorts after the row permutation
-            .collect::<BTreeMap<_, _>>();
+            .map(|(i, v)| (self.row_permutation[i], v.into()));
         let mut w = self.left_multiply_by_lower_inverse(rhs);
+         w.sort_unstable_by_key(|&(i, _)| i);
 
         for (eta, q) in &self.updates {
             eta.apply_right(&mut w);
@@ -196,7 +240,7 @@ where
 
         let spike = w.clone();
 
-        let mut column = self.left_multiply_by_upper_inverse(w.into_iter().collect());
+        let mut column = self.left_multiply_by_upper_inverse(w);
 
         for (_, q) in self.updates.iter().rev() {
             q.backward_unsorted(&mut column);
@@ -267,7 +311,8 @@ where
         }
 
         let mut tuples = self.right_multiply_by_lower_inverse(w.into_iter().collect());
-        self.row_permutation.backward_sorted(&mut tuples);
+        self.row_permutation.backward_unsorted(&mut tuples);
+        tuples.sort_unstable_by_key(|&(i, _)| i);
 
         SparseVector::new(tuples, self.m())
     }
@@ -284,41 +329,35 @@ impl<F> LUDecomposition<F>
 where
     F: ops::Field + ops::FieldHR,
 {
-    fn left_multiply_by_lower_inverse(&self, mut rhs: BTreeMap<usize, F>) -> Vec<(usize, F)> {
-        let mut result = Vec::new();
+    fn left_multiply_by_lower_inverse<'a, I: ColumnIterator<'a>>(&self, rhs: I) -> Vec<(usize, F)>
+    where
+        F: ops::Column<I::F>,
+    {
+        let mut work_ref_mut = self.work.borrow_mut();
+        let work = work_ref_mut.deref_mut();
 
-        while let Some((row, rhs_value)) = rhs.pop_first() {
-            let column = row;
+        let get_outgoing = |column| if column < self.m() - 1 {
+            Some(&self.lower_triangular[column])
+        } else { None };
 
-            let result_value = rhs_value; // Implicit 1 on the diagonal.
-
-            if column != self.m() - 1 {
-                // Introduce new non zeros
-                for &(i, ref value) in &self.lower_triangular[column] {
-                    insert_or_shift_maybe_remove(i, &result_value * value, &mut rhs);
-                }
-            }
-
-            result.push((row, result_value));
-        }
-
-        result
+        triangle_discover(rhs, get_outgoing, work);
+        triangle_process(get_outgoing, |value, _column| value, work)
     }
 
-    fn left_multiply_by_upper_inverse(&self, mut rhs: BTreeMap<usize, F>) -> Vec<(usize, F)> {
-        let mut result = Vec::new();
+    fn left_multiply_by_upper_inverse(&self, rhs: Vec<SparseTuple<F>>) -> Vec<(usize, F)> {
+        let mut work_ref_mut = self.work.borrow_mut();
+        let work = work_ref_mut.deref_mut();
 
-        while let Some((row, rhs_value)) = rhs.pop_last() {
-            let column = row;
-            let result_value = rhs_value / &self.upper_diagonal[column];
-            self.update_rhs(column, &result_value, &mut rhs);
-            result.push((row, result_value));
-        }
+        let get_outgoing = |column| if column > 0 {
+            Some(&self.upper_triangular[column - 1])
+        } else { None };
 
-        result.reverse();
-        debug_assert!(result.is_sorted_by_key(|&(i, _)| i));
-
-        result
+        triangle_discover(rhs.into_iter(), get_outgoing, work);
+        triangle_process(
+            get_outgoing,
+            |value, column| value / &self.upper_diagonal[column],
+            work,
+        )
     }
 
     fn left_multiply_by_upper_inverse_row(&self, mut rhs: BTreeMap<usize, F>, target_row: usize) -> Option<F> {
@@ -329,20 +368,16 @@ where
                 Ordering::Equal => return Some(rhs_value / &self.upper_diagonal[column]),
                 Ordering::Greater => {
                     let result_value = rhs_value / &self.upper_diagonal[column];
-                    self.update_rhs(column, &result_value, &mut rhs);
+                    if column > 0 {
+                        for &(row, ref value) in &self.upper_triangular[column - 1] {
+                            insert_or_shift_maybe_remove(row, &result_value * value, &mut rhs);
+                        }
+                    }
                 },
             }
         }
 
         None
-    }
-
-    fn update_rhs(&self, column: usize, result_value: &F, rhs: &mut BTreeMap<usize, F>) {
-        if column > 0 {
-            for &(row, ref value) in &self.upper_triangular[column - 1] {
-                insert_or_shift_maybe_remove(row, result_value * value, rhs);
-            }
-        }
     }
 
     fn right_multiply_by_lower_inverse(&self, mut rhs: BTreeMap<usize, F>) -> Vec<(usize, F)> {
@@ -531,22 +566,26 @@ mod test {
     use crate::data::linear_algebra::vector::{SparseVector, Vector};
 
     mod matmul {
+        use std::cell::RefCell;
+
         use crate::algorithm::im_ops::Field;
+        use crate::algorithm::two_phase::matrix_provider::column::SparseSliceIterator;
+        use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::WorkSpace;
 
         use super::*;
 
         #[test]
         fn identity_empty() {
+            use std::iter::empty;
             let identity = LUDecomposition::<RationalBig>::identity(2);
 
-            let column = BTreeMap::new();
+            let column = vec![];
             let result = identity.left_multiply_by_upper_inverse(column);
             assert!(result.is_empty());
             let column = BTreeMap::new();
             let result = identity.right_multiply_by_upper_inverse(column);
             assert!(result.is_empty());
-            let column = BTreeMap::new();
-            let result = identity.left_multiply_by_lower_inverse(column);
+            let result = identity.left_multiply_by_lower_inverse(empty::<(_, &Rational64)>());
             assert!(result.is_empty());
             let column = BTreeMap::new();
             let result = identity.right_multiply_by_lower_inverse(column);
@@ -558,26 +597,26 @@ mod test {
             let identity = LUDecomposition::<RationalBig>::identity(2);
 
             let column = vec![(0, RB!(1))];
-            let result = identity.left_multiply_by_upper_inverse(column.clone().into_iter().collect());
+            let result = identity.left_multiply_by_upper_inverse(column.clone());
             assert_eq!(result, column);
             let column = vec![(0, RB!(1))];
             let result = identity.right_multiply_by_upper_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(0, RB!(1))];
-            let result = identity.left_multiply_by_lower_inverse(column.clone().into_iter().collect());
+            let result = identity.left_multiply_by_lower_inverse(SparseSliceIterator::new(&column));
             assert_eq!(result, column);
             let column = vec![(0, RB!(1))];
             let result = identity.right_multiply_by_lower_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
 
             let column = vec![(1, RB!(1))];
-            let result = identity.left_multiply_by_upper_inverse(column.clone().into_iter().collect());
+            let result = identity.left_multiply_by_upper_inverse(column.clone());
             assert_eq!(result, column);
             let column = vec![(1, RB!(1))];
             let result = identity.right_multiply_by_upper_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(1, RB!(1))];
-            let result = identity.left_multiply_by_lower_inverse(column.clone().into_iter().collect());
+            let result = identity.left_multiply_by_lower_inverse(SparseSliceIterator::new(&column));
             assert_eq!(result, column);
             let column = vec![(1, RB!(1))];
             let result = identity.right_multiply_by_lower_inverse(column.clone().into_iter().collect());
@@ -589,13 +628,15 @@ mod test {
             let identity = LUDecomposition::<RationalBig>::identity(2);
 
             let column = vec![(0, RB!(1)), (1, RB!(1))];
-            let result = identity.left_multiply_by_upper_inverse(column.clone().into_iter().collect());
+            let mut result = identity.left_multiply_by_upper_inverse(column.clone());
+            result.sort_unstable_by_key(|&(i, _)| i);
             assert_eq!(result, column);
             let column = vec![(0, RB!(1)), (1, RB!(1))];
             let result = identity.right_multiply_by_upper_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(0, RB!(1)), (1, RB!(1))];
-            let result = identity.left_multiply_by_lower_inverse(column.clone().into_iter().collect());
+            let mut result = identity.left_multiply_by_lower_inverse(SparseSliceIterator::new(&column));
+            result.sort_unstable_by_key(|&(i, _)| i);
             assert_eq!(result, column);
             let column = vec![(0, RB!(1)), (1, RB!(1))];
             let result = identity.right_multiply_by_lower_inverse(column.clone().into_iter().collect());
@@ -611,6 +652,7 @@ mod test {
                 upper_triangular: vec![vec![]],
                 upper_diagonal: vec![RB!(1), RB!(1)],
                 updates: vec![],
+                work: RefCell::new(WorkSpace::new(2)),
             };
 
             let column: Column<Rational64> = Column::Sparse {
@@ -630,6 +672,7 @@ mod test {
                 upper_triangular: vec![vec![]],
                 upper_diagonal: vec![RB!(1), RB!(1)],
                 updates: vec![],
+                work: RefCell::new(WorkSpace::new(2)),
             };
 
             let column = Column::Sparse {
@@ -662,34 +705,38 @@ mod test {
             let dense = LUDecomposition {
                 row_permutation: FullPermutation::new(vec![1, 0]),
                 column_permutation: FullPermutation::new(vec![0, 1]),
-                lower_triangular: vec![vec![(1, RB!(1, 3))]],
-                upper_triangular: vec![vec![(0, RB!(4))]],
-                upper_diagonal: vec![RB!(3), RB!(2, 3)],
+                lower_triangular: vec![vec![(1, R8!(1, 3))]],
+                upper_triangular: vec![vec![(0, R8!(4))]],
+                upper_diagonal: vec![R8!(3), R8!(2, 3)],
                 updates: vec![],
+                work: RefCell::new(WorkSpace::new(2)),
             };
 
             assert_eq!(
                 dense.left_multiply_by_basis_inverse(IdentityColumn::new(0).iter()).into_column(),
-                SparseVector::new(vec![(0, RB!(-2)), (1, RB!(3, 2))], 2),
+                SparseVector::new(vec![(0, R8!(-2)), (1, R8!(3, 2))], 2),
             );
             assert_eq!(
                 dense.left_multiply_by_basis_inverse(IdentityColumn::new(1).iter()).into_column(),
-                SparseVector::new(vec![(0, RB!(1)), (1, RB!(-1, 2))], 2),
+                SparseVector::new(vec![(0, R8!(1)), (1, R8!(-1, 2))], 2),
             );
             assert_eq!(
                 dense.right_multiply_by_basis_inverse(IdentityColumn::new(0).iter()).into_column(),
-                SparseVector::new(vec![(0, RB!(-2)), (1, RB!(1))], 2),
+                SparseVector::new(vec![(0, R8!(-2)), (1, R8!(1))], 2),
             );
             assert_eq!(
                 dense.right_multiply_by_basis_inverse(IdentityColumn::new(1).iter()).into_column(),
-                SparseVector::new(vec![(0, RB!(3, 2)), (1, RB!(-1, 2))], 2),
+                SparseVector::new(vec![(0, R8!(3, 2)), (1, R8!(-1, 2))], 2),
             );
         }
     }
 
     mod change_basis {
+        use std::cell::RefCell;
+
         use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::eta_file::EtaFile;
         use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::RotateToBackPermutation;
+        use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::WorkSpace;
 
         use super::*;
 
@@ -736,6 +783,7 @@ mod test {
                     EtaFile::new(vec![], 0, 2),
                     RotateToBackPermutation::new(0, 2),
                 )],
+                work: RefCell::new(WorkSpace::new(2)),
             };
             assert_eq!(modified, expected);
         }
@@ -764,6 +812,7 @@ mod test {
                     EtaFile::new(vec![], 1, m),
                     RotateToBackPermutation::new(1, m),
                 )],
+                work: RefCell::new(WorkSpace::new(m)),
             };
             assert_eq!(modified, expected);
         }
@@ -779,6 +828,7 @@ mod test {
                 upper_triangular: vec![vec![], vec![], vec![(1, RB!(5))]],
                 upper_diagonal: vec![RB!(1), RB!(1), RB!(4), RB!(6)],
                 updates: vec![],
+                work: RefCell::new(WorkSpace::new(m)),
             };
 
             let spike = vec![(1, RB!(2)), (2, RB!(3)), (3, RB!(4))];
@@ -800,6 +850,7 @@ mod test {
                     EtaFile::new(vec![(3, RB!(5, 6))], 1, m),
                     RotateToBackPermutation::new(1, m),
                 )],
+                work: RefCell::new(WorkSpace::new(m)),
             };
             assert_eq!(modified, expected);
 
@@ -857,6 +908,7 @@ mod test {
                 ],
                 upper_diagonal: vec![RB!(11), RB!(22), RB!(33), RB!(44), RB!(55)],
                 updates: vec![],
+                work: RefCell::new(WorkSpace::new(m)),
             };
 
             let spike = vec![(0, RB!(12)), (1, RB!(22)), (2, RB!(32)), (3, RB!(42))];
@@ -886,6 +938,7 @@ mod test {
                         ], 1, m),
                     RotateToBackPermutation::new(1, m),
                 )],
+                work: RefCell::new(WorkSpace::new(m)),
             };
             assert_eq!(modified, expected);
 

@@ -52,6 +52,8 @@ pub trait Field =
 
     SparseElement<Self> +
 
+    Default +
+
     for<'r> From<&'r Self> +
     Clone +
     Debug +

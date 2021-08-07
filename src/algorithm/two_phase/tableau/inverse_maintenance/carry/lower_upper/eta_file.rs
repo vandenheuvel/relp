@@ -78,9 +78,7 @@ where
 
         let mut total = F::zero();
         let mut eta_index = 0;
-        let mut vector_index = match pivot_index {
-            Ok(index) | Err(index) => index,
-        };
+        let mut vector_index = pivot_index.into_ok_or_err();
 
         while eta_index < self.values.len() && vector_index < vector.len() {
             match self.values[eta_index].0.cmp(&vector[vector_index].0) {

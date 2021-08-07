@@ -8,9 +8,10 @@ use std::ops::{Mul, Neg, Sub};
 use num_traits::Zero;
 
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::pivoting::{Markowitz, PivotRule};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::{LUDecomposition, WorkSpace};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{FullPermutation, Permutation, SwapPermutation};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::ops;
+use std::cell::RefCell;
 
 mod pivoting;
 
@@ -139,6 +140,7 @@ where
             upper_triangular,
             upper_diagonal,
             updates: Vec::new(),
+            work: RefCell::new(WorkSpace::new(m)),
         }
     }
 }
@@ -310,11 +312,12 @@ mod test {
     use crate::algorithm::two_phase::matrix_provider::column::{Column, SparseSliceIterator, DenseSliceIterator};
     use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::{LUDecomposition, WorkSpace};
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::FullPermutation;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::ColumnComputationInfo;
     use crate::data::linear_algebra::vector::{SparseVector, Vector};
     use std::collections::VecDeque;
+    use std::cell::RefCell;
 
     #[test]
     fn identity_2() {
@@ -327,6 +330,7 @@ mod test {
             upper_triangular: vec![vec![]],
             upper_diagonal: vec![RB!(1), RB!(1)],
             updates: vec![],
+            work: RefCell::new(WorkSpace::new(2)),
         };
 
         assert_eq!(result, expected);
@@ -343,6 +347,7 @@ mod test {
             upper_triangular: vec![vec![], vec![]],
             upper_diagonal: vec![RB!(1), RB!(1), RB!(1)],
             updates: vec![],
+            work: RefCell::new(WorkSpace::new(3)),
         };
 
         assert_eq!(result, expected);
@@ -359,6 +364,7 @@ mod test {
             upper_triangular: vec![vec![(0, RB!(1))]],
             upper_diagonal: vec![RB!(1), RB!(1)],
             updates: vec![],
+            work: RefCell::new(WorkSpace::new(2)),
         };
 
         assert_eq!(result, expected);
@@ -375,6 +381,7 @@ mod test {
             upper_triangular: vec![vec![]],
             upper_diagonal: vec![RB!(1), RB!(1)],
             updates: vec![],
+            work: RefCell::new(WorkSpace::new(2)),
         };
 
         assert_eq!(result, expected);
@@ -391,6 +398,7 @@ mod test {
             upper_triangular: vec![vec![]],
             upper_diagonal: vec![RB!(1), RB!(1)],
             updates: vec![],
+            work: RefCell::new(WorkSpace::new(2)),
         };
 
         assert_eq!(result, expected);
@@ -407,6 +415,7 @@ mod test {
             upper_triangular: vec![vec![(0, RB!(3))]],
             upper_diagonal: vec![RB!(4), RB!(-3, 2)],
             updates: vec![],
+            work: RefCell::new(WorkSpace::new(2)),
         };
 
         assert_eq!(result, expected);
@@ -423,6 +432,7 @@ mod test {
             upper_triangular: vec![vec![(0, RB!(3, 2))]],
             upper_diagonal: vec![RB!(-1), RB!(1, 2)],
             updates: vec![],
+            work: RefCell::new(WorkSpace::new(2)),
         };
 
         assert_eq!(result, expected);
