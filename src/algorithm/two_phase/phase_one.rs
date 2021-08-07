@@ -132,7 +132,10 @@ where
     let mut rule = PR::new(&tableau);
 
     loop {
-        debug_assert_in_basic_feasible_solution_state(&tableau);
+        debug_assert!({
+            debug_assert_in_basic_feasible_solution_state(&tableau);
+            true
+        });
 
         match rule.select_primal_pivot_column(&tableau) {
             Some((pivot_column_index, cost)) => {
