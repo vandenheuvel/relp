@@ -21,7 +21,7 @@ num-traits = "0.2.14"
 itertools = "0.10.0"
 fifo-set = "1.0.0"
 cumsum = "1.0.0"
-index-utils = "2.0.0"
+index-utils = { version = "2.1.1", features = ["num-traits"] }
 enum-map = "1.1.1"
 
 # TODO(PACKAGING): Make this an optional dependency.

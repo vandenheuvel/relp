@@ -262,12 +262,12 @@ where
 
                 let original_column = tableau.original_column(j);
 
-                let alpha_j_bar = info.basis_inverse_row.inner_product_with_iter(original_column.iter());
+                let alpha_j_bar: IM::F = info.basis_inverse_row.sparse_inner_product(original_column.iter());
 
                 let alternative = if alpha_j_bar.is_not_zero() {
                     let alpha_j_bar_squared = &alpha_j_bar * &alpha_j_bar;
 
-                    let inner_product: F = info.work_vector.inner_product_with_iter(original_column.iter());
+                    let inner_product: F = info.work_vector.sparse_inner_product(original_column.iter());
                     if inner_product.is_not_zero() {
                         let first = alpha_j_bar * inner_product;
                         for _ in 0..2 {
