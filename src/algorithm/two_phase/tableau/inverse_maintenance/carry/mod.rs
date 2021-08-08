@@ -119,7 +119,7 @@ pub trait BasisInverse: Display {
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it, some implementations don't need it.
     fn left_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
-        &self,
+        &'a self,
         column: I,
     ) -> Self::ColumnComputationInfo
     where
@@ -146,7 +146,7 @@ pub trait BasisInverse: Display {
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
     fn generate_element<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
-        &self,
+        &'a self,
         i: usize,
         original_column: I,
     ) -> Option<Self::F>
@@ -603,12 +603,11 @@ where
         }
     }
 
-    fn cost_difference<G, C: Column<F=G>>(&self, original_column: &C) -> Self::F
+    fn cost_difference<C: Column>(&self, original_column: &C) -> Self::F
     where
-        Self::F: ops::Column<G>,
-        G: Display + Debug,
+        Self::F: ops::Column<C::F>,
     {
-        self.minus_pi.sparse_inner_product::<Self::F, _, _>(original_column.iter())
+        self.minus_pi.sparse_inner_product(original_column.iter())
     }
 
     fn generate_column<C: Column>(

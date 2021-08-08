@@ -3,7 +3,6 @@
 //! Wrapping a `Vec<(usize, _)>`, fixed size.
 use std::{fmt, mem};
 use std::borrow::Borrow;
-use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::iter::{FromIterator, Sum};
@@ -12,11 +11,12 @@ use std::ops::{Add, AddAssign, Deref, DivAssign, Mul, MulAssign, Neg};
 use std::slice::{Iter, IterMut};
 use std::vec::IntoIter;
 
-use index_utils::remove_sparse_indices;
+use index_utils::{inner_product_slice_iter, remove_sparse_indices};
 use num_traits::{One, Zero};
 use relp_num::NonZero;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, SparseSliceIterator};
+use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
@@ -102,31 +102,12 @@ where
         }
     }
 
-    fn sparse_inner_product<'a, H, G: 'a, I: Iterator<Item=SparseTuple<&'a G>>>(&self, column: I) -> H
+    fn sparse_inner_product<'a, 'b, G: 'b + ColumnNumber, I: ColumnIterator<'b, G>, O>(&'a self, column: I) -> O
     where
-        H: Zero + AddAssign<F> + Display + Debug,
-        G: Display + Debug,
-        for<'r> &'r F: Mul<&'r G, Output=F>,
+        &'a F: Mul<&'b G, Output=O>,
+        O: Zero + AddAssign,
     {
-        let mut total = H::zero();
-
-        let mut i = 0;
-        for (index, value) in column {
-            while i < self.data.len() && self.data[i].0 < index {
-                i += 1;
-            }
-
-            if i < self.data.len() && self.data[i].0 == index {
-                total += &self.data[i].1 * value;
-                i += 1;
-            }
-
-            if i == self.len {
-                break;
-            }
-        }
-
-        total
+        inner_product_slice_iter(&self.data, column)
     }
 
     /// Append a non-zero value.
@@ -389,112 +370,6 @@ where
 
         self.data.iter().map(|(i, value)| other[*i].borrow() * value.borrow()).sum()
     }
-
-    pub fn inner_product_with_iter<'a, I, T>(&'a self, mut iter: I) -> F
-    where
-        I: Iterator<Item=SparseTuple<T>>,
-        &'a F: Mul<T, Output=F>,
-        F: Zero + AddAssign,
-    {
-        debug_assert!(!self.data.is_empty());
-
-        let mut total = F::zero();
-
-        let when_equal = |data_index: &mut usize, total: &mut F, value: T| {
-            *total += &self.data[*data_index].1 * value;
-            *data_index += 1;
-        };
-
-        let mut data_index = 0;
-        while let Some((iter_index, value)) = iter.next() {
-            match iter_index.cmp(&self.data[data_index].0) {
-                Ordering::Less => {}
-                Ordering::Equal => when_equal(&mut data_index, &mut total, value),
-                Ordering::Greater => {
-                    while data_index < self.data.len() && self.data[data_index].0 < iter_index {
-                        data_index += 1;
-                    }
-
-                    if data_index < self.data.len() && self.data[data_index].0 == iter_index {
-                        when_equal(&mut data_index, &mut total, value);
-                    }
-                }
-            }
-
-            if data_index == self.data.len() {
-                break;
-            }
-        }
-
-        total
-    }
-
-    /// Calculate the inner product between two vectors.
-    ///
-    /// # Arguments
-    ///
-    /// * `other`: Vector to calculate inner product with.
-    ///
-    /// # Return value
-    ///
-    /// The inner product.
-    #[must_use]
-    pub fn inner_product<'a, O, F2>(&'a self, other: &'a Sparse<F2, C>) -> O
-    where
-        O: Zero + AddAssign<C>,
-        F2: SparseElement<C> + NonZero,
-        // We choose to have multiplication output at the C level, because it would also be nonzero
-        // if both F and F2 values are not zero.
-        &'a C: Mul<&'a C, Output=C>,
-    {
-        debug_assert_eq!(other.len(), self.len());
-        debug_assert!(self.data.iter().all(|(_, v)| v.borrow().is_not_zero()));
-        debug_assert!(other.data.iter().all(|(_, v)| v.borrow().is_not_zero()));
-
-        let mut self_lowest = 0;
-        let mut other_lowest = 0;
-
-        let mut total = O::zero();
-        while self_lowest < self.data.len() && other_lowest < other.data.len() {
-            let self_sought = self.data[self_lowest].0;
-            let other_sought = other.data[other_lowest].0;
-            match self_sought.cmp(&other_sought) {
-                Ordering::Less => {
-                    match self.data[self_lowest..].binary_search_by_key(&other_sought, |&(i, _)| i) {
-                        Err(diff) => {
-                            self_lowest += diff;
-                            other_lowest += 1;
-                        },
-                        Ok(diff) => {
-                            total += self.data[self_lowest + diff].1.borrow() * other.data[other_lowest].1.borrow();
-                            self_lowest += diff + 1;
-                            other_lowest += 1;
-                        },
-                    }
-                },
-                Ordering::Greater => {
-                    match other.data[other_lowest..].binary_search_by_key(&self_sought, |&(i, _)| i) {
-                        Err(diff) => {
-                            self_lowest += 1;
-                            other_lowest += diff;
-                        },
-                        Ok(diff) => {
-                            total += self.data[self_lowest].1.borrow() * other.data[other_lowest + diff].1.borrow();
-                            self_lowest += 1;
-                            other_lowest += diff + 1;
-                        },
-                    }
-                },
-                Ordering::Equal => {
-                    total += self.data[self_lowest].1.borrow() * other.data[other_lowest].1.borrow();
-                    self_lowest += 1;
-                    other_lowest += 1;
-                },
-            }
-        }
-
-        total
-    }
 }
 
 impl<F, C> Sparse<F, C>
@@ -524,29 +399,31 @@ impl<F: SparseElement<C>, C: SparseComparator> Display for Sparse<F, C> {
 
 #[cfg(test)]
 mod test {
+    use crate::algorithm::two_phase::matrix_provider::column::SparseSliceIterator;
     use crate::data::linear_algebra::vector::{SparseVector, Vector};
 
     #[test]
     fn test_inner_product_iter() {
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2).inner_product_with_iter(std::iter::empty::<(_, &i32)>()),
+            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product::<i32, _, _>(std::iter::empty::<(_, &i32)>()),
             0,
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2).inner_product_with_iter([(0, 1)].into_iter()),
+            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product::<i32, _, _>(SparseSliceIterator::new(&[(0, 1)])),
             1,
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2).inner_product_with_iter([(2, 1)].into_iter()),
+            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product::<i32, _, _>(SparseSliceIterator::new(&[(2, 1)])),
             0,
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1), (3, 1), (12, 1), (13, 1)], 15).inner_product_with_iter(
-                [(0, -1), (1, 1), (2, 1), (12, 1)].into_iter(),
-            ),
+            SparseVector::new(vec![(0, 1), (3, 1), (12, 1), (13, 1)], 15)
+                .sparse_inner_product::<i32, _, _>(
+                    SparseSliceIterator::new(&[(0, -1), (1, 1), (2, 1), (12, 1)]),
+                ),
             0,
         );
     }
