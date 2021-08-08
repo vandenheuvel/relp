@@ -222,7 +222,7 @@ where
     }
 
     fn generate_element<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
-        &self, i: usize, original_column: I,
+        &'a self, i: usize, original_column: I,
     ) -> Option<Self::F>
     where
         Self::F: ops::Column<G>,

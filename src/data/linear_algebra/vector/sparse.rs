@@ -11,11 +11,12 @@ use std::ops::{Add, AddAssign, Deref, DivAssign, Mul, MulAssign, Neg};
 use std::slice::{Iter, IterMut};
 use std::vec::IntoIter;
 
-use index_utils::remove_sparse_indices;
+use index_utils::{inner_product_slice_iter, remove_sparse_indices};
 use num_traits::{One, Zero};
 use relp_num::NonZero;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, SparseSliceIterator};
+use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
@@ -101,32 +102,12 @@ where
         }
     }
 
-    // TODO(ARCHITECTURE): Move contents to the index-utils crate?
-    fn sparse_inner_product<'a, H, G: 'a, I: Iterator<Item=SparseTuple<&'a G>>>(&self, column: I) -> H
+    fn sparse_inner_product<'a, 'b, G: 'b + ColumnNumber, I: ColumnIterator<'b, G>, O>(&'a self, column: I) -> O
     where
-        H: Zero + AddAssign<F> + Display + Debug,
-        G: Display + Debug,
-        for<'r> &'r F: Mul<&'r G, Output=F>,
+        &'a F: Mul<&'b G, Output=O>,
+        O: Zero + AddAssign,
     {
-        let mut total = H::zero();
-
-        let mut i = 0;
-        for (index, value) in column {
-            while i < self.data.len() && self.data[i].0 < index {
-                i += 1;
-            }
-
-            if i < self.data.len() && self.data[i].0 == index {
-                total += &self.data[i].1 * value;
-                i += 1;
-            }
-
-            if i == self.len {
-                break;
-            }
-        }
-
-        total
+        inner_product_slice_iter(&self.data, column)
     }
 
     /// Append a non-zero value.

@@ -13,7 +13,8 @@ use relp_num::NonZero;
 pub use dense::Dense as DenseVector;
 pub use sparse::Sparse as SparseVector;
 
-use crate::data::linear_algebra::SparseTuple;
+use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
+use crate::algorithm::two_phase::matrix_provider::column::ColumnNumber;
 
 mod dense;
 mod sparse;
@@ -36,11 +37,11 @@ pub trait Vector<F>: Deref<Target=[Self::Inner]> + PartialEq + FromIterator<F> +
     /// Input data wrapped inside a vector.
     fn new(data: Vec<Self::Inner>, len: usize) -> Self;
     /// Compute the inner product with a column vector from a matrix.
-    fn sparse_inner_product<'a, H, G: 'a, V: Iterator<Item=SparseTuple<&'a G>>>(&self, column: V) -> H
+    fn sparse_inner_product<'a, 'b, G: 'b + ColumnNumber, I: ColumnIterator<'b, G>, O>(&'a self, column: I) -> O
     where
-        H: Zero + AddAssign<F> + Display + Debug,
-        G: Display + Debug,
-        for<'r> &'r F: Mul<&'r G, Output=F>,
+        F: 'a,
+        &'a F: Mul<&'b G, Output=O>,
+        O: Zero + AddAssign,
     ;
     /// Make a vector longer by one, by adding an extra value at the end of this vector.
     fn push_value(&mut self, value: F) where F: NonZero;

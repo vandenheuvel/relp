@@ -12,7 +12,8 @@ use std::vec::IntoIter;
 use index_utils::remove_indices;
 use num_traits::Zero;
 
-use crate::data::linear_algebra::SparseTuple;
+use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
+use crate::algorithm::two_phase::matrix_provider::column::ColumnNumber;
 use crate::data::linear_algebra::vector::Vector;
 
 /// Uses a `Vec` as underlying data a structure. Length is fixed at creation.
@@ -98,12 +99,12 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
         Self { data, }
     }
 
-    fn sparse_inner_product<'a, H, G: 'a, V: Iterator<Item=SparseTuple<&'a G>>>(&self, column: V) -> H
-        where
-            H: Zero + AddAssign<F>,
-            for<'r> &'r F: Mul<&'r G, Output=F>,
+    fn sparse_inner_product<'a, 'b, G: 'b + ColumnNumber, I: ColumnIterator<'b, G>, O>(&'a self, column: I) -> O
+    where
+        &'a F: Mul<&'b G, Output=O>,
+        O: Zero + AddAssign,
     {
-        let mut total = H::zero();
+        let mut total = O::zero();
         for (i, v) in column {
             total += &self.data[i] * v;
         }

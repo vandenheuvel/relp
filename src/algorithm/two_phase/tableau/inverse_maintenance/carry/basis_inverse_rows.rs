@@ -145,7 +145,7 @@ where
     }
 
     fn left_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
-        &self, column: I,
+        &'a self, column: I,
     ) -> Self::ColumnComputationInfo
     where
         Self::F: ops::Column<G>,
@@ -177,7 +177,7 @@ where
     }
 
     fn generate_element<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
-        &self,
+        &'a self,
         i: usize,
         original_column: I,
     ) -> Option<Self::F>
@@ -186,7 +186,7 @@ where
     {
         debug_assert!(i < self.m());
 
-        let element = self.rows[i].sparse_inner_product::<Self::F, _, _>(original_column);
+        let element = self.rows[i].sparse_inner_product(original_column);
         if element.is_not_zero() {
             Some(element)
         } else {

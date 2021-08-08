@@ -194,10 +194,9 @@ pub trait InverseMaintener: Display + Sized {
     /// This cost difference is the inner product of `minus_pi` and the column.
     // TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
     //  it.
-    fn cost_difference<G, C: Column<F=G>>(&self, original_column: &C) -> Self::F
+    fn cost_difference<C: Column>(&self, original_column: &C) -> Self::F
     where
-        Self::F: ops::Column<G>,
-        G: Display + Debug,
+        Self::F: ops::Column<C::F>,
     ;
 
     /// Multiplies the submatrix consisting of `minus_pi` and B^-1 by an `original_column`.
