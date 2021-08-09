@@ -3,6 +3,7 @@
 /// Explicitly store both the permutation and its inverse. Used for the column and row permutation
 /// produced by the pivoting during the decomposition.
 use std::{fmt, mem};
+use std::ops::Index;
 
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::Permutation;
 
@@ -55,6 +56,21 @@ impl Full {
     pub fn invert(&mut self) {
         mem::swap(&mut self.forward, &mut self.backward);
     }
+
+    pub fn swap(&mut self, i: usize, j: usize) {
+        debug_assert!(i < self.len());
+        debug_assert!(j < self.len());
+
+        self.forward.swap(i, j);
+        self.backward.swap(i, j);
+    }
+
+    pub fn rotate_right_from(&mut self, i: usize) {
+        debug_assert!(i < self.len());
+
+        self.forward[i..].rotate_right(1);
+        self.backward[i..].rotate_left(1);
+    }
 }
 
 impl Permutation for Full {
@@ -73,6 +89,16 @@ impl Permutation for Full {
     fn len(&self) -> usize {
         self.forward.len()
         // == self.backward.len()
+    }
+}
+
+impl Index<usize> for Full {
+    type Output = usize;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        debug_assert!(index < self.len());
+
+        &self.forward[index]
     }
 }
 
@@ -149,5 +175,31 @@ mod test {
         permutation.invert();
         permutation.forward_unsorted(&mut test);
         assert_eq!(test, original);
+    }
+
+    #[test]
+    fn swap() {
+        let n = 3;
+        let mut p = FullPermutation::identity(n);
+        p.swap(1, 2);
+        for i in 0..n {
+            let mut j = i;
+            p.forward(&mut j);
+            p.backward(&mut j);
+            assert_eq!(j, i);
+        }
+    }
+
+    #[test]
+    fn rotate() {
+        let n = 5;
+        let mut p = FullPermutation::identity(n);
+        p.rotate_right_from(3);
+        for i in 0..n {
+            let mut j = i;
+            p.forward(&mut j);
+            p.backward(&mut j);
+            assert_eq!(j, i);
+        }
     }
 }

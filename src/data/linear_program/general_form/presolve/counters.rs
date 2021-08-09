@@ -59,7 +59,7 @@ where
                 row.iter()
                     .map(|&(j, coefficient)| {
                         let (lower, upper) =  (&general_form.variables[j].lower_bound, &general_form.variables[j].upper_bound);
-                        match coefficient.signum() {
+                        match coefficient.non_zero_signum() {
                             NonZeroSign::Positive => (lower, upper),
                             NonZeroSign::Negative => (upper, lower),
                         }

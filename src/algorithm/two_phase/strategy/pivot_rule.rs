@@ -4,6 +4,7 @@
 use std::ops::Range;
 
 use num_traits::One;
+use relp_num::Signed;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::tableau::{BasisChangeComputationInfo, Tableau};
@@ -104,7 +105,7 @@ where
         (tableau.start_index()..tableau.nr_columns())
             .filter(|&column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
-            .find(|(_, cost)| cost.is_negative())
+            .find(|(_, cost)| Signed::is_negative(cost))
     }
 }
 
@@ -133,7 +134,7 @@ where
         let find = |to_consider: Range<usize>| to_consider
             .filter(|&column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
-            .find(|(_, cost)| cost.is_negative());
+            .find(|(_, cost)| Signed::is_negative(cost));
 
         let potential = self.last_selected
             .map_or_else(
@@ -173,7 +174,7 @@ where
         for (j, cost) in (tableau.start_index()..tableau.nr_columns())
             .filter(|&column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
-            .filter(|(_, cost)| cost.is_negative()) {
+            .filter(|(_, cost)| Signed::is_negative(cost)) {
             if let Some((existing_j, existing_cost)) = smallest.as_mut() {
                 if &cost < existing_cost {
                     *existing_j = j;
@@ -230,7 +231,7 @@ where
         (tableau.start_index()..tableau.nr_columns())
             .filter(|&j| !tableau.is_in_basis(j))
             .map(|j| (j, tableau.relative_cost(j)))
-            .filter(|(_, cost)| cost.is_negative())
+            .filter(|(_, cost)| Signed::is_negative(cost))
             // Take the maximum, because we square the negative cost
             .max_by_key(|(j, cost)| {
                 debug_assert!(self.gamma[*j].is_some());

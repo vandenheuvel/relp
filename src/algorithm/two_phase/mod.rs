@@ -34,7 +34,6 @@ where
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<ArtificialCost> +
             im_ops::Rhs<MP::Rhs> +
-            im_ops::Column<MP::Rhs> +
         >,
         for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     {

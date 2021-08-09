@@ -2,10 +2,10 @@
 //!
 //! Representing network data.
 use std::fmt;
-use std::ops::{Add, AddAssign, Div, Mul};
+use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 use index_utils::remove_sparse_indices;
-use relp_num::Field;
+use relp_num::{Field, Negateable, One};
 use relp_num::NonZero;
 use relp_num::RationalBig;
 
@@ -143,7 +143,6 @@ pub enum ArcDirection {
     Outgoing,
 }
 
-// TODO(ARCHITECTURE): Consider renaming `NonZero` to something like `SparseElement`
 impl NonZero for ArcDirection {
     fn is_not_zero(&self) -> bool {
         true
@@ -159,17 +158,17 @@ impl fmt::Display for ArcDirection {
     }
 }
 
-// TODO(PERFORMANCE): Specialize the below implementations.
 impl From<ArcDirection> for RationalBig {
+    #[must_use]
+    #[inline]
     fn from(direction: ArcDirection) -> Self {
-        match direction {
-            ArcDirection::Incoming => RationalBig::one(),
-            ArcDirection::Outgoing => -RationalBig::one(),
-        }
+        From::from(&direction)
     }
 }
 
 impl From<&ArcDirection> for RationalBig {
+    #[must_use]
+    #[inline]
     fn from(direction: &ArcDirection) -> Self {
         match direction {
             ArcDirection::Incoming => RationalBig::one(),
@@ -178,33 +177,119 @@ impl From<&ArcDirection> for RationalBig {
     }
 }
 
+impl Add<ArcDirection> for RationalBig {
+    type Output = Self;
+
+    #[must_use]
+    #[inline]
+    fn add(mut self, rhs: ArcDirection) -> Self::Output {
+        AddAssign::add_assign(&mut self, rhs);
+        self
+    }
+}
+
 impl Add<&ArcDirection> for RationalBig {
     type Output = Self;
 
-    fn add(self, rhs: &ArcDirection) -> Self::Output {
-        match rhs {
-            ArcDirection::Incoming => self + RationalBig::one(),
-            ArcDirection::Outgoing => self - RationalBig::one(),
-        }
+    #[must_use]
+    #[inline]
+    fn add(mut self, rhs: &ArcDirection) -> Self::Output {
+        AddAssign::add_assign(&mut self, rhs);
+        self
+    }
+}
+
+impl AddAssign<ArcDirection> for RationalBig {
+    #[inline]
+    fn add_assign(&mut self, rhs: ArcDirection) {
+        AddAssign::add_assign(self, &rhs);
     }
 }
 
 impl AddAssign<&ArcDirection> for RationalBig {
+    #[inline]
     fn add_assign(&mut self, rhs: &ArcDirection) {
         match rhs {
-            ArcDirection::Incoming => *self += RationalBig::one(),
-            ArcDirection::Outgoing => *self -= RationalBig::one(),
+            ArcDirection::Incoming => *self += One,
+            ArcDirection::Outgoing => *self -= One,
         }
+    }
+}
+
+impl Sub<ArcDirection> for RationalBig {
+    type Output = Self;
+
+    #[must_use]
+    #[inline]
+    fn sub(mut self, rhs: ArcDirection) -> Self::Output {
+        SubAssign::sub_assign(&mut self, rhs);
+        self
+    }
+}
+
+impl Sub<&ArcDirection> for RationalBig {
+    type Output = Self;
+
+    #[must_use]
+    #[inline]
+    fn sub(mut self, rhs: &ArcDirection) -> Self::Output {
+        SubAssign::sub_assign(&mut self, rhs);
+        self
+    }
+}
+
+impl SubAssign<ArcDirection> for RationalBig {
+    #[inline]
+    fn sub_assign(&mut self, rhs: ArcDirection) {
+        SubAssign::sub_assign(self, &rhs);
+    }
+}
+
+impl SubAssign<&ArcDirection> for RationalBig {
+    #[inline]
+    fn sub_assign(&mut self, rhs: &ArcDirection) {
+        match rhs {
+            ArcDirection::Incoming => *self -= One,
+            ArcDirection::Outgoing => *self += One,
+        }
+    }
+}
+
+impl Mul<ArcDirection> for RationalBig {
+    type Output = Self;
+
+    #[must_use]
+    #[inline]
+    fn mul(mut self, rhs: ArcDirection) -> Self::Output {
+        MulAssign::mul_assign(&mut self, rhs);
+        self
     }
 }
 
 impl Mul<&ArcDirection> for RationalBig {
     type Output = Self;
 
-    fn mul(self, rhs: &ArcDirection) -> Self::Output {
+    #[must_use]
+    #[inline]
+    fn mul(mut self, rhs: &ArcDirection) -> Self::Output {
+        MulAssign::mul_assign(&mut self, rhs);
+        self
+    }
+}
+
+impl MulAssign<ArcDirection> for RationalBig {
+    #[inline]
+    fn mul_assign(&mut self, rhs: ArcDirection) {
+        MulAssign::mul_assign(self, &rhs);
+    }
+}
+
+impl MulAssign<&ArcDirection> for RationalBig {
+    #[inline]
+    fn mul_assign(&mut self, rhs: &ArcDirection) {
         match rhs {
-            ArcDirection::Incoming => self,
-            ArcDirection::Outgoing => -self,
+            ArcDirection::Incoming => {},
+            ArcDirection::Outgoing => self.negate(),
         }
     }
 }
@@ -212,6 +297,8 @@ impl Mul<&ArcDirection> for RationalBig {
 impl Mul<&ArcDirection> for &RationalBig {
     type Output = RationalBig;
 
+    #[must_use]
+    #[inline]
     fn mul(self, rhs: &ArcDirection) -> Self::Output {
         match rhs {
             ArcDirection::Incoming => self.clone(),
@@ -220,13 +307,41 @@ impl Mul<&ArcDirection> for &RationalBig {
     }
 }
 
+impl Div<ArcDirection> for RationalBig {
+    type Output = Self;
+
+    #[must_use]
+    #[inline]
+    fn div(mut self, rhs: ArcDirection) -> Self::Output {
+        DivAssign::div_assign(&mut self, rhs);
+        self
+    }
+}
+
 impl Div<&ArcDirection> for RationalBig {
     type Output = Self;
 
-    fn div(self, rhs: &ArcDirection) -> Self::Output {
+    #[must_use]
+    #[inline]
+    fn div(mut self, rhs: &ArcDirection) -> Self::Output {
+        DivAssign::div_assign(&mut self, rhs);
+        self
+    }
+}
+
+impl DivAssign<ArcDirection> for RationalBig {
+    #[inline]
+    fn div_assign(&mut self, rhs: ArcDirection) {
+        DivAssign::div_assign(self, &rhs);
+    }
+}
+
+impl DivAssign<&ArcDirection> for RationalBig {
+    #[inline]
+    fn div_assign(&mut self, rhs: &ArcDirection) {
         match rhs {
-            ArcDirection::Incoming => self,
-            ArcDirection::Outgoing => -self,
+            ArcDirection::Incoming => {},
+            ArcDirection::Outgoing => self.negate(),
         }
     }
 }

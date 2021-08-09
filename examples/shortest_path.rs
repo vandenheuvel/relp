@@ -145,7 +145,8 @@ where
             }
             writeln!(f)?;
         }
-        write!(f, "")
+
+        Ok(())
     }
 }
 
