@@ -156,9 +156,9 @@ where
         column
     }
 
-    fn left_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(&self, iter: I) -> Self::ColumnComputationInfo
+    fn left_multiply_by_basis_inverse<'a, I: ColumnIterator<'a>>(&self, iter: I) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<G>,
+        Self::F: ops::Column<I::F>,
     {
         let rhs = iter
             .map(|(mut i, v)| {
@@ -191,11 +191,11 @@ where
         }
     }
 
-    fn right_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+    fn right_multiply_by_basis_inverse<'a, I: ColumnIterator<'a>>(
         &self, row: I,
     ) -> SparseVector<Self::F, Self::F>
     where
-        Self::F: ops::Column<G>,
+        Self::F: ops::Column<I::F>,
     {
         let mut lhs = row
             .map(|(mut i, v)| {
@@ -221,11 +221,11 @@ where
         SparseVector::new(lhs, self.m())
     }
 
-    fn generate_element<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+    fn generate_element<'a, I: ColumnIterator<'a>>(
         &'a self, i: usize, original_column: I,
     ) -> Option<Self::F>
     where
-        Self::F: ops::Column<G>,
+        Self::F: ops::Column<I::F>,
     {
         // TODO(PERFORMANCE): Compute a single value only
         self.left_multiply_by_basis_inverse(original_column).into_column().get(i).cloned()

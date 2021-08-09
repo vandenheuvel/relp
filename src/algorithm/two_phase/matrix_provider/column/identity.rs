@@ -45,7 +45,7 @@ impl IdentityColumn {
 
 impl Column for IdentityColumn {
     type F = One;
-    type Iter<'a> = impl ColumnIterator<'a, Self::F>;
+    type Iter<'a> = impl ColumnIterator<'a, F=Self::F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         iter::once((self.index, &ONE))

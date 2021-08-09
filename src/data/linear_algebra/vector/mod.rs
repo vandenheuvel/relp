@@ -14,7 +14,6 @@ pub use dense::Dense as DenseVector;
 pub use sparse::Sparse as SparseVector;
 
 use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
-use crate::algorithm::two_phase::matrix_provider::column::ColumnNumber;
 
 mod dense;
 mod sparse;
@@ -37,10 +36,10 @@ pub trait Vector<F>: Deref<Target=[Self::Inner]> + PartialEq + FromIterator<F> +
     /// Input data wrapped inside a vector.
     fn new(data: Vec<Self::Inner>, len: usize) -> Self;
     /// Compute the inner product with a column vector from a matrix.
-    fn sparse_inner_product<'a, 'b, G: 'b + ColumnNumber, I: ColumnIterator<'b, G>, O>(&'a self, column: I) -> O
+    fn sparse_inner_product<'a, 'b, I: ColumnIterator<'b>, O>(&'a self, column: I) -> O
     where
         F: 'a,
-        &'a F: Mul<&'b G, Output=O>,
+        &'a F: Mul<&'b I::F, Output=O>,
         O: Zero + AddAssign,
     ;
     /// Make a vector longer by one, by adding an extra value at the end of this vector.
@@ -337,47 +336,47 @@ pub mod test {
         fn sparse_inner_product() {
             let v = get_test_vector::<T, SparseVector<T, T>>();
             let w = vec![(1, R32!(5)), (2, R32!(6)), ];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(5 * 5 + 6 * 6));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(5 * 5 + 6 * 6));
 
             let v = SparseVector::<T, T>::from_test_data(vec![3]);
             let w = vec![(0, R32!(5))];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(15));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(15));
 
             let v = SparseVector::<T, T>::from_test_data(vec![0]);
             let w = vec![(0, R32!(1))];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2]);
             let w = vec![(1, R32!(3))];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(6));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(6));
 
             let v = SparseVector::<T, T>::from_test_data(vec![2, 0]);
             let w = vec![(1, R32!(3))];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2]);
             let w = vec![(0, R32!(3))];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2]);
             let w = vec![(1, R32!(3))];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(6));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(6));
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 0, 0]);
             let w = vec![(1, R32!(3)), (2, R32!(7))];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2, 0]);
             let w = vec![(0, R32!(5)), (1, R32!(7))];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(14));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(14));
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2, 0]);
             let w = vec![(0, R32!(5)), (2, R32!(7))];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
 
             let v = SparseVector::<T, T>::from_test_data(vec![1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0]);
             let w = vec![(0, R32!(-1)), (1, R32!(1)), (2, R32!(1)), (12, R32!(1))];
-            assert_eq!(v.sparse_inner_product::<Rational32, _, _>(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
         }
 
         #[test]

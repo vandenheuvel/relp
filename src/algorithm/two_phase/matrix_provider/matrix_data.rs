@@ -12,7 +12,7 @@ use num_traits::One;
 use relp_num::{Field, FieldRef};
 use relp_num::NonZero;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, ColumnIterator, SparseSliceIterator};
+use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, SparseSliceIterator};
 use crate::algorithm::two_phase::matrix_provider::column::ColumnNumber;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;

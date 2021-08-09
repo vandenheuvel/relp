@@ -102,9 +102,9 @@ where
         }
     }
 
-    fn sparse_inner_product<'a, 'b, G: 'b + ColumnNumber, I: ColumnIterator<'b, G>, O>(&'a self, column: I) -> O
+    fn sparse_inner_product<'a, 'b, I: ColumnIterator<'b>, O>(&'a self, column: I) -> O
     where
-        &'a F: Mul<&'b G, Output=O>,
+        &'a F: Mul<&'b I::F, Output=O>,
         O: Zero + AddAssign,
     {
         inner_product_slice_iter(&self.data, column)
@@ -405,23 +405,23 @@ mod test {
     #[test]
     fn test_inner_product_iter() {
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product::<i32, _, _>(std::iter::empty::<(_, &i32)>()),
+            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product(std::iter::empty::<(_, &i32)>()),
             0,
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product::<i32, _, _>(SparseSliceIterator::new(&[(0, 1)])),
+            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product(SparseSliceIterator::new(&[(0, 1)])),
             1,
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product::<i32, _, _>(SparseSliceIterator::new(&[(2, 1)])),
+            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product(SparseSliceIterator::new(&[(2, 1)])),
             0,
         );
 
         assert_eq!(
             SparseVector::new(vec![(0, 1), (3, 1), (12, 1), (13, 1)], 15)
-                .sparse_inner_product::<i32, _, _>(
+                .sparse_inner_product(
                     SparseSliceIterator::new(&[(0, -1), (1, 1), (2, 1), (12, 1)]),
                 ),
             0,

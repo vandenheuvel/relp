@@ -144,11 +144,11 @@ where
         column
     }
 
-    fn left_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+    fn left_multiply_by_basis_inverse<'a, I: ColumnIterator<'a>>(
         &'a self, column: I,
     ) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<G>,
+        Self::F: ops::Column<I::F>,
     {
         let tuples = (0..self.m())
             .map(|i| self.generate_element(i, column.clone()))
@@ -159,11 +159,11 @@ where
         SparseVector::new(tuples, self.m())
     }
 
-    fn right_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+    fn right_multiply_by_basis_inverse<'a, I: ColumnIterator<'a>>(
         &self, mut row: I,
     ) -> SparseVector<Self::F, Self::F>
     where
-        Self::F: ops::Column<G>,
+        Self::F: ops::Column<I::F>,
     {
         let (index, factor) = row.next().unwrap();
         let items = self.rows[index].iter().map(|(j, value)| (j, value * factor)).collect();
@@ -176,13 +176,13 @@ where
         total
     }
 
-    fn generate_element<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+    fn generate_element<'a, I: ColumnIterator<'a>>(
         &'a self,
         i: usize,
         original_column: I,
     ) -> Option<Self::F>
     where
-        Self::F: ops::Column<G>,
+        Self::F: ops::Column<I::F>,
     {
         debug_assert!(i < self.m());
 

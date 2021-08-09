@@ -118,23 +118,23 @@ pub trait BasisInverse: Display {
     /// A `SparseVector<T>` of length `m`.
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it, some implementations don't need it.
-    fn left_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+    fn left_multiply_by_basis_inverse<'a, I: ColumnIterator<'a>>(
         &'a self,
         column: I,
     ) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<G>,
+        Self::F: ops::Column<I::F>,
     ;
 
     /// Multiply a row vector with the basis inverse matrix from the right.
     ///
     /// This is the same as multiplying with the transpose of the basis inverse matrix from the left
     /// when you consider the input vector a column vector: B^-T v = (v^T B^-1)^T.
-    fn right_multiply_by_basis_inverse<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+    fn right_multiply_by_basis_inverse<'a, I: ColumnIterator<'a>>(
         &self, row: I,
     ) -> SparseVector<Self::F, Self::F>
     where
-        Self::F: ops::Column<G>
+        Self::F: ops::Column<I::F>
     ;
 
     /// Generate a single element in the tableau with respect to the current basis.
@@ -145,13 +145,13 @@ pub trait BasisInverse: Display {
     /// * `original_column`: Column with respect to the original basis.
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
-    fn generate_element<'a, G: 'a + ColumnNumber, I: ColumnIterator<'a, G>>(
+    fn generate_element<'a, I: ColumnIterator<'a>>(
         &'a self,
         i: usize,
         original_column: I,
     ) -> Option<Self::F>
     where
-        Self::F: ops::Column<G>,
+        Self::F: ops::Column<I::F>,
     ;
 
     /// Whether this basis inverse should be recomputed.
@@ -573,7 +573,7 @@ where
         debug_assert_eq!(column_computation_info.column().len(), self.m());
 
         let iter = SparseSliceIterator::new(column_computation_info.column());
-        let work_vector = self.basis_inverse.right_multiply_by_basis_inverse::<Self::F, _>(iter);
+        let work_vector = self.basis_inverse.right_multiply_by_basis_inverse(iter);
 
         // The order of these calls matters: the first of the two normalizes the pivot row
         self.update_b(pivot_row_index, column_computation_info.column());

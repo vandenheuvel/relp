@@ -36,7 +36,7 @@ pub trait Column: Debug {
     /// Type of struct to iterate over this column.
     ///
     /// It should be somewhat cheaply cloneable and as such not be too large.
-    type Iter<'a>: ColumnIterator<'a, Self::F>;
+    type Iter<'a>: ColumnIterator<'a, F=Self::F>;
 
     /// Derive the iterator object.
     ///
@@ -50,7 +50,23 @@ pub trait Column: Debug {
     fn index_to_string(&self, i: usize) -> String;
 }
 
-pub trait ColumnIterator<'a, F: 'a + ColumnNumber> = Iterator<Item=SparseTuple<&'a F>> + Clone;
+/// Iterator for a column.
+///
+/// These should be cheap to clone, such that columns can be iterated over multiple times.
+///
+/// It exists to "hide" generic parameters on methods throughout the code base and should not be
+/// implemented directly; instead, implement the normal `Iterator` and `Clone` traits. There is a
+/// blanket impl for this trait.
+pub trait ColumnIterator<'a>: Iterator<Item=SparseTuple<&'a Self::F>> + Clone {
+    type F: 'a;
+}
+
+impl<'a, F: 'a, T> ColumnIterator<'a> for T
+where
+    T: Iterator<Item=SparseTuple<&'a F>> + Clone
+{
+    type F = F;
+}
 
 /// Basic operations that should be possible with the type of the values of the column.
 ///
@@ -82,7 +98,7 @@ impl<F> SparseColumn<F> {
 
 impl<F: 'static + ColumnNumber> Column for SparseColumn<F> {
     type F = F;
-    type Iter<'a> = impl ColumnIterator<'a, F>;
+    type Iter<'a> = impl ColumnIterator<'a, F=Self::F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         SparseSliceIterator::new(&self.inner)
@@ -145,7 +161,7 @@ impl<F: ColumnNumber> DenseColumn<F> {
 
 impl<F: 'static + ColumnNumber> Column for DenseColumn<F> {
     type F = F;
-    type Iter<'a> = impl ColumnIterator<'a, F>;
+    type Iter<'a> = impl ColumnIterator<'a, F=Self::F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         DenseSliceIterator::new(&self.inner)
