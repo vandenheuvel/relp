@@ -99,6 +99,9 @@ pub struct MatrixData<'a, F> {
     non_slack_variable_index_to_bound_index: Vec<Option<usize>>,
     /// (bound index -> non-slack variable)
     bound_index_to_non_slack_variable_index: Vec<usize>,
+
+    ONE: F,
+    MINUS_ONE: F,
 }
 
 #[derive(Enum, Debug)]
@@ -144,7 +147,7 @@ enum ColumnType {
     SlackBoundSlack,
 }
 
-impl<'a, F: 'static> MatrixData<'a, F>
+impl<'a, F> MatrixData<'a, F>
 where
     F: SparseElement<F> + ColumnNumber + One + Neg<Output=F>,
     for <'r> &'r F: FieldRef<F>,
@@ -244,6 +247,8 @@ where
             variables,
             non_slack_variable_index_to_bound_index,
             bound_index_to_non_slack_variable_index,
+            ONE: F::one(),
+            MINUS_ONE: -F::one(),
         }
     }
 
@@ -278,17 +283,17 @@ where
     }
 }
 
-impl<'data, F: 'static> MatrixProvider for MatrixData<'data, F>
+impl<'data, F: 'data> MatrixProvider for MatrixData<'data, F>
 where
     F: ColumnNumber + One + Neg<Output=F> + SparseElement<F>,
     for<'r> &'r F: FieldRef<F>,
 {
-    type Column = Column<F>;
-    type Cost<'a> where Self: 'a = Option<&'a <Self::Column as ColumnTrait>::F>;
+    type Column<'provider> where Self: 'provider = Column<'provider, F>;
+    type Cost<'provider> where Self: 'provider = Option<&'provider <Self::Column<'provider> as ColumnTrait<'provider>>::F>;
     type Rhs = F;
 
     #[inline]
-    fn column(&self, j: usize) -> Self::Column {
+    fn column<'provider>(&'provider self, j: usize) -> Self::Column<'provider> {
         debug_assert!(j < self.nr_columns());
 
         // TODO(ARCHITECTURE): Can the +/- F::one() constants be avoided? They might be large and
@@ -299,10 +304,10 @@ where
                 Column::Sparse {
                     // TODO(ENHANCEMENT): Avoid this cloning by using references (needs the GAT
                     //  feature to be more mature).
-                    constraint_values: self.constraints.iter_column(j).cloned().collect(),
+                    constraint_values: &self.constraints[j],
                     slack: self.bound_row_index(j, BoundDirection::Upper)
                         .map(|i| 0 + i)
-                        .map(|i| (i, F::one())),
+                        .map(|i| (i, &self.ONE)),
                 }
             }
             ColumnType::RangeSlack => Column::TwoSlack(
@@ -311,19 +316,19 @@ where
             ),
             ColumnType::UpperInequalitySlack => {
                 let row_index = self.row_group_end[RowType::RangeConstraint] + j;
-                Column::Slack((row_index, F::one()))
+                Column::Slack((row_index, &self.ONE))
             }
             ColumnType::LowerInequalitySlack => {
                 let row_index = self.row_group_end[RowType::UpperInequalityConstraint] + j;
-                Column::Slack((row_index, -F::one()))
+                Column::Slack((row_index, &self.MINUS_ONE))
             }
             ColumnType::VariableBoundSlack => {
                 let row_index = self.row_group_end[RowType::LowerInequalityConstraint] + j;
-                Column::Slack((row_index, F::one()))
+                Column::Slack((row_index, &self.ONE))
             }
             ColumnType::SlackBoundSlack => {
                 let row_index = self.row_group_end[RowType::VariableBound] + j;
-                Column::Slack((row_index, F::one()))
+                Column::Slack((row_index, &self.ONE))
             }
         }
     }
@@ -456,13 +461,13 @@ where
 ///
 /// TODO(ARCHITECTURE): Can this type be simplified?
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub enum Column<F> {
+pub enum Column<'provider, F> {
     /// The case where there is at least one constraint value and possibly a slack.
     Sparse {
         /// Values belonging to constraints (and not variable bounds).
         // TODO(ARCHITECTURE): This cloning can be avoided if we can use GATs to store a type
         //  referencing the data instead.
-        constraint_values: Vec<SparseTuple<F>>,
+        constraint_values: &'provider [SparseTuple<F>],
         /// Positive slack for a variable bound.
         ///
         /// Note that this slack value is always positive, because the matrix data should be in
@@ -472,7 +477,8 @@ pub enum Column<F> {
         /// to it directly.
         ///
         /// TODO(ARCHITECTURE): Can this value be eliminated?
-        slack: Option<SparseTuple<F>>, // Is always a positive slack: `1`.
+        /// TODO(PERFORMANCE): use a reference
+        slack: Option<SparseTuple<&'provider F>>, // Is always a positive slack: `1`.
     },
     /// The case where there is only a variable bound being represented.
     ///
@@ -485,12 +491,12 @@ pub enum Column<F> {
     // TODO(PERFORMANCE): Can we eliminate the zero sized array? It's currently there to avoid
     //  wrapping the `ColumnIntoIter::parent_iter_cloned` field in an `Option`, but that might be
     //  equivalent after optimizations.
-    Slack(SparseTuple<F>),
+    Slack(SparseTuple<&'provider F>),
     /// For range variables that have exactly two `1`'s in their column.
-    TwoSlack(SparseTuple<F>, SparseTuple<F>),
+    TwoSlack(SparseTuple<&'provider F>, SparseTuple<&'provider F>),
 }
 
-impl<F: 'static> Identity for Column<F>
+impl<'provider, F: 'provider> Identity<'provider> for Column<'provider, F>
 where
     F: ColumnNumber + One,
 {
@@ -502,15 +508,15 @@ where
     }
 }
 
-pub enum ColumnIntoIterator<F> {
-    Sparse(Chain<std::vec::IntoIter<SparseTuple<F>>, std::option::IntoIter<SparseTuple<F>>>),
+pub enum ColumnIntoIterator<'data, F> {
+    Sparse(Chain<std::slice::Iter<'data, SparseTuple<F>>, std::option::IntoIter<SparseTuple<F>>>),
     Slack(Once<SparseTuple<F>>),
     TwoSlack(Chain<Once<SparseTuple<F>>, Once<SparseTuple<F>>>),
 }
 
-impl<F> IntoIterator for Column<F> {
+impl<'provider, F> IntoIterator for Column<'provider, F> {
     type Item = SparseTuple<F>;
-    type IntoIter = impl Iterator<Item=Self::Item>;
+    type IntoIter = ColumnIntoIterator<'provider, F>;
 
     fn into_iter(self) -> Self::IntoIter {
         match self {
@@ -524,7 +530,7 @@ impl<F> IntoIterator for Column<F> {
     }
 }
 
-impl<F> Iterator for ColumnIntoIterator<F> {
+impl<'data, F> Iterator for ColumnIntoIterator<'data, F> {
     type Item = SparseTuple<F>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -604,23 +610,20 @@ impl<'a, F> Iterator for ColumnIterator<'a, F> {
 }
 
 #[allow(clippy::type_repetition_in_bounds)]
-impl<F> ColumnTrait for Column<F>
+impl<'provider, F: 'provider> ColumnTrait<'provider> for Column<'provider, F>
 where
-    // TODO(ARCHITECTURE): Once GATs are more developed, it could be possible to replace this bound
-    //  with a where clause on the method. Then, the 'static bound doesn't propagate through the
-    //  entire codebase. Once this is done, remove the `clippy::type_repetition_in_bounds`
-    //  annotation.
-    F: 'static,
     F: ColumnNumber,
 {
     type F = F;
-    type Iter<'a> = impl Iterator<Item=SparseTuple<&'a F>> + Clone;
+
+    // type Iter<'a> where Self: 'a = ColumnIterator<'a, Self::F>;
+    type Iter<'a> where Self: 'a = impl Iterator<Item=SparseTuple<&'a F>> + Clone + 'a;
 
     #[inline]
     fn iter(&self) -> Self::Iter<'_> {
         match self {
             Column::Sparse { constraint_values, slack, } =>
-                ColumnIterator::Sparse(SparseSliceIterator::new(constraint_values).chain(SparseOptionIterator::new(slack))),
+                ColumnIterator::Sparse(SparseSliceIterator::new(constraint_values).chain(slack.iter())),
             Column::Slack((index, value)) =>
                 ColumnIterator::Slack(once((*index, value))),
             Column::TwoSlack((first_index, first_value), (second_index, second_value)) =>
@@ -661,11 +664,11 @@ where
     }
 }
 
-impl<F: 'static> IntoFilteredColumn for Column<F>
+impl<'provider, F: 'provider> IntoFilteredColumn<'provider> for Column<'provider, F>
 where
     F: ColumnNumber,
 {
-    type Filtered = Column<F>;
+    type Filtered = Column<'provider, F>;
 
     fn into_filtered(mut self, to_filter: &[usize]) -> Self::Filtered {
         debug_assert!(to_filter.is_sorted());

@@ -13,12 +13,12 @@ pub mod non_artificial;
 
 /// The tableau type provides two different ways for the `Tableau` to function, depending on whether
 /// any virtual artificial variables should be included in the problem.
-pub trait Kind {
+pub trait Kind<'provider> {
     /// Representation of the column of the tableau.
     ///
     /// TODO(ENHANCEMENT): Drop the Ordered requirement once specialization on generic type
     ///  type arguments of trait methods is possible.
-    type Column: Column;
+    type Column: Column<'provider>;
     /// Cost row type.
     ///
     /// For artificial tableaus, this type is always the zero-one cost type in the artificial

@@ -19,11 +19,11 @@ pub struct Fully<'a, MP: MatrixProvider> {
     provider: &'a MP,
 }
 
-impl<'provider, MP> Kind for Fully<'provider, MP>
+impl<'provider, MP> Kind<'provider> for Fully<'provider, MP>
 where
-    MP: MatrixProvider<Column: Column + Identity>,
+    MP: MatrixProvider<Column<'provider>: Column<'provider> + Identity<'provider>>,
 {
-    type Column = MP::Column;
+    type Column = MP::Column<'provider>;
     type Cost = Cost;
 
     fn initial_cost_value(&self, j: usize) -> Self::Cost {
@@ -53,9 +53,9 @@ where
     }
 }
 
-impl<'provider, MP> Artificial for Fully<'provider, MP>
+impl<'provider, MP> Artificial<'provider> for Fully<'provider, MP>
 where
-    MP: MatrixProvider<Column: Identity>,
+    MP: MatrixProvider<Column<'provider>: Identity<'provider>>,
 {
     fn nr_artificial_variables(&self) -> usize {
         self.nr_rows()

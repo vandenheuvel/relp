@@ -26,7 +26,7 @@ pub trait SolveRelaxation: MatrixProvider {
     where
         IM: InverseMaintener<F:
             im_ops::FieldHR +
-            im_ops::Column<<Self::Column as Column>::F> +
+            im_ops::Column<<Self::Column<'provider> as Column<'provider>>::F> +
             im_ops::Cost<ArtificialCost> +
             im_ops::Cost<Self::Cost<'provider>> +
             im_ops::Rhs<Self::Rhs> +

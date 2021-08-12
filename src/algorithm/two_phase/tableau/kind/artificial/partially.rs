@@ -33,11 +33,11 @@ where
         self.column_to_row.len()
     }
 }
-impl<'a, MP> Kind for Partially<'a, MP>
+impl<'provider, MP> Kind<'provider> for Partially<'provider, MP>
 where
-    MP: MatrixProvider<Column: Identity>,
+    MP: MatrixProvider<Column<'provider>: Identity<'provider>>,
 {
-    type Column = MP::Column;
+    type Column = MP::Column<'provider>;
     type Cost = Cost;
 
     /// Coefficient of variable `j` in the objective function.
@@ -87,9 +87,9 @@ where
         self.nr_artificial_variables() + self.provider.nr_columns()
     }
 }
-impl<'provider, MP> Artificial for Partially<'provider, MP>
+impl<'provider, MP> Artificial<'provider> for Partially<'provider, MP>
 where
-    MP: MatrixProvider<Column: Identity>,
+    MP: MatrixProvider<Column<'provider>: Identity<'provider>>,
 {
     fn nr_artificial_variables(&self) -> usize {
         self.column_to_row.len()
@@ -105,7 +105,7 @@ where
 impl<'provider, IM, MP> Tableau<IM, Partially<'provider, MP>>
 where
     IM: InverseMaintener<F:
-        im_ops::Column<<MP::Column as Column>::F> +
+        im_ops::Column<<MP::Column<'provider> as Column<'provider>>::F> +
         im_ops::Rhs<MP::Rhs> +
     >,
     MP: MatrixProvider,

@@ -86,7 +86,7 @@ pub trait BasisInverse: Display {
     ///
     /// Note that the implementor can choose to internally permute the columns in order to improve
     /// sparsity.
-    fn invert<C: Column>(columns: impl ExactSizeIterator<Item=C>) -> Self
+    fn invert<'provider, C: Column<'provider>>(columns: impl ExactSizeIterator<Item=C>) -> Self
     where
         Self::F: ops::Column<C::F>,
     ;
@@ -223,13 +223,13 @@ where
     /// * `basis_inverse_rows`: A basis inverse that represents a basic feasible solution.
     /// * `provider`: Matrix provider.
     /// * `basis`: Indices of the basis elements.
-    fn create_minus_pi_from_artificial<'a, MP: MatrixProvider>(
+    fn create_minus_pi_from_artificial<'provider, MP: MatrixProvider>(
         basis_inverse: &BI,
-        provider: &'a MP,
+        provider: &'provider MP,
         basis: &[usize],
     ) -> DenseVector<F>
     where
-        F: ops::Column<<MP::Column as Column>::F> + ops::Cost<MP::Cost<'a>>,
+        F: ops::Column<<MP::Column<'provider> as Column<'provider>>::F> + ops::Cost<MP::Cost<'provider>>,
     {
         let m = basis_inverse.m();
         debug_assert_eq!(provider.nr_rows(), m);
@@ -267,13 +267,13 @@ where
     /// * `basis`: Basis indices (elements are already shifted, no compensation for the artificial
     /// variables is needed).
     /// * `b`: Constraint values with respect to this basis.
-    fn create_minus_obj_from_artificial<'a, MP: MatrixProvider>(
-        provider: &'a MP,
+    fn create_minus_obj_from_artificial<'provider, MP: MatrixProvider>(
+        provider: &'provider MP,
         basis: &[usize],
         b: &DenseVector<F>,
     ) -> F
     where
-        F: ops::Column<<MP::Column as Column>::F> + ops::Cost<MP::Cost<'a>>,
+        F: ops::Column<<MP::Column<'provider> as Column<'provider>>::F> + ops::Cost<MP::Cost<'provider>>,
     {
         let mut objective = F::zero();
         for row in 0..provider.nr_rows() {
@@ -441,15 +441,14 @@ where
         }
     }
 
-    fn from_basis<'a, MP: MatrixProvider>(basis: &[usize], provider: &'a MP) -> Self
+    fn from_basis<'provider, MP: MatrixProvider>(basis: &[usize], provider: &'provider MP) -> Self
     where
         Self::F:
-            ops::Column<<MP::Column as Column>::F> +
+            ops::Column<<MP::Column<'provider> as Column<'provider>>::F> +
             ops::Rhs<MP::Rhs> +
-            ops::Cost<MP::Cost<'a>> +
+            ops::Cost<MP::Cost<'provider>> +
             ops::Column<MP::Rhs> +
         ,
-        MP::Rhs: 'static,
     {
         let basis_inverse = BI::invert(basis.iter().map(|&j| provider.column(j)));
 
@@ -477,18 +476,18 @@ where
         }
     }
 
-    fn from_basis_pivots<'a, MP: MatrixProvider>(
+    fn from_basis_pivots<'provider, MP: MatrixProvider>(
         basis_columns: &[(usize, usize)],
-        provider: &'a MP,
+        provider: &'provider MP,
     ) -> Self
     where
         Self::F:
-            ops::Column<<MP::Column as Column>::F> +
+            ops::Column<<MP::Column<'provider> as Column<'provider>>::F> +
             ops::Rhs<MP::Rhs> +
-            ops::Cost<MP::Cost<'a>> +
+            ops::Cost<MP::Cost<'provider>> +
             ops::Column<MP::Rhs> +
         ,
-        MP::Rhs: 'static + ColumnNumber,
+        MP::Rhs: ColumnNumber,
     {
         let mut elements = Vec::from(basis_columns);
         elements.sort_by_key(|&(row, _)| row);
@@ -502,7 +501,7 @@ where
         nr_artificial: usize,
     ) -> Self
     where
-        F: ops::Column<<MP::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>,
+        F: ops::Column<<MP::Column<'provider> as Column<'provider>>::F> + ops::Cost<MP::Cost<'provider>>,
     {
         debug_assert_eq!(artificial.m(), provider.nr_rows());
 
@@ -530,7 +529,7 @@ where
         nr_artificial: usize,
     ) -> Self
     where
-        Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>,
+        Self::F: ops::Column<<<MP as MatrixProvider>::Column<'provider> as Column<'provider>>::F> + ops::Cost<MP::Cost<'provider>>,
     {
         debug_assert_eq!(artificial.basis_indices.len(), rows_removed.nr_rows() + rows_removed.filtered_rows().len());
 
@@ -558,7 +557,7 @@ where
         Self::new(minus_obj, minus_pi, artificial.b, artificial.basis_indices, basis_inverse)
     }
 
-    fn change_basis<K: Kind>(
+    fn change_basis<'provider, K: Kind<'provider>>(
         &mut self,
         pivot_row_index: usize,
         pivot_column_index: usize,
@@ -567,7 +566,7 @@ where
         kind: &K,
     ) -> BasisChangeComputationInfo<Self::F>
     where
-        Self::F: ops::Column<<<K as Kind>::Column as Column>::F>,
+        Self::F: ops::Column<<K::Column as Column<'provider>>::F>,
     {
         debug_assert!(pivot_row_index < self.m());
         debug_assert_eq!(column_computation_info.column().len(), self.m());
@@ -603,14 +602,14 @@ where
         }
     }
 
-    fn cost_difference<C: Column>(&self, original_column: &C) -> Self::F
+    fn cost_difference<'provider, C: Column<'provider>>(&self, original_column: &C) -> Self::F
     where
         Self::F: ops::Column<C::F>,
     {
         self.minus_pi.sparse_inner_product(original_column.iter())
     }
 
-    fn generate_column<C: Column>(
+    fn generate_column<'provider, C: Column<'provider>>(
         &self,
         original_column: C,
     ) -> Self::ColumnComputationInfo
@@ -620,7 +619,7 @@ where
         self.basis_inverse.left_multiply_by_basis_inverse(original_column.iter())
     }
 
-    fn generate_element<C: Column>(
+    fn generate_element<'provider, C: Column<'provider>>(
         &self,
         i: usize,
         original_column: C,
@@ -676,7 +675,7 @@ where
         nr_artificial: usize,
     ) -> Self
     where
-        Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>,
+        Self::F: ops::Column<<<MP as MatrixProvider>::Column<'provider> as Column<'provider>>::F> + ops::Cost<MP::Cost<'provider>>,
     {
         debug_assert_eq!(artificial.basis_indices.len(), rows_removed.nr_rows() + rows_removed.filtered_rows().len());
 

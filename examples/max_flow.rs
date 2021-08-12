@@ -142,8 +142,8 @@ impl<F> MatrixProvider for Primal<F>
 where
     F: SparseElement<F> + Zero + Eq + NonZero,
 {
-    type Column = Column;
-    type Cost<'a> where Self: 'a = Cost;
+    type Column<'a> = Column;
+    type Cost<'a> = Cost;
     type Rhs = F;
 
     fn column(&self, j: usize) -> Self::Column {

@@ -73,7 +73,7 @@ where
         }
     }
 
-    fn invert<C: Column>(columns: impl ExactSizeIterator<Item=C>) -> Self
+    fn invert<'provider, C: Column<'provider>>(columns: impl ExactSizeIterator<Item=C>) -> Self
     where
         Self::F: ops::Column<C::F>,
     {

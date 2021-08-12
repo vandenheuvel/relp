@@ -89,15 +89,14 @@ pub trait InverseMaintener: Display + Sized {
     /// * `basis`: Indices of columns that are to be in the basis. Should match the number of rows
     /// of the provider. Values should be unique, could have been a set.
     /// * `provider`: Problem representation.
-    fn from_basis<'a, MP: MatrixProvider>(basis: &[usize], provider: &'a MP) -> Self
+    fn from_basis<'provider, MP: MatrixProvider>(basis: &[usize], provider: &'provider MP) -> Self
     where
         Self::F:
-            ops::Column<<MP::Column as Column>::F> +
+            ops::Column<<MP::Column<'provider> as Column<'provider>>::F> +
             ops::Rhs<MP::Rhs> +
-            ops::Cost<MP::Cost<'a>> +
+            ops::Cost<MP::Cost<'provider>> +
             ops::Column<MP::Rhs> +
         ,
-        MP::Rhs: 'static,
     ;
 
     /// Create a basis inverse when the basis indices and their pivot rows are known.
@@ -110,15 +109,15 @@ pub trait InverseMaintener: Display + Sized {
     /// * `basis`: Indices of columns that are to be in the basis. Should match the number of rows
     /// of the provider. Values should be unique, could have been a set.
     /// * `provider`: Problem representation.
-    fn from_basis_pivots<'a, MP: MatrixProvider>(basis: &[(usize, usize)], provider: &'a MP) -> Self
+    fn from_basis_pivots<'provider, MP: MatrixProvider>(basis: &[(usize, usize)], provider: &'provider MP) -> Self
     where
         Self::F:
-            ops::Column<<MP::Column as Column>::F> +
+            ops::Column<<MP::Column<'provider> as Column<'provider>>::F> +
             ops::Rhs<MP::Rhs> +
-            ops::Cost<MP::Cost<'a>> +
+            ops::Cost<MP::Cost<'provider>> +
             ops::Column<MP::Rhs> +
         ,
-        MP::Rhs: 'static + ColumnNumber,
+        MP::Rhs:  ColumnNumber,
     ;
 
     /// When a previous basis inverse representation was used to find a basic feasible solution.
@@ -137,7 +136,7 @@ pub trait InverseMaintener: Display + Sized {
         nr_artificial: usize,
     ) -> Self
     where
-        Self::F: ops::FieldHR + ops::Column<<MP::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>,
+        Self::F: ops::FieldHR + ops::Column<<MP::Column<'provider> as Column<'provider>>::F> + ops::Cost<MP::Cost<'provider>>,
     ;
 
     /// When a previous basis inverse representation was used to find a basic feasible solution.
@@ -149,13 +148,13 @@ pub trait InverseMaintener: Display + Sized {
     /// * `artificial`: Indices of rows where an artificial variable is needed.
     /// * `provider`: Original problem representation.
     /// * `basis`: (row index, column index) tuples of given basis variables.
-    fn from_artificial_remove_rows<'a, MP: Filtered>(
+    fn from_artificial_remove_rows<'provider, MP: Filtered>(
         artificial: Self,
-        rows_removed: &'a MP,
+        rows_removed: &'provider MP,
         nr_artificial: usize,
     ) -> Self
     where
-        Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F> + ops::Cost<MP::Cost<'a>>,
+        Self::F: ops::Column<<<MP as MatrixProvider>::Column<'provider> as Column<'provider>>::F> + ops::Cost<MP::Cost<'provider>>,
     ;
 
     /// Update the basis by representing one row reduction operation.
@@ -177,7 +176,7 @@ pub trait InverseMaintener: Display + Sized {
     /// # Return value
     ///
     /// The index of the column being removed from the basis.
-    fn change_basis<K: Kind>(
+    fn change_basis<'provider, K: Kind<'provider>>(
         &mut self,
         pivot_row_index: usize,
         pivot_column_index: usize,
@@ -186,7 +185,7 @@ pub trait InverseMaintener: Display + Sized {
         kind: &K,
     ) -> BasisChangeComputationInfo<Self::F>
     where
-        Self::F: ops::Column<<<K as Kind>::Column as Column>::F>,
+        Self::F: ops::Column<<K::Column as Column<'provider>>::F>,
     ;
 
     /// Calculates the cost difference `c_j`.
@@ -194,7 +193,7 @@ pub trait InverseMaintener: Display + Sized {
     /// This cost difference is the inner product of `minus_pi` and the column.
     // TODO(ENHANCEMENT): Drop the OrderedColumn trait bound once it is possible to specialize on
     //  it.
-    fn cost_difference<C: Column>(&self, original_column: &C) -> Self::F
+    fn cost_difference<'provider, C: Column<'provider>>(&self, original_column: &C) -> Self::F
     where
         Self::F: ops::Column<C::F>,
     ;
@@ -210,7 +209,7 @@ pub trait InverseMaintener: Display + Sized {
     /// A `SparseVector<T>` of length `m`.
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
-    fn generate_column<C: Column>(
+    fn generate_column<'provider, C: Column<'provider>>(
         &self,
         original_column: C,
     ) -> Self::ColumnComputationInfo
@@ -226,7 +225,7 @@ pub trait InverseMaintener: Display + Sized {
     /// * `original_column`: Column with respect to the original basis.
     /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
     ///  it.
-    fn generate_element<C: Column>(
+    fn generate_element<'provider, C: Column<'provider>>(
         &self,
         i: usize,
         original_column: C,

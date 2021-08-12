@@ -373,8 +373,8 @@ pub fn matrix_data_form<'a>(
     )
 }
 
-pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>, Rhs=T>>(
-    provider: &MP,
+pub fn artificial_tableau_form<'provider, MP: MatrixProvider<Column<'provider>: ColumnTrait<'provider, F=T>, Rhs=T>>(
+    provider: &'provider MP,
 ) -> Tableau<Carry<S, BasisInverseRows<S>>, Partially<MP>> {
     let m = 4;
     let artificials = vec![0, 1];
@@ -402,7 +402,7 @@ pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>, Rhs=
     )
 }
 
-pub fn tableau_form<'provider, MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
+pub fn tableau_form<'provider, MP: MatrixProvider<Column<'provider>: ColumnTrait<'provider, F=T>>>(
     provider: &'provider MP,
 ) -> Tableau<Carry<S, BasisInverseRows<S>>, NonArtificial<MP>>
 where

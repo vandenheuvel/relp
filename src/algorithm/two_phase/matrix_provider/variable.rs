@@ -21,7 +21,7 @@ pub trait FeasibilityLogic: MatrixProvider {
     /// # Return value
     ///
     /// `true` if the variable is integer, `false` otherwise.
-    fn is_feasible(&self, j: usize, value: <Self::Column as Column>::F) -> bool;
+    fn is_feasible<'provider>(&'provider self, j: usize, value: <Self::Column<'provider> as Column<'provider>>::F) -> bool;
 
     /// Closest feasible variable to the left and right.
     ///
@@ -34,9 +34,9 @@ pub trait FeasibilityLogic: MatrixProvider {
     /// Two `Option`s, one for the closest feasible value to the left, one for the closest feasible
     /// value to the right. Note that these values might be equal, if there is only one feasible
     /// value.
-    fn closest_feasible(
-        &self,
+    fn closest_feasible<'provider>(
+        &'provider self,
         j: usize,
-        value: <Self::Column as Column>::F,
-    ) -> (Option<<Self::Column as Column>::F>, Option<<Self::Column as Column>::F>);
+        value: <Self::Column<'provider> as Column<'provider>>::F,
+    ) -> (Option<<Self::Column<'provider> as Column<'provider>>::F>, Option<<Self::Column<'provider> as Column<'provider>>::F>);
 }

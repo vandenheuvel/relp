@@ -197,13 +197,13 @@ impl<F: NonZero + SparseElement<C>, C: SparseComparator> FromIterator<F> for Spa
     }
 }
 
-impl<F: 'static, C> Column for Sparse<F, C>
+impl<'provider, F: 'provider, C> Column<'provider> for Sparse<F, C>
 where
     F: ColumnNumber,
     C: SparseComparator,
 {
     type F = F;
-    type Iter<'a> where C: 'a = SparseSliceIterator<'a, F>;
+    type Iter<'a> where Self: 'a = SparseSliceIterator<'a, F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         SparseSliceIterator::new(&self.data)

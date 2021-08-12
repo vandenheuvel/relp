@@ -12,14 +12,13 @@ use std::iter::Once;
 use relp_num::One;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
-use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
 use crate::data::linear_algebra::SparseTuple;
 
 /// Identity columns are needed for artificial matrices.
 ///
 /// When a matrix provider is to be used in the first phase, it should be possible to represent
 /// identity columns.
-pub trait Identity: Column {
+pub trait Identity<'provider>: Column<'provider> {
     /// Create an identity column, placing a "1" at a certain index and "0"'s otherwise.
     ///
     /// # Arguments
@@ -45,9 +44,9 @@ impl IdentityColumn {
     }
 }
 
-impl Column for IdentityColumn {
+impl<'provider> Column<'provider> for IdentityColumn {
     type F = One;
-    type Iter<'a> = impl ColumnIterator<'a, F=Self::F>;
+    type Iter<'a> where Self: 'a = Once<SparseTuple<&'a Self::F>>;
 
     fn iter(&self) -> Self::Iter<'_> {
         iter::once((self.index, &ONE))

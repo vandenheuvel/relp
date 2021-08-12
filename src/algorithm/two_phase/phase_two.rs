@@ -25,7 +25,7 @@ pub fn primal<'provider, IM, MP, PR>(
 where
     IM: InverseMaintener<F:
         im_ops::FieldHR +
-        im_ops::Column<<MP::Column as Column>::F> +
+        im_ops::Column<<MP::Column<'provider> as Column<'provider>>::F> +
         im_ops::Cost<MP::Cost<'provider>> +
     >,
     MP: MatrixProvider,

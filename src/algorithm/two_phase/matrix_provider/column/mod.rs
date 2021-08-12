@@ -26,7 +26,7 @@ pub mod identity;
 /// TODO(ARCHITECTURE): Many basis inverse maintenance algorithms require reallocation of the
 ///  column. Is this more complex set-up worth it?
 // TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
-pub trait Column: ColumnIntoIterator<Self::F> + Debug {
+pub trait Column<'provider>: ColumnIntoIterator<Self::F> + Debug {
     /// Input data type.
     ///
     /// Items of this type get read and used in additions and multiplications often.
@@ -94,9 +94,9 @@ impl<F> SparseColumn<F> {
     }
 }
 
-impl<F: 'static + ColumnNumber> Column for SparseColumn<F> {
+impl<'provider, F: 'provider + ColumnNumber> Column<'provider> for SparseColumn<F> {
     type F = F;
-    type Iter<'a> = impl ColumnIterator<'a, F=Self::F>;
+    type Iter<'a> where Self::F: 'a = SparseSliceIterator<'a, Self::F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         SparseSliceIterator::new(&self.inner)
@@ -201,9 +201,9 @@ impl<F: ColumnNumber> DenseColumn<F> {
     }
 }
 
-impl<F: 'static + ColumnNumber> Column for DenseColumn<F> {
+impl<'provider, F: 'provider + ColumnNumber> Column<'provider> for DenseColumn<F> {
     type F = F;
-    type Iter<'a> = impl ColumnIterator<'a, F=Self::F>;
+    type Iter<'a> where Self::F: 'a = DenseSliceIterator<'a, Self::F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         DenseSliceIterator::new(&self.inner)

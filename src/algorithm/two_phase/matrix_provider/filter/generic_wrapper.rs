@@ -13,7 +13,7 @@ use std::fmt;
 use index_utils::remove_sparse_indices;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
-use crate::algorithm::two_phase::matrix_provider::filter::{Filtered, ToFiltered};
+use crate::algorithm::two_phase::matrix_provider::filter::{Filtered, Filterable};
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::variable::FeasibilityLogic;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
@@ -24,7 +24,7 @@ use crate::data::linear_program::elements::BoundDirection;
 /// Remove a set of rows from a column.
 ///
 /// Note that only constraint rows should be removed.
-pub trait IntoFilteredColumn: Column {
+pub trait IntoFilteredColumn<'provider>: Column<'provider> {
     /// The type used to represent the filtered version of the column.
     ///
     /// This will often be `Self`.
@@ -32,7 +32,7 @@ pub trait IntoFilteredColumn: Column {
     /// This type has no lifetime attached to it, because it is likely better to filter once and
     /// then iterate over references of the filtered object, rather than to filter repeatedly while
     /// iterating.
-    type Filtered: Column<F=Self::F>;
+    type Filtered: Column<'provider, F=Self::F>;
 
     /// Filter the column.
     ///
@@ -49,8 +49,8 @@ pub trait IntoFilteredColumn: Column {
 /// Only constraint rows should be deleted, variable bounds should remain intact.
 /// TODO(DOCUMENTATION): Check the above property.
 #[derive(PartialEq, Debug)]
-pub struct RemoveRows<'a, MP> {
-    provider: &'a MP,
+pub struct RemoveRows<'provider, MP> {
+    provider: &'provider MP,
     /// List of rows that this method removes.
     ///
     /// Sorted at all times.
@@ -60,18 +60,18 @@ pub struct RemoveRows<'a, MP> {
 
 impl<'provider, MP> Filtered for RemoveRows<'provider, MP>
 where
-    MP: MatrixProvider<Column: IntoFilteredColumn>,
+    MP: MatrixProvider<Column<'provider>: IntoFilteredColumn<'provider>>,
 {
     fn filtered_rows(&self) -> &[usize] {
         &self.rows_to_skip
     }
 }
 
-impl<MP: 'static> ToFiltered for MP
+impl<MP: MatrixProvider> Filterable for MP
 where
-    MP: MatrixProvider<Column: IntoFilteredColumn>,
+    for<'r> MP::Column<'r>: IntoFilteredColumn<'r>,
 {
-    type Filtered<'provider> = RemoveRows<'provider, MP>;
+    type Filtered<'provider> where Self: 'provider = RemoveRows<'provider, MP>;
 
     /// Create a new `RemoveRows` instance.
     ///
@@ -84,7 +84,10 @@ where
     /// # Return value
     ///
     /// A new `RemoveRows` instance.
-    default fn to_filtered(&self, rows_to_skip: Vec<usize>) -> Self::Filtered<'_> {
+    default fn filter<'provider>(&'provider self, rows_to_skip: Vec<usize>) -> Self::Filtered<'provider>
+    where
+        // MP::Column<'provider>: IntoFilteredColumn<'provider>,
+    {
         debug_assert!(rows_to_skip.is_sorted());
         debug_assert_eq!(rows_to_skip.iter().collect::<HashSet<_>>().len(), rows_to_skip.len());
 
@@ -221,15 +224,15 @@ where
     }
 }
 
-impl<'provider, MP> MatrixProvider for RemoveRows<'provider, MP>
+impl<'provider, MP: MatrixProvider> MatrixProvider for RemoveRows<'provider, MP>
 where
-    MP: MatrixProvider<Column: IntoFilteredColumn>,
+    MP::Column<'provider>: IntoFilteredColumn<'provider>,
 {
-    type Column = <MP::Column as IntoFilteredColumn>::Filtered;
+    type Column<'a> where Self: 'a = <MP::Column<'provider> as IntoFilteredColumn<'provider>>::Filtered;
     type Cost<'a> where Self: 'a = MP::Cost<'provider>;
     type Rhs = MP::Rhs;
 
-    fn column(&self, j: usize) -> Self::Column {
+    fn column<'a>(&'a self, j: usize) -> Self::Column<'a> {
         debug_assert!(j < self.nr_columns());
 
         self.provider.column(j).into_filtered(&self.rows_to_skip)
@@ -285,7 +288,7 @@ where
 
 impl<'provider, MP> PartialInitialBasis for RemoveRows<'provider, MP>
 where
-    MP: MatrixProvider<Column: IntoFilteredColumn> + PartialInitialBasis,
+    MP: MatrixProvider<Column<'provider>: IntoFilteredColumn<'provider>> + PartialInitialBasis,
 {
     fn pivot_element_indices(&self) -> Vec<(usize, usize)> {
         let mut from_parent = self.provider.pivot_element_indices();
@@ -301,9 +304,9 @@ where
 
 impl<'provider, MP> FeasibilityLogic for RemoveRows<'provider, MP>
 where
-    MP: MatrixProvider<Column: IntoFilteredColumn> + FeasibilityLogic,
+    MP: MatrixProvider<Column<'provider>: IntoFilteredColumn<'provider>> + FeasibilityLogic,
 {
-    fn is_feasible(&self, j: usize, value: <MP::Column as Column>::F) -> bool {
+    fn is_feasible(&self, j: usize, value: <MP::Column<'provider> as Column<'provider>>::F) -> bool {
         debug_assert!(j < self.nr_columns());
 
         self.provider.is_feasible(j, value)
@@ -312,8 +315,8 @@ where
     fn closest_feasible(
         &self,
         j: usize,
-        value: <MP::Column as Column>::F,
-    ) -> (Option<<MP::Column as Column>::F>, Option<<MP::Column as Column>::F>) {
+        value: <MP::Column<'provider> as Column<'provider>>::F,
+    ) -> (Option<<MP::Column<'provider> as Column<'provider>>::F>, Option<<MP::Column<'provider> as Column<'provider>>::F>) {
         debug_assert!(j < self.nr_columns());
 
         self.provider.closest_feasible(j, value)
@@ -322,7 +325,7 @@ where
 
 impl<'provider, MP> Display for RemoveRows<'provider, MP>
 where
-    MP: MatrixProvider<Column: IntoFilteredColumn>,
+    MP: MatrixProvider<Column<'provider>: IntoFilteredColumn<'provider>>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 8;

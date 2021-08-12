@@ -40,7 +40,7 @@ pub trait MatrixProvider {
     /// TODO(ARCHITECTURE): When GATs are working, cloning can be avoided in some implementations,
     ///  such as the ones that explicitly store the column data, by giving this associated type a
     ///  lifetime parameter. Keep an eye on <https://github.com/rust-lang/rust/issues/44265>.
-    type Column: Column;
+    type Column<'a>: Column<'a> where Self: 'a;
     /// Cost row type.
     ///
     /// This type will often be of the form `Option<_>` so to not have to store any zero values, the
@@ -59,7 +59,7 @@ pub trait MatrixProvider {
     /// # Return value
     ///
     /// A sparse vector.
-    fn column(&self, j: usize) -> Self::Column;
+    fn column<'a>(&'a self, j: usize) -> Self::Column<'a>;
 
     /// Cost of a variable.
     ///

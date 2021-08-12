@@ -70,8 +70,8 @@ impl<F: 'static> MatrixProvider for Primal<F>
 where
     F: Field + NonZero,
 {
-    type Column = ArcIncidenceColumn;
-    type Cost<'a> = &'a F;
+    type Column<'a> where Self: 'a = ArcIncidenceColumn;
+    type Cost<'a> where Self: 'a = &'a F;
     type Rhs = Binary;
 
     fn column(&self, j: usize) -> Self::Column {

@@ -22,33 +22,33 @@ use crate::data::linear_algebra::vector::Vector;
 /// (column) needs to be found. This decision is currently made independent of the strategy.
 pub trait PivotRule<F> {
     /// Create a new instance.
-    fn new<IM, K>(tableau: &Tableau<IM, K>) -> Self
+    fn new<'provider, IM, K>(tableau: &Tableau<IM, K>) -> Self
     where
         IM: InverseMaintener<F=F>,
-        K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
     ;
 
     /// Column selection rule for the primal Simplex method.
-    fn select_primal_pivot_column<IM, K>(
+    fn select_primal_pivot_column<'provider, IM, K>(
         &mut self,
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
         IM: InverseMaintener<F=F>,
-        K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
     ;
 
-    fn after_basis_update<IM, K>(
+    fn after_basis_update<'provider, IM, K>(
         &mut self,
         _info: BasisChangeComputationInfo<IM::F>,
         _tableau: &Tableau<IM, K>,
     )
     where
         IM: InverseMaintener<F=F>,
-        K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
     {
     }
 }
@@ -61,18 +61,18 @@ trait StartIndex {
     fn start_index(&self) -> usize;
 }
 
-impl<IM, K> StartIndex for Tableau<IM, K>
+impl<'provider, IM, K> StartIndex for Tableau<IM, K>
 where
-    K: Kind,
+    K: Kind<'provider>,
 {
     default fn start_index(&self) -> usize {
         0
     }
 }
 
-impl<IM, A> StartIndex for Tableau<IM, A>
+impl<'provider, IM, A> StartIndex for Tableau<IM, A>
 where
-    A: Artificial,
+    A: Artificial<'provider>,
 {
     fn start_index(&self) -> usize {
         self.nr_artificial_variables()
@@ -88,18 +88,23 @@ impl<F> PivotRule<F> for FirstProfitable
 where
     F: im_ops::Field,
 {
-    fn new<IM, K>(_tableau: &Tableau<IM, K>) -> Self {
+    fn new<'provider, IM, K>(_tableau: &Tableau<IM, K>) -> Self
+    where
+        IM: InverseMaintener<F=F>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
+    {
         Self
     }
 
-    fn select_primal_pivot_column<IM, K>(
+    fn select_primal_pivot_column<'provider, IM, K>(
         &mut self,
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
         IM: InverseMaintener<F=F>,
-        K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
     {
         (tableau.start_index()..tableau.nr_columns())
             .filter(|&column| !tableau.is_in_basis(column))
@@ -117,18 +122,23 @@ impl<F> PivotRule<F> for FirstProfitableWithMemory
 where
     F: im_ops::Field,
 {
-    fn new<IM, K>(_tableau: &Tableau<IM, K>) -> Self {
+    fn new<'provider, IM, K>(_tableau: &Tableau<IM, K>) -> Self
+    where
+        IM: InverseMaintener<F=F>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
+    {
         Self { last_selected: None }
     }
 
-    fn select_primal_pivot_column<IM, K>(
+    fn select_primal_pivot_column<'provider, IM, K>(
         &mut self,
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
         IM: InverseMaintener<F=F>,
-        K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
     {
         let find = |to_consider: Range<usize>| to_consider
             .filter(|&column| !tableau.is_in_basis(column))
@@ -156,18 +166,23 @@ where
     F: im_ops::Field,
     for<'r> &'r F: Ord,
 {
-    fn new<IM, K>(_tableau: &Tableau<IM, K>) -> Self {
+    fn new<'provider, IM, K>(_tableau: &Tableau<IM, K>) -> Self
+    where
+        IM: InverseMaintener<F=F>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
+    {
         Self
     }
 
-    fn select_primal_pivot_column<IM, K>(
+    fn select_primal_pivot_column<'provider, IM, K>(
         &mut self,
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
         IM: InverseMaintener<F=F>,
-        K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
     {
         let mut smallest = None;
         for (j, cost) in (tableau.start_index()..tableau.nr_columns())
@@ -199,11 +214,11 @@ impl<F> PivotRule<F> for SteepestDescentAlongObjective<F>
 where
     F: im_ops::Field + im_ops::FieldHR,
 {
-    fn new<IM, K>(tableau: &Tableau<IM, K>) -> Self
+    fn new<'provider, IM, K>(tableau: &Tableau<IM, K>) -> Self
     where
         IM: InverseMaintener<F=F>,
-        K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
     {
         Self {
             gamma: (0..tableau.nr_columns())
@@ -218,14 +233,14 @@ where
         }
     }
 
-    fn select_primal_pivot_column<IM, K>(
+    fn select_primal_pivot_column<'provider, IM, K>(
         &mut self,
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
         IM: InverseMaintener<F=F>,
-        K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
     {
         (tableau.start_index()..tableau.nr_columns())
             .filter(|&j| !tableau.is_in_basis(j))
@@ -240,15 +255,15 @@ where
             })
     }
 
-    fn after_basis_update<IM, K>(
+    fn after_basis_update<'provider, IM, K>(
         &mut self,
         info: BasisChangeComputationInfo<IM::F>,
         tableau: &Tableau<IM, K>,
     )
     where
         IM: InverseMaintener<F=F>,
-        K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        K: Kind<'provider>,
+        F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>,
     {
         // Update entering column gamma
         self.gamma[info.pivot_column_index] = None;
@@ -296,10 +311,10 @@ where
     }
 }
 
-fn initial_gamma<IM, K>(j: usize, tableau: &Tableau<IM, K>) -> IM::F
+fn initial_gamma<'provider, IM, K>(j: usize, tableau: &Tableau<IM, K>) -> IM::F
 where
-    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
-    K: Kind,
+    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>>,
+    K: Kind<'provider>,
 {
     IM::F::one() + tableau.generate_column(j).into_column().squared_norm()
 }

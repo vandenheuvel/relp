@@ -31,7 +31,7 @@ pub type Cost = Binary;
 ///
 /// There are currently two implementations; either all variables are artificial, or not necessarily
 /// all variables are. See the two submodules.
-pub trait Artificial: Kind<Column: Identity, Cost=Cost> {
+pub trait Artificial<'provider>: Kind<'provider, Column: Identity<'provider>, Cost=Cost> {
     /// How many artificial variables are in the tableau.
     ///
     /// This number varies, because slack variables might have been recognized as practical
@@ -62,8 +62,8 @@ pub trait Artificial: Kind<Column: Identity, Cost=Cost> {
 /// artificial variables from the problem at zero level.
 impl<'provider, IM, A> Tableau<IM, A>
 where
-    IM: InverseMaintener<F: im_ops::Column<<A::Column as Column>::F> + im_ops::Cost<A::Cost>>,
-    A: Artificial,
+    IM: InverseMaintener<F: im_ops::Column<<A::Column as Column<'provider>>::F> + im_ops::Cost<A::Cost>>,
+    A: Artificial<'provider>,
 {
     /// Whether there are any artificial variables in the basis.
     pub fn has_artificial_in_basis(&self) -> bool {
@@ -112,7 +112,7 @@ where
 
 impl<'provider, IM, A> Tableau<IM, A>
 where
-    A: Artificial,
+    A: Artificial<'provider>,
 {
     /// Number of artificial variables in this tableau.
     pub fn nr_artificial_variables(&self) -> usize {

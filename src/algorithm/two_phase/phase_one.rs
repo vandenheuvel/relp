@@ -20,17 +20,18 @@ use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially
 /// This can happen either using the simplex method, or some more specialized method.
 ///
 /// TODO(ENHANCEMENT): Problems that can only have full rank
-pub trait FeasibilityComputeTrait: MatrixProvider<Column: Identity> {
+pub trait FeasibilityComputeTrait: MatrixProvider {
     /// Compute a basic feasible solution.
     ///
     /// # Returns
     ///
     /// A value representing the basic feasible solution, or an indicator that there is none.
-    fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
+    fn compute_bfs_giving_im<'provider, IM>(&'provider self) -> RankedFeasibilityResult<IM>
     where
+        <Self as MatrixProvider>::Column<'provider>: Identity<'provider>,
         IM: InverseMaintener<F:
             im_ops::FieldHR +
-            im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
+            im_ops::Column<<<Self as MatrixProvider>::Column<'provider> as Column<'provider>>::F> +
             im_ops::Cost<Cost> +
             im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
         >,
@@ -38,15 +39,13 @@ pub trait FeasibilityComputeTrait: MatrixProvider<Column: Identity> {
 }
 
 /// Most generic implementation: finding a basic feasible solution using the Simplex method.
-impl<MP> FeasibilityComputeTrait for MP
-where
-    MP: MatrixProvider<Column: Identity>
-{
-    default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
+impl<MP: MatrixProvider> FeasibilityComputeTrait for MP {
+    default fn compute_bfs_giving_im<'provider, IM>(&'provider self) -> RankedFeasibilityResult<IM>
     where
+        <Self as MatrixProvider>::Column<'provider>: Identity<'provider>,
         IM: InverseMaintener<F:
             im_ops::FieldHR +
-            im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
+            im_ops::Column<<<Self as MatrixProvider>::Column<'provider> as Column<'provider>>::F> +
             im_ops::Cost<Cost> +
             im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
         >,
@@ -79,15 +78,13 @@ pub trait PartialInitialBasis: MatrixProvider {
     fn nr_initial_elements(&self) -> usize;
 }
 
-impl<MP: PartialInitialBasis> FeasibilityComputeTrait for MP
-where
-    MP: MatrixProvider<Column: Identity>,
-{
-    default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
+impl<MP: MatrixProvider + PartialInitialBasis> FeasibilityComputeTrait for MP {
+    default fn compute_bfs_giving_im<'provider, IM>(&'provider self) -> RankedFeasibilityResult<IM>
     where
+        <MP as MatrixProvider>::Column<'provider>: Identity<'provider>,
         IM: InverseMaintener<F:
             im_ops::FieldHR +
-            im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
+            im_ops::Column<<<Self as MatrixProvider>::Column<'provider> as Column<'provider>>::F> +
             im_ops::Cost<Cost> +
             im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
         >,
@@ -120,12 +117,12 @@ pub trait FullInitialBasis: PartialInitialBasis {
 /// # Return value
 ///
 /// Whether the tableau might allow a basic feasible solution without artificial variables.
-pub(crate) fn primal<IM, K, MP, PR>(
+pub(crate) fn primal<'provider, IM, K, MP, PR>(
     mut tableau: Tableau<IM, K>,
 ) -> RankedFeasibilityResult<IM>
 where
-    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
-    K: Artificial,
+    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>>,
+    K: Artificial<'provider>,
     MP: MatrixProvider,
     PR: PivotRule<IM::F>,
 {
@@ -229,12 +226,12 @@ pub enum Rank {
 /// instead of constraints. All bounds are linearly independent among each other, and with respect
 /// to all constraints. As such, they should never be among the redundant rows returned by this
 /// method.
-fn remove_artificial_basis_variables<IM, K>(
+fn remove_artificial_basis_variables<'provider, IM, K>(
     tableau: &mut Tableau<IM, K>,
 ) -> Vec<usize>
 where
-    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
-    K: Artificial,
+    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>>,
+    K: Artificial<'provider>,
 {
     let artificial_variable_indices = tableau.artificial_basis_columns();
     debug_assert!(artificial_variable_indices.is_sorted_by_key(|&(i, _)| i));

@@ -14,6 +14,7 @@ use relp_num::NonZero;
 
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
+use std::ops::Index;
 
 /// Indices start at `0`.
 /// TODO(OPTIMIZATION): What data structure is best suited to back this struct? How are allocations
@@ -164,6 +165,16 @@ impl MatrixOrder for ColumnMajor {
             phantom_comparison: PhantomData,
             phantom_ordering: PhantomData,
         }
+    }
+}
+
+impl<F, C, O: MatrixOrder> Index<usize> for SparseMatrix<F, C, O> {
+    type Output = [SparseTuple<F>];
+
+    fn index(&self, index: usize) -> &Self::Output {
+        debug_assert!(index < self.major_dimension_size);
+
+        &self.data[index]
     }
 }
 

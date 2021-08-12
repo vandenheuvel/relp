@@ -38,10 +38,10 @@ pub struct Tableau<IM, K> {
     kind: K,
 }
 
-impl<IM, K> Tableau<IM, K>
+impl<'provider, IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
-    K: Kind,
+    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>>,
+    K: Kind<'provider>,
 {
     /// Brings a column into the basis by updating the `self.carry` matrix and updating the
     /// data structures holding the collection of basis columns.
@@ -233,9 +233,9 @@ pub struct BasisChangeComputationInfo<F> {
     pub basis_inverse_row: SparseVector<F, F>,
 }
 
-impl<IM, K> Tableau<IM, K>
+impl<'provider, IM, K> Tableau<IM, K>
 where
-    K: Kind
+    K: Kind<'provider>
 {
     /// Number of rows in the tableau.
     ///
@@ -260,10 +260,10 @@ where
     }
 }
 
-impl<IM, K> Tableau<IM, K>
+impl<'provider, IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
-    K: Kind,
+    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>>,
+    K: Kind<'provider>,
 {
     /// Determine the row to pivot on.
     ///
@@ -316,10 +316,10 @@ where
 /// Check whether the tableau currently has a valid basic feasible solution.
 ///
 /// Only used for debug purposes.
-pub fn debug_assert_in_basic_feasible_solution_state<IM, K>(tableau: &Tableau<IM, K>)
+pub fn debug_assert_in_basic_feasible_solution_state<'provider, IM, K>(tableau: &Tableau<IM, K>)
 where
-    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
-    K: Kind,
+    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>>,
+    K: Kind<'provider>,
 {
     // Checking basis_columns
     // Correct number of basis columns (uniqueness is implied because it's a set)
@@ -356,10 +356,10 @@ where
         });
 }
 
-impl<IM, K> Display for Tableau<IM, K>
+impl<'provider, IM, K> Display for Tableau<IM, K>
 where
-    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
-    K: Kind,
+    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column<'provider>>::F> + im_ops::Cost<K::Cost>>,
+    K: Kind<'provider>,
 {
     fn fmt(&self, f: &mut Formatter) -> FormatResult {
         assert!(self.nr_rows().to_string().len() <= "cost".len());

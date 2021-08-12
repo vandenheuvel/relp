@@ -109,7 +109,7 @@ impl IntoIterator for ArcIncidenceColumn {
         self.0.into_iter()
     }
 }
-impl Column for ArcIncidenceColumn {
+impl<'provider> Column<'provider> for ArcIncidenceColumn {
     type F = ArcDirection;
     type Iter<'a> = SparseSliceIterator<'a, ArcDirection>;
 
@@ -123,12 +123,12 @@ impl Column for ArcIncidenceColumn {
             .map_or_else(|| "0".to_string(), |(_, v)| v.to_string())
     }
 }
-impl Identity for ArcIncidenceColumn {
+impl<'provider> Identity<'provider> for ArcIncidenceColumn {
     fn identity(i: usize, _len: usize) -> Self {
         Self(vec![(i, ArcDirection::Incoming)])
     }
 }
-impl IntoFilteredColumn for ArcIncidenceColumn {
+impl<'provider> IntoFilteredColumn<'provider> for ArcIncidenceColumn {
     type Filtered = Self;
 
     fn into_filtered(mut self, to_remove: &[usize]) -> Self::Filtered {
