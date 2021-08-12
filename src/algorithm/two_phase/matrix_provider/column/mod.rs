@@ -31,7 +31,7 @@ pub trait Column: ColumnIntoIterator<Self::F> + Debug {
     ///
     /// Items of this type get read and used in additions and multiplications often.
     // TODO(ENHANCEMENT): Don't work with a field type directly, but an `Into<F>` type to separate.
-    type F: 'static + ColumnNumber;
+    type F: ColumnNumber;
 
     /// Type of struct to iterate over this column.
     ///
