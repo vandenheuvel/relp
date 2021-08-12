@@ -80,7 +80,7 @@ where
         let m = columns.len();
         let mut rows = vec![Vec::new(); m];
         for (j, column) in columns.into_iter().enumerate() {
-            for (i, value) in column.iter() {
+            for (i, value) in column {
                 rows[i].push((j, value.into()));
             }
         }
@@ -605,7 +605,6 @@ mod test {
             let column: Column<Rational64> = Column::Sparse {
                 constraint_values: vec![],
                 slack: None,
-                mock_array: [],
             };
             let result = offdiag.left_multiply_by_basis_inverse(column.iter());
             assert_eq!(result.column, SparseVector::new(vec![], 2));
@@ -624,7 +623,6 @@ mod test {
             let column = Column::Sparse {
                 constraint_values: vec![(0, R64!(1))],
                 slack: None,
-                mock_array: [],
             };
             let result = offdiag.left_multiply_by_basis_inverse(column.iter());
             assert_eq!(result.column, SparseVector::new(vec![(0, RB!(1)), (1, RB!(-1))], 2));
@@ -632,7 +630,6 @@ mod test {
             let column = Column::Sparse {
                 constraint_values: vec![(1, R64!(1))],
                 slack: None,
-                mock_array: [],
             };
             let result = offdiag.left_multiply_by_basis_inverse(column.iter());
             assert_eq!(result.column, SparseVector::new(vec![(1, RB!(1))], 2));
@@ -913,7 +910,7 @@ mod test {
                 SparseVector::new(vec![(1, RB!(1, 110)), (3, RB!(-3, 110)), (4, RB!(1, 55))], m),
             );
             // Sum of two
-            let iter = matrix_data::Column::TwoSlack([(0, RB!(1)), (1, RB!(1))], []);
+            let iter = matrix_data::Column::TwoSlack((0, RB!(1)), (1, RB!(1)));
             assert_eq!(
                 modified.left_multiply_by_basis_inverse(iter.iter()).into_column(),
                 SparseVector::new(vec![(0, RB!(-1, 11)), (1, RB!(-363, 215)), (2, RB!(-1, 43)), (3, RB!(693, 430))], m),

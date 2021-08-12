@@ -26,7 +26,7 @@ pub mod identity;
 /// TODO(ARCHITECTURE): Many basis inverse maintenance algorithms require reallocation of the
 ///  column. Is this more complex set-up worth it?
 // TODO(ARCHITECTURE): Once GATs work, consider giving this trait a lifetime parameter.
-pub trait Column: Debug {
+pub trait Column: ColumnIntoIterator<Self::F> + Debug {
     /// Input data type.
     ///
     /// Items of this type get read and used in additions and multiplications often.
@@ -58,15 +58,13 @@ pub trait Column: Debug {
 /// implemented directly; instead, implement the normal `Iterator` and `Clone` traits. There is a
 /// blanket impl for this trait.
 pub trait ColumnIterator<'a>: Iterator<Item=SparseTuple<&'a Self::F>> + Clone {
-    type F: 'a;
+    type F: 'a + ColumnNumber;
 }
-
-impl<'a, F: 'a, T> ColumnIterator<'a> for T
-where
-    T: Iterator<Item=SparseTuple<&'a F>> + Clone
-{
+impl<'a, F: 'a + ColumnNumber, T: Iterator<Item=SparseTuple<&'a F>> + Clone> ColumnIterator<'a> for T {
     type F = F;
 }
+
+pub trait ColumnIntoIterator<F> = IntoIterator<Item=SparseTuple<F>>;
 
 /// Basic operations that should be possible with the type of the values of the column.
 ///
@@ -112,6 +110,15 @@ impl<F: 'static + ColumnNumber> Column for SparseColumn<F> {
     }
 }
 
+impl<F> IntoIterator for SparseColumn<F> {
+    type Item = SparseTuple<F>;
+    type IntoIter = impl Iterator<Item=Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
+
 #[derive(Clone)]
 pub struct SparseSliceIterator<'a, F> {
     creator: &'a [SparseTuple<F>],
@@ -144,9 +151,44 @@ impl<'a, F> Iterator for SparseSliceIterator<'a, F> {
     }
 }
 
+#[derive(Clone)]
+pub struct SparseOptionIterator<'a, F> {
+    creator: Option<SparseTuple<&'a F>>,
+}
+
+impl<'a, F: ColumnNumber> SparseOptionIterator<'a, F> {
+    pub fn new(option: &'a Option<SparseTuple<F>>) -> Self {
+        debug_assert!(option.iter().all(|(_, v)| v.is_not_zero()));
+
+        Self {
+            creator: match option {
+                None => None,
+                Some((index, value)) => Some((*index, value)),
+            },
+        }
+    }
+}
+
+impl<'a, F> Iterator for SparseOptionIterator<'a, F> {
+    type Item = SparseTuple<&'a F>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.creator.take()
+    }
+}
+
 #[derive(Debug, Clone)]
 struct DenseColumn<F> {
     inner: Vec<F>,
+}
+
+impl<F> IntoIterator for DenseColumn<F> {
+    type Item = SparseTuple<F>;
+    type IntoIter = impl Iterator<Item=Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter().enumerate()
+    }
 }
 
 impl<F: ColumnNumber> DenseColumn<F> {

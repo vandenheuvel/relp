@@ -3,8 +3,10 @@
 #![feature(generic_associated_types)]
 
 use std::iter;
+use std::iter::once;
 use std::ops::{Add, Mul, Range};
 
+use index_utils::remove_sparse_indices;
 use num_traits::Zero;
 use relp_num::{Rational64, RationalBig};
 use relp_num::NonZero;
@@ -18,7 +20,6 @@ use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::phase_one::PartialInitialBasis;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use index_utils::remove_sparse_indices;
 use relp::data::linear_algebra::matrix::{ColumnMajor, SparseMatrix};
 use relp::data::linear_algebra::matrix::MatrixOrder;
 use relp::data::linear_algebra::SparseTuple;
@@ -108,6 +109,7 @@ impl ColumnTrait for Column {
         }
     }
 }
+
 impl Identity for Column {
     fn identity(i: usize, _len: usize) -> Self {
         Self {
@@ -116,6 +118,7 @@ impl Identity for Column {
         }
     }
 }
+
 impl IntoFilteredColumn for Column {
     type Filtered = Self;
 
@@ -126,6 +129,14 @@ impl IntoFilteredColumn for Column {
     }
 }
 
+impl IntoIterator for Column {
+    type Item = SparseTuple<ArcDirection>;
+    type IntoIter = impl Iterator<Item=Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.constraint_values.into_iter().chain(once(self.slack))
+    }
+}
 
 impl<F> MatrixProvider for Primal<F>
 where

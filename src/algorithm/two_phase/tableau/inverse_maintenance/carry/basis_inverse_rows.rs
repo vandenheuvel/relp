@@ -291,8 +291,8 @@ mod test {
     #[test]
     fn invert_identity() {
         let columns = [
-            matrix_data::Column::Slack([(0, RB!(1))], []),
-            matrix_data::Column::Slack([(1, RB!(1))], []),
+            matrix_data::Column::Slack((0, RB!(1))),
+            matrix_data::Column::Slack((1, RB!(1))),
         ];
 
         let result = BasisInverseRows::<RationalBig>::invert(columns.into_iter());
@@ -308,8 +308,8 @@ mod test {
     #[test]
     fn invert_non_identity() {
         let columns = [
-            matrix_data::Column::TwoSlack([(0, RB!(1)), (1, RB!(1))], []),
-            matrix_data::Column::Slack([(1, RB!(1))], []),
+            matrix_data::Column::TwoSlack((0, RB!(1)), (1, RB!(1))),
+            matrix_data::Column::Slack((1, RB!(1))),
         ];
 
         let result = BasisInverseRows::<RationalBig>::invert(columns.into_iter());

@@ -101,6 +101,14 @@ impl IncidenceMatrix {
 
 #[derive(Clone, Debug)]
 pub struct ArcIncidenceColumn(pub Vec<SparseTuple<ArcDirection>>);
+impl IntoIterator for ArcIncidenceColumn {
+    type Item = SparseTuple<ArcDirection>;
+    type IntoIter = impl Iterator<Item=Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
 impl Column for ArcIncidenceColumn {
     type F = ArcDirection;
     type Iter<'a> = SparseSliceIterator<'a, ArcDirection>;
