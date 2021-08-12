@@ -7,11 +7,13 @@
 //! using a custom type for the constant `1`. As computing an identity column w.r.t. the current
 //! basis is equivalent to just inverting the basis explicitly.
 use std::iter;
+use std::iter::Once;
 
 use relp_num::One;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
+use crate::data::linear_algebra::SparseTuple;
 
 /// Identity columns are needed for artificial matrices.
 ///
@@ -57,5 +59,14 @@ impl Column for IdentityColumn {
         } else {
             "0"
         }.to_string()
+    }
+}
+
+impl IntoIterator for IdentityColumn {
+    type Item = SparseTuple<One>;
+    type IntoIter = Once<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        iter::once((self.index, One))
     }
 }

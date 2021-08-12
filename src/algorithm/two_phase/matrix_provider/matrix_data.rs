@@ -3,6 +3,8 @@
 //! A combination of a sparse matrix of constraints and a list of upper bounds for variables.
 use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::iter::{Chain, Once};
+use std::iter::once;
 use std::ops::Neg;
 
 use cumsum::cumsum_array_owned;
@@ -12,7 +14,7 @@ use num_traits::One;
 use relp_num::{Field, FieldRef};
 use relp_num::NonZero;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, SparseSliceIterator};
+use crate::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, SparseOptionIterator, SparseSliceIterator};
 use crate::algorithm::two_phase::matrix_provider::column::ColumnNumber;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
@@ -300,31 +302,28 @@ where
                     constraint_values: self.constraints.iter_column(j).cloned().collect(),
                     slack: self.bound_row_index(j, BoundDirection::Upper)
                         .map(|i| 0 + i)
-                        .map(|i| [(i, F::one())]),
-                    mock_array: [],
+                        .map(|i| (i, F::one())),
                 }
             }
-            ColumnType::RangeSlack => Column::TwoSlack([
-                    (self.row_group_end[RowType::EqualityConstraint] + j, F::one()),
-                    (self.row_group_end[RowType::VariableBound] + j, F::one()),
-                ],
-                [],
+            ColumnType::RangeSlack => Column::TwoSlack(
+                (self.row_group_end[RowType::EqualityConstraint] + j, F::one()),
+                (self.row_group_end[RowType::VariableBound] + j, F::one()),
             ),
             ColumnType::UpperInequalitySlack => {
                 let row_index = self.row_group_end[RowType::RangeConstraint] + j;
-                Column::Slack([(row_index, F::one())], [])
+                Column::Slack((row_index, F::one()))
             }
             ColumnType::LowerInequalitySlack => {
                 let row_index = self.row_group_end[RowType::UpperInequalityConstraint] + j;
-                Column::Slack([(row_index, -F::one())], [])
+                Column::Slack((row_index, -F::one()))
             }
             ColumnType::VariableBoundSlack => {
                 let row_index = self.row_group_end[RowType::LowerInequalityConstraint] + j;
-                Column::Slack([(row_index, F::one())], [])
+                Column::Slack((row_index, F::one()))
             }
             ColumnType::SlackBoundSlack => {
                 let row_index = self.row_group_end[RowType::VariableBound] + j;
-                Column::Slack([(row_index, F::one())], [])
+                Column::Slack((row_index, F::one()))
             }
         }
     }
@@ -473,9 +472,7 @@ pub enum Column<F> {
         /// to it directly.
         ///
         /// TODO(ARCHITECTURE): Can this value be eliminated?
-        slack: Option<[(usize, F); 1]>, // Is always a positive slack: `1`.
-        /// Used for creating a chaining iterator if there is no slack.
-        mock_array: [(usize, F); 0],
+        slack: Option<SparseTuple<F>>, // Is always a positive slack: `1`.
     },
     /// The case where there is only a variable bound being represented.
     ///
@@ -488,9 +485,9 @@ pub enum Column<F> {
     // TODO(PERFORMANCE): Can we eliminate the zero sized array? It's currently there to avoid
     //  wrapping the `ColumnIntoIter::parent_iter_cloned` field in an `Option`, but that might be
     //  equivalent after optimizations.
-    Slack([(usize, F); 1], [(usize, F); 0]),
+    Slack(SparseTuple<F>),
     /// For range variables that have exactly two `1`'s in their column.
-    TwoSlack([(usize, F); 2], [(usize, F); 0]),
+    TwoSlack(SparseTuple<F>, SparseTuple<F>),
 }
 
 impl<F: 'static> Identity for Column<F>
@@ -501,7 +498,108 @@ where
     fn identity(i: usize, len: usize) -> Self {
         assert!(i < len);
 
-        Self::Slack([(i, F::one())], [])
+        Self::Slack((i, F::one()))
+    }
+}
+
+pub enum ColumnIntoIterator<F> {
+    Sparse(Chain<std::vec::IntoIter<SparseTuple<F>>, std::option::IntoIter<SparseTuple<F>>>),
+    Slack(Once<SparseTuple<F>>),
+    TwoSlack(Chain<Once<SparseTuple<F>>, Once<SparseTuple<F>>>),
+}
+
+impl<F> IntoIterator for Column<F> {
+    type Item = SparseTuple<F>;
+    type IntoIter = impl Iterator<Item=Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Column::Sparse { constraint_values, slack, } =>
+                ColumnIntoIterator::Sparse(constraint_values.into_iter().chain(slack.into_iter())),
+            Column::Slack(single_value) =>
+                ColumnIntoIterator::Slack(once(single_value)),
+            Column::TwoSlack(first, second) =>
+                ColumnIntoIterator::TwoSlack(once(first).chain(once(second))),
+        }
+    }
+}
+
+impl<F> Iterator for ColumnIntoIterator<F> {
+    type Item = SparseTuple<F>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            ColumnIntoIterator::Sparse(iter) => iter.next(),
+            ColumnIntoIterator::Slack(iter) => iter.next(),
+            ColumnIntoIterator::TwoSlack(iter) => iter.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            ColumnIntoIterator::Sparse(iter) => iter.size_hint(),
+            ColumnIntoIterator::Slack(iter) => iter.size_hint(),
+            ColumnIntoIterator::TwoSlack(iter) => iter.size_hint(),
+        }
+    }
+
+    fn count(self) -> usize where Self: Sized {
+        match self {
+            ColumnIntoIterator::Sparse(iter) => iter.count(),
+            ColumnIntoIterator::Slack(iter) => iter.count(),
+            ColumnIntoIterator::TwoSlack(iter) => iter.count(),
+        }
+    }
+
+    fn fold<B, G>(self, init: B, f: G) -> B where Self: Sized, G: FnMut(B, Self::Item) -> B {
+        match self {
+            ColumnIntoIterator::Sparse(iter) => iter.fold(init, f),
+            ColumnIntoIterator::Slack(iter) => iter.fold(init, f),
+            ColumnIntoIterator::TwoSlack(iter) => iter.fold(init, f),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum ColumnIterator<'a, F> {
+    Sparse(Chain<SparseSliceIterator<'a, F>, SparseOptionIterator<'a, F>>),
+    Slack(Once<SparseTuple<&'a F>>),
+    TwoSlack(Chain<Once<SparseTuple<&'a F>>, Once<SparseTuple<&'a F>>>),
+}
+
+impl<'a, F> Iterator for ColumnIterator<'a, F> {
+    type Item = SparseTuple<&'a F>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            ColumnIterator::Sparse(iter) => iter.next(),
+            ColumnIterator::Slack(iter) => iter.next(),
+            ColumnIterator::TwoSlack(iter) => iter.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            ColumnIterator::Sparse(iter) => iter.size_hint(),
+            ColumnIterator::Slack(iter) => iter.size_hint(),
+            ColumnIterator::TwoSlack(iter) => iter.size_hint(),
+        }
+    }
+
+    fn count(self) -> usize where Self: Sized {
+        match self {
+            ColumnIterator::Sparse(iter) => iter.count(),
+            ColumnIterator::Slack(iter) => iter.count(),
+            ColumnIterator::TwoSlack(iter) => iter.count(),
+        }
+    }
+
+    fn fold<B, G>(self, init: B, f: G) -> B where Self: Sized, G: FnMut(B, Self::Item) -> B {
+        match self {
+            ColumnIterator::Sparse(iter) => iter.fold(init, f),
+            ColumnIterator::Slack(iter) => iter.fold(init, f),
+            ColumnIterator::TwoSlack(iter) => iter.fold(init, f),
+        }
     }
 }
 
@@ -521,20 +619,12 @@ where
     #[inline]
     fn iter(&self) -> Self::Iter<'_> {
         match self {
-            Column::Sparse {
-                constraint_values,
-                slack,
-                mock_array
-            } => {
-                match slack {
-                    Some(slack) => SparseSliceIterator::new(constraint_values).chain(SparseSliceIterator::new(slack)),
-                    None => SparseSliceIterator::new(constraint_values).chain(SparseSliceIterator::new(mock_array)),
-                }
-            },
-            Column::Slack(single_value, mock_array) =>
-                SparseSliceIterator::new(single_value).chain(SparseSliceIterator::new(mock_array)),
-            Column::TwoSlack(two_values, mock_array) =>
-                SparseSliceIterator::new(two_values).chain(SparseSliceIterator::new(mock_array)),
+            Column::Sparse { constraint_values, slack, } =>
+                ColumnIterator::Sparse(SparseSliceIterator::new(constraint_values).chain(SparseOptionIterator::new(slack))),
+            Column::Slack((index, value)) =>
+                ColumnIterator::Slack(once((*index, value))),
+            Column::TwoSlack((first_index, first_value), (second_index, second_value)) =>
+                ColumnIterator::TwoSlack(once((*first_index, first_value)).chain(once((*second_index, second_value)))),
         }
     }
 
@@ -545,20 +635,20 @@ where
                     .find(|&&(index, _)| index == i);
                 match value {
                     None => match slack {
-                        Some([(index, v)]) if *index == i => v.to_string(),
+                        Some((index, v)) if *index == i => v.to_string(),
                         _ => "0".to_string(),
                     }
                     Some((_, v)) => v.to_string(),
                 }
             },
-            Column::Slack([(index, value)], ..) => {
+            Column::Slack((index, value)) => {
                 if *index == i {
                     value.to_string()
                 } else {
                     "0".to_string()
                 }
             },
-            Column::TwoSlack([(index1, value1), (index2, value2)], ..) => {
+            Column::TwoSlack((index1, value1), (index2, value2)) => {
                 if *index1 == i {
                     value1.to_string()
                 } else if *index2 == i {
@@ -587,12 +677,12 @@ where
         match &mut self {
             Column::Sparse { constraint_values, slack, .. } => {
                 remove_sparse_indices(constraint_values, to_filter);
-                if let Some([(i, _)]) = slack {
+                if let Some((i, _)) = slack {
                     *i -= shift;
                 }
             },
-            Column::Slack([(row_index, _)], ..) => *row_index -= shift,
-            Column::TwoSlack([(row1, _), (row2, _)], ..) => {
+            Column::Slack((row_index, _)) => *row_index -= shift,
+            Column::TwoSlack((row1, _), (row2, _)) => {
                 *row1 -= shift;
                 *row2 -= shift;
             }
@@ -675,8 +765,7 @@ mod test {
             matrix_data.column(0),
             Column::Sparse {
                 constraint_values: vec![(1, R64!(1))],
-                slack: Some([(2, R64!(1))]),
-                mock_array: [],
+                slack: Some((2, R64!(1))),
             },
         );
         // Variable column without bound constant
@@ -685,23 +774,22 @@ mod test {
             Column::Sparse {
                 constraint_values: vec![(0,  R64!(1)), (1, R64!(1))],
                 slack: None,
-                mock_array: [],
             },
         );
         // Upper bounded inequality slack
         assert_eq!(
             matrix_data.column(3),
-            Column::Slack([(1, R64!(-1))], []),
+            Column::Slack((1, R64!(-1))),
         );
         // Variable upper bound slack
         assert_eq!(
             matrix_data.column(4),
-            Column::Slack([(2, R64!(1))], []),
+            Column::Slack((2, R64!(1))),
         );
         // Lower bounded inequality slack
         assert_eq!(
             matrix_data.column(5),
-            Column::Slack([(3, R64!(1))], []),
+            Column::Slack((3, R64!(1))),
         );
 
         // Variable cost
