@@ -53,12 +53,11 @@ where
         // TODO(PERFORMANCE): Merge the work and marker arrays
         // Triangular solve
         let mut discovered_triangle = Vec::new();
-        let mut work_triangle_rhs = vec![F::zero(); m];
+        let mut work = vec![F::zero(); m];
         let mut marker_non_zero_triangle = vec![false; m];
         let mut stack = Vec::new();
         // Matrix multiplication
         let mut discovered_matmul = Vec::new();
-        let mut work_matmul_result = vec![F::zero(); m];
         let mut marker_non_zero_matmul = vec![false; m];
 
         // These values get smaller over time and keep corresponding to the data layout of the
@@ -134,7 +133,7 @@ where
                 k,
                 &mut stack,
                 &mut discovered_triangle,
-                &mut work_triangle_rhs,
+                &mut work,
                 &mut marker_non_zero_triangle,
                 &lower,
                 &row_permutation,
@@ -144,11 +143,11 @@ where
             let mut inner_product = F::zero();
 
             for row in discovered_triangle.drain(..).rev() {
-                update_rhs(row, k, &mut work_triangle_rhs, &lower);
-                update_inner_product(row, k, &mut inner_product, &work_triangle_rhs, &lower);
-                update_matmul(row, k, &mut work_matmul_result, &mut discovered_matmul, &mut marker_non_zero_matmul, &work_triangle_rhs, &lower);
+                update_rhs(row, k, &mut work, &lower);
+                update_inner_product(row, k, &mut inner_product, &work, &lower);
+                update_matmul(row, k, &mut work, &mut discovered_matmul, &mut marker_non_zero_matmul, &lower);
 
-                upper_column.push((row, mem::take(&mut work_triangle_rhs[row])));
+                upper_column.push((row, mem::take(&mut work[row])));
                 marker_non_zero_triangle[row] = false;
             }
 
@@ -159,8 +158,8 @@ where
                 v
             };
 
-            subtraction(column, &mut marker_non_zero_matmul, &mut discovered_matmul, &mut work_matmul_result);
-            let lower_column = gather(&mut marker_non_zero_matmul, &mut discovered_matmul, &mut work_matmul_result, &diagonal);
+            subtraction(column, &mut marker_non_zero_matmul, &mut discovered_matmul, &mut work);
+            let lower_column = gather(&mut marker_non_zero_matmul, &mut discovered_matmul, &mut work, &diagonal);
 
             upper.push(upper_column);
             upper_diagonal.push(diagonal);
@@ -198,7 +197,7 @@ where
                 k,
                 &mut stack,
                 &mut discovered_triangle,
-                &mut work_triangle_rhs,
+                &mut work,
                 &mut marker_non_zero_triangle,
                 &lower,
                 &row_permutation,
@@ -209,10 +208,10 @@ where
             let mut inner_product = F::zero();
 
             for row in discovered_triangle.drain(..).rev() {
-                update_rhs(row, k, &mut work_triangle_rhs, &lower);
-                update_inner_product(row, k, &mut inner_product, &work_triangle_rhs, &lower);
+                update_rhs(row, k, &mut work, &lower);
+                update_inner_product(row, k, &mut inner_product, &work, &lower);
 
-                upper_column.push((row, mem::take(&mut work_triangle_rhs[row])));
+                upper_column.push((row, mem::take(&mut work[row])));
                 marker_non_zero_triangle[row] = false;
             }
 
@@ -383,24 +382,25 @@ where
 
 fn update_matmul<F>(
     row: usize, k: usize,
-    work_matmul_result: &mut Vec<F>,
+    work: &mut Vec<F>,
     discovered_matmul: &mut Vec<usize>,
     marker_non_zero_matmul: &mut Vec<bool>,
-    work_triangle_rhs: &Vec<F>,
     lower: &Vec<Vec<SparseTuple<F>>>,
 )
 where
     F: ops::Field + ops::FieldHR,
 {
     let column = row;
+    // TODO(PERFORMANCE): Attempt to reduce this search by tracking the last start index.
     let start_index = lower[column].binary_search_by_key(&k, |&(i, _)| i).into_ok_or_err();
     for (i, coefficient) in &lower[column][start_index..] {
         if !marker_non_zero_matmul[*i] {
             marker_non_zero_matmul[*i] = true;
             discovered_matmul.push(*i);
-            work_matmul_result[*i] = &work_triangle_rhs[row] * coefficient;
+            work[*i] = &work[row] * coefficient;
         } else {
-            work_matmul_result[*i] += &work_triangle_rhs[row] * coefficient;
+            let difference = &work[row] * coefficient;
+            work[*i] += difference;
         }
     }
 }
