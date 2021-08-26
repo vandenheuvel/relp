@@ -51,14 +51,13 @@ where
         let mut upper_diagonal = Vec::with_capacity(m);
 
         // TODO(PERFORMANCE): Merge the work and marker arrays
-        // Triangular solve
-        let mut discovered_triangle = Vec::new();
         let mut work = vec![F::zero(); m];
-        let mut marker_non_zero_triangle = vec![false; m];
+        let mut marker = vec![false; m];
+        // Triangular solve
         let mut stack = Vec::new();
+        let mut discovered_triangle = Vec::new();
         // Matrix multiplication
         let mut discovered_matmul = Vec::new();
-        let mut marker_non_zero_matmul = vec![false; m];
 
         // These values get smaller over time and keep corresponding to the data layout of the
         // remaining values.
@@ -110,10 +109,10 @@ where
             debug_assert_eq!(row_permutation.len(), m);
             debug_assert_eq!(column_permutation.len(), m);
             debug_assert!(discovered_triangle.is_empty());
-            debug_assert!(!marker_non_zero_triangle.iter().any(|&v| v));
+            debug_assert!(!marker.iter().any(|&v| v));
             debug_assert!(stack.is_empty());
             debug_assert!(discovered_matmul.is_empty());
-            debug_assert!(!marker_non_zero_matmul.iter().any(|&v| v));
+            debug_assert!(!marker.iter().any(|&v| v));
 
             let mut column = {
                 let (relative_pivot_row, relative_pivot_column) =
@@ -134,7 +133,7 @@ where
                 &mut stack,
                 &mut discovered_triangle,
                 &mut work,
-                &mut marker_non_zero_triangle,
+                &mut marker,
                 &lower,
                 &row_permutation,
             );
@@ -145,10 +144,10 @@ where
             for row in discovered_triangle.drain(..).rev() {
                 update_rhs(row, k, &mut work, &lower);
                 update_inner_product(row, k, &mut inner_product, &work, &lower);
-                update_matmul(row, k, &mut work, &mut discovered_matmul, &mut marker_non_zero_matmul, &lower);
+                update_matmul(row, k, &mut work, &mut discovered_matmul, &mut marker, &lower);
 
                 upper_column.push((row, mem::take(&mut work[row])));
-                marker_non_zero_triangle[row] = false;
+                marker[row] = false;
             }
 
             let diagonal = {
@@ -158,8 +157,8 @@ where
                 v
             };
 
-            subtraction(column, &mut marker_non_zero_matmul, &mut discovered_matmul, &mut work);
-            let lower_column = gather(&mut marker_non_zero_matmul, &mut discovered_matmul, &mut work, &diagonal);
+            subtraction(column, &mut marker, &mut discovered_matmul, &mut work);
+            let lower_column = gather(&mut marker, &mut discovered_matmul, &mut work, &diagonal);
 
             upper.push(upper_column);
             upper_diagonal.push(diagonal);
@@ -175,10 +174,10 @@ where
             debug_assert_eq!(row_permutation.len(), m);
             debug_assert_eq!(column_permutation.len(), m);
             debug_assert!(discovered_triangle.is_empty());
-            debug_assert!(!marker_non_zero_triangle.iter().any(|&v| v));
+            debug_assert!(!marker.iter().any(|&v| v));
             debug_assert!(stack.is_empty());
             debug_assert!(discovered_matmul.is_empty());
-            debug_assert!(!marker_non_zero_matmul.iter().any(|&v| v));
+            debug_assert!(!marker.iter().any(|&v| v));
 
             let mut column = {
                 let (_relative_pivot_row, _relative_pivot_column) = (0, 0);
@@ -198,7 +197,7 @@ where
                 &mut stack,
                 &mut discovered_triangle,
                 &mut work,
-                &mut marker_non_zero_triangle,
+                &mut marker,
                 &lower,
                 &row_permutation,
             );
@@ -212,7 +211,7 @@ where
                 update_inner_product(row, k, &mut inner_product, &work, &lower);
 
                 upper_column.push((row, mem::take(&mut work[row])));
-                marker_non_zero_triangle[row] = false;
+                marker[row] = false;
             }
 
             let diagonal = {
