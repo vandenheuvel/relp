@@ -4,7 +4,7 @@
 //! applying the changes proposed. This module contains data structures and logic for presolving.
 use std::iter::Iterator;
 
-use relp_num::{Field, NonZeroSigned, OrderedField, OrderedFieldRef};
+use relp_num::{Field, OrderedField, OrderedFieldRef};
 use relp_num::NonZeroSign;
 
 pub use scale::Scalable as Prescalable;
@@ -184,8 +184,8 @@ where
     ) {
         debug_assert!(self.updates.removed_variables.iter().all(|&(j, _)| variable != j));
         debug_assert!(match direction {
-            BoundDirection::Lower => change.as_ref().map_or(true, NonZeroSigned::is_positive),
-            BoundDirection::Upper => change.as_ref().map_or(true, NonZeroSigned::is_negative),
+            BoundDirection::Lower => change.as_ref().map_or(true, |v| v.is_positive()),
+            BoundDirection::Upper => change.as_ref().map_or(true, |v| v.is_negative()),
         });
 
         if self.updates.is_variable_fixed(variable).is_some() && self.counters.is_variable_still_active(variable) {
@@ -228,7 +228,7 @@ where
                 continue;
             }
 
-            let bound_to_edit = direction * coefficient.signum();
+            let bound_to_edit = direction * coefficient.non_zero_signum();
             if let Some(ref mut bound) = match bound_to_edit {
                 BoundDirection::Lower => &mut self.activity_bounds[row].0,
                 BoundDirection::Upper => &mut self.activity_bounds[row].1,
@@ -258,7 +258,7 @@ where
             // TODO(ARCHITECTURE): Avoid This clone
             .map(|(i, v)| (i, v.clone())).collect::<Vec<_>>();
         for (constraint, coefficient) in constraints_to_check {
-            let activity_direction = direction * coefficient.signum();
+            let activity_direction = direction * coefficient.non_zero_signum();
             let counter = match activity_direction {
                 BoundDirection::Lower => &mut self.counters.activity[constraint].0,
                 BoundDirection::Upper => &mut self.counters.activity[constraint].1,

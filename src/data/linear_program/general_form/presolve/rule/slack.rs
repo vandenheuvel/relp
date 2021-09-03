@@ -87,7 +87,7 @@ where
         let bounds = (lower.cloned(), upper.cloned());
         // We see whether these are `None` here already such that `bounds` can be moved in the match
         let bounds_is_none = (lower.is_none(), upper.is_none());
-        let coefficient_sign = coefficient.signum();
+        let coefficient_sign = coefficient.non_zero_signum();
 
         // Patterns are ordered left to right, top to bottom and then by coefficient (positive to
         // negative)
