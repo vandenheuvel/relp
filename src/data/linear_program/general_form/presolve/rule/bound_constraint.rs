@@ -39,7 +39,7 @@ where
 
         let bound_value = self.updates.b(constraint) / coefficient;
         let mut changes = Vec::with_capacity(2);
-        match (self.updates.constraint_type(constraint), coefficient.signum()) {
+        match (self.updates.constraint_type(constraint), coefficient.non_zero_signum()) {
             (Greater, Positive) | (Less, Negative) => {
                 changes.push((BoundDirection::Lower, bound_value));
             },
@@ -54,7 +54,7 @@ where
                 let bound1 = (self.updates.b(constraint) - range) / coefficient;
                 let bound2 = bound_value;
 
-                match coefficient.signum() {
+                match coefficient.non_zero_signum() {
                     Positive => {
                         changes.push((BoundDirection::Lower, bound1));
                         changes.push((BoundDirection::Upper, bound2));

@@ -1,5 +1,3 @@
-cargo-features = ["edition2021"]
-
 [package]
 name = "relp"
 version = "0.2.2"

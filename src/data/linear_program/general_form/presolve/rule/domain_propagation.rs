@@ -43,7 +43,7 @@ where
         };
         let nr_bounds_missing_in_row = self.counters.iter_active_row(constraint)
             .filter(|&(j, c)| {
-                let bound_direction = direction * c.signum();
+                let bound_direction = direction * c.non_zero_signum();
                 self.updates.variable_bound(j, bound_direction).is_none()
             })
             .count();
@@ -145,7 +145,7 @@ where
             *bound = Some(
                 self.counters.iter_active_row(constraint)
                     .map(|(variable, coefficient)| {
-                        let bound_direction = direction * coefficient.signum();
+                        let bound_direction = direction * coefficient.non_zero_signum();
                         let bound = updates.variable_bound(variable, bound_direction).unwrap();
                         coefficient * bound
                     })
@@ -177,7 +177,7 @@ where
                 ConstraintUpdate::SetVariablesToBound => {
                     let mut activity_counters_to_update = Vec::new();
                     for (variable, coefficient) in self.counters.iter_active_row(constraint) {
-                        let variable_direction = direction * coefficient.signum();
+                        let variable_direction = direction * coefficient.non_zero_signum();
                         let bound = self.updates.variable_bound(variable, variable_direction)
                             // This value exists because the activity bound we're working with is based on it.
                             .unwrap()
@@ -343,7 +343,7 @@ where
             .map(|(i, v)| (i, v.clone())) // TODO(ARCHITECTURE): Avoid this clone
             .collect::<Vec<_>>();
         for (variable, coefficient) in targets {
-            let coefficient_sign = coefficient.signum();
+            let coefficient_sign = coefficient.non_zero_signum();
             let new_variable_bound_direction = !activity_direction * coefficient_sign;
 
             let variable_bound_value = self.updates.variable_bound(variable, activity_direction * coefficient_sign)
@@ -405,19 +405,19 @@ where
         // is the only one that doesn't have the relevant bound yet).
         let total_activity = self.counters.iter_active_row(constraint)
             .filter_map(|(variable, coefficient)| {
-                let bound_direction = activity_direction * coefficient.signum();
+                let bound_direction = activity_direction * coefficient.non_zero_signum();
                 self.updates.variable_bound(variable, bound_direction).map(|bound| coefficient * bound)
             })
             .sum::<OF>();
         let (target_column, target_coefficient) = self.counters.iter_active_row(constraint)
             .find(|&(variable, coefficient)| {
-                let bound_direction = activity_direction * coefficient.signum();
+                let bound_direction = activity_direction * coefficient.non_zero_signum();
                 self.updates.variable_bound(variable, bound_direction).is_none()
             }).unwrap();
 
         // Compute the variable bound and apply the change.
         let value = (right_hand_side - total_activity) / target_coefficient;
-        let bound_direction = !activity_direction * target_coefficient.signum();
+        let bound_direction = !activity_direction * target_coefficient.non_zero_signum();
         match self.updates.update_activity_variable_bound(target_column, bound_direction, value) {
             BoundChange::None => Change::None,
             BoundChange::NewBound => {
