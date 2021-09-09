@@ -12,6 +12,8 @@
 #![feature(trait_alias)]
 #![feature(generic_associated_types)]
 #![feature(map_first_last)]
+#![feature(result_into_ok_or_err)]
+#![feature(exact_size_is_empty)]
 
 pub mod algorithm;
 pub mod data;

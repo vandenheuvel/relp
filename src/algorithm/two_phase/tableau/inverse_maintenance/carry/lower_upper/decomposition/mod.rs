@@ -1,16 +1,16 @@
+use std::cmp::Ordering;
+use std::collections::VecDeque;
 /// # LU Decomposition
 ///
 
-use std::cmp::Ordering;
 use std::mem;
-use std::ops::{Mul, Neg, Sub};
 
-use num_traits::Zero;
-
+use crate::algorithm::two_phase::matrix_provider::column::ColumnNumber;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::pivoting::{Markowitz, PivotRule};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{FullPermutation, Permutation, SwapPermutation};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{FullPermutation, Permutation};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::ops;
+use crate::data::linear_algebra::SparseTuple;
 
 mod pivoting;
 
@@ -18,308 +18,536 @@ impl<F> LUDecomposition<F>
 where
     F: ops::Field + ops::FieldHR,
 {
-    /// Compute the factorization `PBQ = LU`.
-    ///
-    /// # Arguments
-    ///
-    /// * `rows`: A row major representation of the basis columns.
+    /// Compute the factorization `PBQ^{-1} = LU`.
     #[must_use]
-    pub fn rows(mut rows: Vec<Vec<(usize, F)>>) -> Self {
-        debug_assert!(rows.iter().all(|row| row.iter().is_sorted_by_key(|&(i, _)| i)));
+    pub fn decompose<G: ColumnNumber>(mut columns: VecDeque<Vec<(usize, G)>>) -> Self
+    where
+        F: ops::Column<G>,
+    {
+        let m = columns.len();
+        debug_assert!(m >= 2);
+        debug_assert!(columns.iter().all(|column| {
+            column.windows(2).all(|w| w[0].0 < w[1].0) &&
+                column.iter().last().map_or(false, |&(i, _)| i < m) &&
+                !column.is_empty()
+        }));
 
-        // The number of columns gets smaller over time.
-        let m = rows.len();
-        debug_assert!(m > 1);
-
+        // TODO(PERFORMANCE): Avoid recreating these work arrays.
         // These values will be returned.
-        // They stay the same size, although nothing will be changed in the last indices once they
-        // have been processed.
-        let mut row_permutation = (0..m).collect::<Vec<_>>();
-        let mut column_permutation = (0..m).collect::<Vec<_>>();
-        let mut lower_triangular_row_major = vec![Vec::new(); m - 1];
+        // They stay the same size, although nothing will be changed in the earlier indices once
+        // they have been processed.
 
-        // These values get smaller over time.
-        let (mut nnz_row, mut nnz_column) = count_non_zeros(&rows);
+        // Permutation indicate where the row/column of the original index is now (either in L&U or
+        // in the remaining data items.
+        let mut row_permutation = FullPermutation::identity(m);
+        let mut column_permutation = FullPermutation::identity(m);
+
+        // Column major
+        let mut lower: Vec<Vec<(usize, F)>> = Vec::with_capacity(m - 1);
+        // Row major
+        let mut upper = Vec::with_capacity(m - 1);
+        let mut upper_diagonal = Vec::with_capacity(m);
+
+        // TODO(PERFORMANCE): Merge the work and marker arrays
+        // All these arrays are indexed by the "old" indices.
+        // Triangular solve
+        let mut discovered_triangle = Vec::new();
+        let mut work_triangle_rhs = vec![F::zero(); m];
+        let mut marker_non_zero_triangle = vec![false; m];
+        let mut stack = Vec::new();
+        // Matrix multiplication
+        let mut discovered_matmul = Vec::new();
+        let mut work_matmul_result = vec![F::zero(); m];
+        let mut marker_non_zero_matmul = vec![false; m];
+
+        // These values get smaller over time and keep corresponding to the data layout of the
+        // remaining values.
         let pivot_rule = Markowitz::new();
-        for k in 0..m {
-            let (pivot_row, pivot_column) = pivot_rule.choose_pivot(&nnz_row, &nnz_column, &rows, k);
-            // Administration for swapping (pivot_row, pivot_column) to (k, k)
-            swap(
-                pivot_row, pivot_column,
-                k,
-                &mut row_permutation, &mut column_permutation,
-                &mut nnz_row, &mut nnz_column,
-                &mut rows,
-                &mut lower_triangular_row_major,
+
+        // Case k = 0 is handled explicitly, because it always occurs
+        {
+            // In a separate scope to ensure variables defined for this iteration don't remain
+            let k = 0;
+
+            let mut column = {
+                let mut column = {
+                    let (relative_pivot_row, relative_pivot_column)
+                        = pivot_rule.choose_pivot(columns.make_contiguous(), &row_permutation, k);
+                    println!("{} {}", relative_pivot_row, relative_pivot_column);
+                    row_permutation.swap_inverse(k, k + relative_pivot_row);
+                    column_permutation.swap_inverse(k, k + relative_pivot_column);
+                    columns.swap_remove_front(relative_pivot_column).unwrap()
+                };
+                let k_inverse = row_permutation.backward(k);
+                let data_index = column.binary_search_by_key(&k_inverse, |&(i, _)| i).ok()
+                    .expect("pivot element not found in column");
+                column.swap(0, data_index); // Move the pivot element to the front (sorting)
+                debug_assert!(column.is_sorted_by_key(|&(i, _)| row_permutation[i].cmp(&k)));
+                column.into_iter()
+            };
+
+            let (row_index, diagonal) = column.next().unwrap();
+            debug_assert_eq!(row_permutation[row_index], k);
+
+            let lower_column = column
+                .map(|(i, value)| {
+                    debug_assert!(row_permutation[i] > k);
+
+                    // This might be a conversion from a small to a big type
+                    let large: F = value.into();
+                    (i, large / &diagonal)
+                })
+                .collect::<Vec<_>>();
+
+            debug_assert!(lower_column.len() < m - k);
+            lower.push(lower_column);
+
+            upper_diagonal.push(diagonal.into());
+        }
+
+        // Inductive step 0 < k < m - 1
+        for k in 1..(m - 1) {
+            debug_assert_eq!(lower.len(), k);
+            debug_assert_eq!(upper.len(), k - 1);
+            debug_assert_eq!(upper_diagonal.len(), k);
+            debug_assert_eq!(row_permutation.len(), m);
+            debug_assert_eq!(column_permutation.len(), m);
+            debug_assert!(discovered_triangle.is_empty());
+            debug_assert!(marker_non_zero_triangle.iter().all(|&v| !v));
+            debug_assert!(stack.is_empty());
+            debug_assert!(discovered_matmul.is_empty());
+            debug_assert!(marker_non_zero_matmul.iter().all(|&v| !v));
+
+            debug_assert!(
+                (k..m).all(|i| {
+                    let inverse = row_permutation.backward(i);
+                    columns.iter().any(|column| column.iter().any(|&(ii, _)| ii == inverse))
+                }),
+                "k = {}, m = {}", k, m,
             );
 
-            // Update the nonzero counters for this row removal
-            for &(j, _) in &rows[k] {
-                nnz_row[k] -= 1;
-                nnz_column[j] -= 1;
+            if k == 140 {
+                println!("here");
             }
 
-            // Rest of the loop: row reduction operations to zero the values below the pivot
-            let (current_row, remaining_rows) = {
-                let (current_row, remaining_rows) = rows[k..].split_first_mut().unwrap();
-                (&*current_row, remaining_rows)
+            let mut column = {
+                let mut column = {
+                    let (relative_pivot_row, relative_pivot_column) =
+                        pivot_rule.choose_pivot(columns.make_contiguous(), &row_permutation, k);
+                    println!("{} {}", relative_pivot_row, relative_pivot_column);
+                    debug_assert!(relative_pivot_row < m - k && relative_pivot_column < m - k);
+
+                    row_permutation.swap_inverse(k, k + relative_pivot_row);
+                    column_permutation.swap_inverse(k, k + relative_pivot_column);
+                    columns.swap_remove_front(relative_pivot_column).unwrap()
+                };
+                println!("column = {:?}\nrow_permutation = {}", column, row_permutation);
+                debug_assert!(column.iter().find(|&&(i, _)| row_permutation[i] == k).is_some());
+                sort_in_three_groups(&mut column, k, &row_permutation);
+                column.into_iter()
             };
-            let pivot_value = &current_row[0].1;
 
-            // Compute the factor with which row k should be multiplied and subtracted from the
-            // other rows
-            let mut ratios_to_subtract = Vec::with_capacity(nnz_column[k]);
-            for (i, row) in remaining_rows.iter_mut().enumerate() {
-                debug_assert!(!row.is_empty(), "The first item exists (invertibility).");
-                if row[0].0 == k {
-                    ratios_to_subtract.push((i, row.remove(0).1 / pivot_value));
-                    nnz_row[k + 1 + i] -= 1;
-                    nnz_column[k] -= 1;
+            debug_assert!(
+                ((k + 1)..m).all(|i| {
+                    let inverse = row_permutation.backward(i);
+                    columns.iter().any(|column| column.iter().any(|&(ii, _)| ii == inverse))
+                }),
+                "k = {}, m = {}", k, m,
+            );
+
+            let pivot_value = triangle_discover(
+                &mut column,
+                k,
+                &mut stack,
+                &mut discovered_triangle,
+                &mut work_triangle_rhs,
+                &mut marker_non_zero_triangle,
+                &lower,
+                &row_permutation,
+            );
+
+            let mut upper_column = Vec::with_capacity(discovered_triangle.len());
+            // TODO(PERFORMANCE): Put this in the work array instead
+            let mut inner_product = F::zero();
+
+            for row in discovered_triangle.drain(..).rev() {
+                if work_triangle_rhs[row].is_not_zero() {
+                    for &(i, ref coefficient) in &lower[row_permutation[row]] {
+                        let product = &work_triangle_rhs[row] * coefficient;
+
+                        match row_permutation[i].cmp(&k) {
+                            Ordering::Less => update_triangle_rhs(i, product, &mut work_triangle_rhs),
+                            Ordering::Equal => update_inner_product(product, &mut inner_product),
+                            Ordering::Greater => update_matmul(
+                                i, product,
+                                &mut work_matmul_result, &mut discovered_matmul, &mut marker_non_zero_matmul,
+                            ),
+                        }
+                    }
+
+                    if work_triangle_rhs[row].is_not_zero() {
+                        upper_column.push((row_permutation[row], mem::take(&mut work_triangle_rhs[row])));
+                    }
                 }
+
+                marker_non_zero_triangle[row] = false;
             }
+            debug_assert!(upper_column.len() <= k);
 
-            // Eliminate the zeros below the pivot
-            for (i, ratio) in ratios_to_subtract {
-                let (nnz_row_net_difference, nnz_column_removed, nnz_column_added) = subtract_multiple_of_row_from_other_row(
-                    &mut remaining_rows[i],
-                    &ratio,
-                    &current_row[1..],
-                );
+            let diagonal = {
+                // We prefer the potentially smaller value to be the right-hand side
+                let mut v: F = inner_product - pivot_value;
+                v.negate();
+                v
+            };
+            debug_assert!(diagonal.is_not_zero(), "the diagonal element should be non zero");
 
-                nnz_row[k + 1 + i] -= nnz_row_net_difference.0;
-                nnz_row[k + 1 + i] += nnz_row_net_difference.1;
-                for column in nnz_column_removed {
-                    nnz_column[column] -= 1;
-                }
-                for column in nnz_column_added {
-                    nnz_column[column] += 1;
-                }
+            subtraction(column, &mut marker_non_zero_matmul, &mut discovered_matmul, &mut work_matmul_result);
+            let lower_column = gather(&mut marker_non_zero_matmul, &mut discovered_matmul, &mut work_matmul_result, &diagonal);
+            debug_assert!(lower_column.len() < m - k);
 
-                lower_triangular_row_major[k + 1 + i - 1].push((k, ratio));
-            }
-
-            debug_assert_eq!(nnz_row[k], 0);
-            debug_assert_eq!(nnz_column[k], 0);
-            debug_assert!(nnz_row[(k + 1)..].iter()
-                .enumerate()
-                .all(|(i, count)| rows[k + 1 + i].len() == *count));
-        }
-
-        // We collected row-major but need column major, so transpose
-        let mut upper_triangular = vec![Vec::new(); m - 1];
-        let mut upper_diagonal = Vec::with_capacity(m);
-        for (i, row) in rows.into_iter().enumerate() {
-            let mut iter = row.into_iter();
-            let (index, diagonal) = iter.next().unwrap();
-            debug_assert_eq!(index, i);
+            upper.push(upper_column);
             upper_diagonal.push(diagonal);
-            for (j, value) in iter {
-                upper_triangular[j - 1].push((i, value));
-            }
-        }
-        let mut lower_triangular = vec![Vec::new(); m - 1];
-        for (i, row) in lower_triangular_row_major.into_iter().enumerate()
-            // We collected starting at row 1, but the lowest row index was 1.
-            .map(|(i, v)| (i + 1, v)) {
-            for (j, v) in row {
-                lower_triangular[j].push((i, v));
-            }
+            lower.push(lower_column);
         }
 
-        // Compute the inverse permutations and invert
-        let mut row_permutation = FullPermutation::new(row_permutation);
-        row_permutation.invert();
-        let mut column_permutation = FullPermutation::new(column_permutation);
-        column_permutation.invert();
+        // Final k = m - 1 is handled explicitly, because it always occurs
+        {
+            let k = m - 1;
+            debug_assert_eq!(lower.len(), k);
+            debug_assert_eq!(upper.len(), k - 1);
+            debug_assert_eq!(upper_diagonal.len(), k);
+            debug_assert_eq!(row_permutation.len(), m);
+            debug_assert_eq!(column_permutation.len(), m);
+            debug_assert!(discovered_triangle.is_empty());
+            debug_assert!(!marker_non_zero_triangle.iter().any(|&v| v));
+            debug_assert!(stack.is_empty());
+            debug_assert!(discovered_matmul.is_empty());
+            debug_assert!(!marker_non_zero_matmul.iter().any(|&v| v));
+
+            let mut column = {
+                let (relative_pivot_row, relative_pivot_column) = (0, 0); // the last value
+                debug_assert_eq!(
+                    pivot_rule.choose_pivot(columns.make_contiguous(), &row_permutation, k),
+                    (relative_pivot_row, relative_pivot_column),
+                );
+                let mut column = columns.pop_front().unwrap();
+                debug_assert!(columns.is_empty());
+
+                println!("column = {:?}\nrow_permutation = {}", column, row_permutation);
+                let k_inverse = row_permutation.backward(k);
+                let data_index = column.binary_search_by_key(&k_inverse, |&(i, _)| i).ok()
+                    .expect("pivot element not found in column");
+                let len = column.len();
+                column.swap(len - 1, data_index); // Move the pivot element to the back (sorting)
+                debug_assert!(column.is_sorted_by_key(|&(i, _)| row_permutation[i].cmp(&k)));
+                debug_assert!(column.iter().find(|&&(i, _)| row_permutation[i] == k).is_some());
+                column.into_iter()
+            };
+
+            let pivot_value = triangle_discover(
+                &mut column,
+                k,
+                &mut stack,
+                &mut discovered_triangle,
+                &mut work_triangle_rhs,
+                &mut marker_non_zero_triangle,
+                &lower,
+                &row_permutation,
+            );
+            debug_assert!(column.is_empty());
+
+            let mut upper_column = Vec::with_capacity(discovered_triangle.len());
+            let mut inner_product = F::zero();
+
+            for row in discovered_triangle.drain(..).rev() {
+                if work_triangle_rhs[row].is_not_zero() {
+                    for &(i, ref coefficient) in &lower[row_permutation[row]] {
+                        let product = &work_triangle_rhs[row] * coefficient;
+
+                        if row_permutation[i] < k {
+                            update_triangle_rhs(i, product, &mut work_triangle_rhs);
+                        } else {
+                            debug_assert_eq!(row_permutation[i], k);
+                            update_inner_product(product, &mut inner_product);
+                        }
+                    }
+
+                    upper_column.push((row_permutation[row], mem::take(&mut work_triangle_rhs[row])));
+                }
+
+                marker_non_zero_triangle[row] = false;
+            }
+
+            let diagonal = {
+                // We prefer the potentially smaller value to be the right-hand side
+                let mut v: F = inner_product - pivot_value;
+                v.negate();
+                v
+            };
+            debug_assert!(diagonal.is_not_zero());
+
+            upper.push(upper_column);
+            upper_diagonal.push(diagonal);
+        }
+
+        // TODO(PERFORMANCE): Can we keep these unsorted?
+        // Convert to the new indices
+        for (k, column) in lower.iter_mut().enumerate() {
+            // `column` is not necessarily sorted here
+            row_permutation.forward_unsorted(column);
+            column.sort_unstable_by_key(|&(i, _)| i);
+            debug_assert!(column.windows(2).all(|w| w[0].0 < w[1].0));
+            debug_assert!(column.iter().all(|&(i, _)| i > k));
+        }
+        for column in &mut upper {
+            column.sort_unstable_by_key(|&(i, _)| i);
+        }
 
         Self {
             row_permutation,
             column_permutation,
-            lower_triangular,
-            upper_triangular,
+            lower_triangular: lower,
+            upper_triangular: upper,
             upper_diagonal,
             updates: Vec::new(),
         }
     }
 }
 
-fn subtract_multiple_of_row_from_other_row<T>(
-    to_edit: &mut Vec<(usize, T)>,
-    ratio: &T,
-    being_removed: &[(usize, T)],
-) -> ((usize, usize), Vec<usize>, Vec<usize>)
-where
-    for<'r> T: Mul<&'r T, Output=T> + Sub<T, Output=T> + Zero + Eq,
-    for<'r> &'r T: Neg<Output=T> + Mul<&'r T, Output=T>,
-{
-    debug_assert!(!ratio.is_zero());
-
-    let mut column_nnz_added = Vec::new();
-    if to_edit.is_empty() {
-        // TODO(PERFORMANCE): Is this case even possible?
-        let row_nnz_added = being_removed.len();
-        for (j, v) in being_removed {
-            to_edit.push((*j, -ratio * v));
-            column_nnz_added.push(*j);
-        }
-        ((0, row_nnz_added), Vec::with_capacity(0), column_nnz_added)
-    } else {
-        let old_row = mem::replace(to_edit, Vec::with_capacity(0));
-        let old_row_nnz = old_row.len();
-
-        let mut column_nnz_removed = Vec::new();
-        let mut new = Vec::new();
-
-        let mut index = 0;
-        for (j, old_value) in old_row {
-            while index < being_removed.len() && being_removed[index].0 < j {
-                new.push((being_removed[index].0, -ratio * &being_removed[index].1));
-                column_nnz_added.push(being_removed[index].0);
-                index += 1;
-            }
-
-            if index < being_removed.len() && being_removed[index].0 == j {
-                let product = ratio * &being_removed[index].1;
-                if product != old_value {
-                    new.push((j, old_value - product));
-                } else {
-                    column_nnz_removed.push(j);
-                }
-                index += 1;
-            } else {
-                new.push((j, old_value));
-            }
-        }
-        while index < being_removed.len() {
-            new.push((being_removed[index].0, -ratio * &being_removed[index].1));
-            column_nnz_added.push(being_removed[index].0);
-            index += 1;
-        }
-
-        let new_row_nnz = new.len();
-        *to_edit = new;
-
-        let (row_nnz_net_removed, row_nnz_net_added) = match new_row_nnz.cmp(&old_row_nnz) {
-            Ordering::Less => (old_row_nnz - new_row_nnz, 0),
-            Ordering::Equal => (0, 0),
-            Ordering::Greater => (0, new_row_nnz - old_row_nnz),
-        };
-
-        ((row_nnz_net_removed, row_nnz_net_added), column_nnz_removed, column_nnz_added)
-    }
-}
-
-/// Swap `pivot_row` and `pivot_column` to k.
-///
-/// # Arguments
-///
-/// * `pivot_row`: Index of row swapped with index k.
-/// * `pivot_column`: Index of column swapped with index k.
-/// * `k`: Step in the iteration and row and column index that will be swapped with.
-/// * `row_permutation`: Maps from current row index to the index the row had in the original
-/// matrix.
-/// * `row_permutation`: Maps from current column index to the index the column had in the original
-/// matrix.
-/// * `nnz_row`: Number of nonzero elements per row.
-fn swap<T>(
-    pivot_row: usize, pivot_column: usize,
+fn sort_in_three_groups<G>(
+    unsorted_column: &mut Vec<SparseTuple<G>>,
     k: usize,
-    row_permutation: &mut [usize], column_permutation: &mut [usize],
-    nnz_row: &mut [usize], nnz_column: &mut [usize],
-    rows: &mut [Vec<(usize, T)>],
-    lower_triangular_row_major: &mut [Vec<(usize, T)>],
+    permutation: &FullPermutation,
 ) {
-    let n = rows.len();
-    debug_assert!(pivot_row < n);
-    debug_assert!(pivot_column < n);
-    debug_assert!(k < n);
-    debug_assert_eq!(row_permutation.len(), n);
-    debug_assert_eq!(column_permutation.len(), n);
-    debug_assert_eq!(nnz_row.len(), n);
-    debug_assert_eq!(nnz_column.len(), n);
-    debug_assert_eq!(rows.len(), n);
-    debug_assert_eq!(lower_triangular_row_major.len(), n - 1);
+    // Column is sorted in three groups; before the pivot, the pivot and after the pivot
+    unsorted_column.sort_unstable_by_key(|&(i, _)| permutation[i].cmp(&k));
+}
 
-    // We work from low indices to high, and don't change the lower (< k) indices.
-    debug_assert!(pivot_row >= k && pivot_column >= k);
+fn triangle_discover<F, G>(
+    column: &mut impl Iterator<Item=SparseTuple<G>>,
+    k: usize,
+    stack: &mut Vec<(usize, usize)>,
+    discovered: &mut Vec<usize>, work: &mut Vec<F>, non_zero_marker: &mut Vec<bool>,
+    lower: &Vec<Vec<SparseTuple<F>>>,
+    row_permutation: &FullPermutation,
+) -> G
+where
+    F: ops::Column<G>,
+{
+    loop {
+        let (mut row, value) = column.next().unwrap();
 
-    if pivot_row != k {
-        row_permutation.swap(pivot_row, k);
-        nnz_row.swap(pivot_row, k);
-        rows.swap(pivot_row, k);
+        if row_permutation[row] < k {
+            work[row] = value.into();
 
-        if pivot_row == 0 && k > 0 {
-            debug_assert!(lower_triangular_row_major[k - 1].is_empty());
-        }
-        if pivot_row > 0 && k == 0 {
-            debug_assert!(lower_triangular_row_major[pivot_row - 1].is_empty());
-        }
-        if pivot_row > 0 && k > 0 {
-            // If the pivot_row > 0 && k == 0, there is nothing to swap anyway
-            lower_triangular_row_major.swap(pivot_row - 1, k - 1);
-        }
-    }
+            if !non_zero_marker[row] {
+                non_zero_marker[row] = true;
 
-    if pivot_column != k {
-        column_permutation.swap(pivot_column, k);
-        nnz_column.swap(pivot_column, k);
+                let mut data_index = 0;
+                'outer: loop {
+                    if row_permutation[row] < k - 1 {
+                        let column = &lower[row_permutation[row]];
+                        for index in data_index..column.len() {
+                            let (i, _) = column[index];
 
-        // TODO(ENHANCEMENT): Can some swapping by avoided by doing it all at the end?
-        let swap = SwapPermutation::new((pivot_column, k), n);
-        for row in rows {
-            swap.forward_sorted(row);
+                            if row_permutation[i] < k {
+                                if !non_zero_marker[i] {
+                                    non_zero_marker[i] = true;
+
+                                    let next_data_index = index + 1;
+                                    stack.push((row, next_data_index));
+
+                                    row = i;
+                                    data_index = 0;
+
+                                    continue 'outer;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    discovered.push(row);
+
+                    match stack.pop() {
+                        Some((next_row, next_data_index)) => {
+                            row = next_row;
+                            data_index = next_data_index;
+                        }
+                        None => break,
+                    }
+                }
+            }
+        } else {
+            debug_assert_eq!(row_permutation[row], k);
+            debug_assert!(stack.is_empty());
+
+            break value;
         }
     }
 }
 
-/// Count the number of nonzero values in each row and column.
-///
-/// Requires iterating over all values once.
-fn count_non_zeros<T>(rows: &[Vec<(usize, T)>]) -> (Vec<usize>, Vec<usize>) {
-    let n = rows.len();
-    debug_assert!(n > 0);
-    debug_assert!(rows.iter().all(|row| row.iter().all(|&(i, _)| i < n)));
+fn update_triangle_rhs<F>(
+    row: usize, product: F,
+    work_triangle_rhs: &mut Vec<F>,
+)
+where
+    F: ops::Field + ops::FieldHR,
+{
+    work_triangle_rhs[row] -= product;
+}
 
-    let nnz_row = rows.iter()
-        .map(Vec::len)
-        .collect::<Vec<_>>();
+fn update_inner_product<F>(
+    product: F,
+    inner_product: &mut F,
+)
+where
+    F: ops::Field + ops::FieldHR,
+{
+    *inner_product += product;
+}
 
-    let nnz_column = {
-        let mut counts = vec![0; n];
-        for column in rows {
-            for &(i, _) in column {
-                counts[i] += 1;
-            }
+fn update_matmul<F>(
+    row: usize,
+    product: F,
+    work_matmul_result: &mut Vec<F>,
+    discovered_matmul: &mut Vec<usize>,
+    marker_non_zero_matmul: &mut Vec<bool>,
+)
+where
+    F: ops::Field + ops::FieldHR,
+{
+    if !marker_non_zero_matmul[row] {
+        marker_non_zero_matmul[row] = true;
+        discovered_matmul.push(row);
+        work_matmul_result[row] = product;
+    } else {
+        work_matmul_result[row] += product;
+    }
+}
+
+fn subtraction<F, G>(
+    column: impl Iterator<Item=SparseTuple<G>>,
+    marker_non_zero_matmul: &mut Vec<bool>,
+    discovered_matmul: &mut Vec<usize>,
+    work_matmul_result: &mut Vec<F>,
+)
+where
+    F: ops::Field + ops::FieldHR + ops::Column<G>,
+{
+    for (i, coefficient) in column {
+        if !marker_non_zero_matmul[i] {
+            marker_non_zero_matmul[i] = true;
+            discovered_matmul.push(i);
+            work_matmul_result[i] = coefficient.into();
+            work_matmul_result[i].negate();
+        } else {
+            work_matmul_result[i] -= coefficient;
         }
-        counts
-    };
+    }
+}
 
-    debug_assert_eq!(nnz_column.len(), n);
-    debug_assert_eq!(nnz_row.len(), n);
-    // We should be working with an invertible matrix
-    debug_assert!(nnz_column.iter().all(|&count| count > 0));
-    debug_assert!(nnz_row.iter().all(|&count| count > 0));
+fn gather<F, G>(
+    marker_non_zero_matmul: &mut Vec<bool>,
+    discovered_matmul: &mut Vec<usize>,
+    work_matmul_result: &mut Vec<F>,
+    diagonal: &G,
+) -> Vec<SparseTuple<F>>
+where
+    F: ops::Field + ops::FieldHR + ops::Column<G>,
+{
+    // TODO(PERFORMANCE): Can this also be unsorted? This adds a log factor
+    discovered_matmul.sort_unstable();
 
-    (nnz_row, nnz_column)
+    let mut lower_column = Vec::with_capacity(discovered_matmul.len());
+    for row in discovered_matmul.drain(..) {
+        if work_matmul_result[row].is_not_zero() {
+            let numerator = mem::take(&mut work_matmul_result[row]);
+            lower_column.push((row, -numerator / diagonal));
+        }
+        marker_non_zero_matmul[row] = false;
+    }
+
+    lower_column
 }
 
 #[cfg(test)]
-mod test {
-    use relp_num::{RB, R8, RationalBig, NonZero, Rational8};
+pub mod test {
+    use std::collections::VecDeque;
 
-    use crate::algorithm::two_phase::matrix_provider::column::{Column, SparseSliceIterator, DenseSliceIterator};
+    use relp_num::{NonZero, R8, Rational8, RationalBig, RB, R32};
+
+    use crate::algorithm::two_phase::matrix_provider::column::{Column, DenseSliceIterator, SparseSliceIterator};
     use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::{sort_in_three_groups, triangle_discover};
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::FullPermutation;
     use crate::algorithm::two_phase::tableau::inverse_maintenance::ColumnComputationInfo;
     use crate::data::linear_algebra::vector::{SparseVector, Vector};
-    use std::collections::VecDeque;
+
+    #[test]
+    fn test_triangle_identity() {
+        const M: usize = 2;
+        let k = 1;
+        let mut column = [(0, 1), (1, 1)].into_iter();
+
+        let mut stack = vec![];
+        let mut discovered = vec![];
+        let mut work = vec![R32!(-123456789); M];
+        let mut non_zero_marker = vec![false; M];
+        let lower = vec![vec![(1, R32!(2)), (2, R32!(3))]];
+        let diagonal = triangle_discover(
+            &mut column,
+            k,
+            &mut stack,
+            &mut discovered,
+            &mut work,
+            &mut non_zero_marker,
+            &lower,
+            &FullPermutation::identity(M),
+        );
+
+        debug_assert_eq!(discovered, vec![0]);
+        debug_assert_eq!(work, vec![R32!(1), R32!(-123456789)]);
+        debug_assert_eq!(non_zero_marker, vec![true, false]);
+        debug_assert_eq!(diagonal, R32!(1));
+    }
+
+    #[test]
+    fn test_triangle_subdiagonal() {
+        const M: usize = 3;
+        let k = 2;
+        let mut column = [(0, 2), (1, 3), (2, 5)].into_iter();
+
+        let mut stack = vec![];
+        let mut discovered = vec![];
+        let mut work = vec![R32!(-123456789); M];
+        let mut non_zero_marker = vec![false; M];
+        let lower = vec![vec![(1, R32!(7)), (2, R32!(11))]];
+        let diagonal = triangle_discover(
+            &mut column,
+            k,
+            &mut stack,
+            &mut discovered,
+            &mut work,
+            &mut non_zero_marker,
+            &lower,
+            &FullPermutation::identity(M),
+        );
+
+        debug_assert_eq!(discovered, vec![1, 0]);
+        debug_assert_eq!(work, vec![R32!(2), R32!(3), R32!(-123456789)]);
+        debug_assert_eq!(non_zero_marker, vec![true, true, false]);
+        debug_assert_eq!(diagonal, R32!(5));
+    }
 
     #[test]
     fn identity_2() {
-        let rows = vec![vec![(0, RB!(1))], vec![(1, RB!(1))]];
-        let result = LUDecomposition::rows(rows);
+        let columns = VecDeque::from([vec![(0, RB!(1))], vec![(1, RB!(1))]]);
+        let result = LUDecomposition::decompose(columns);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::identity(2),
             column_permutation: FullPermutation::identity(2),
@@ -332,26 +560,29 @@ mod test {
         assert_eq!(result, expected);
     }
 
+    fn test_identity(n: usize) {
+        let columns = (0..n).map(|i| vec![(i, R8!(1))]).collect();
+        let result = LUDecomposition::<RationalBig>::decompose(columns);
+        for i in 0..n {
+            let c = result.left_multiply_by_basis_inverse(IdentityColumn::new(i).iter());
+            assert_eq!(c.into_column(), SparseVector::standard_basis_vector(i, n), "{}", i);
+        }
+    }
+
     #[test]
     fn identity_3() {
-        let rows = vec![vec![(0, RB!(1))], vec![(1, RB!(1))], vec![(2, RB!(1))]];
-        let result = LUDecomposition::rows(rows);
-        let expected = LUDecomposition {
-            row_permutation: FullPermutation::identity(3),
-            column_permutation: FullPermutation::identity(3),
-            lower_triangular: vec![vec![], vec![]],
-            upper_triangular: vec![vec![], vec![]],
-            upper_diagonal: vec![RB!(1), RB!(1), RB!(1)],
-            updates: vec![],
-        };
+        test_identity(3);
+    }
 
-        assert_eq!(result, expected);
+    #[test]
+    fn identity_4() {
+        test_identity(4);
     }
 
     #[test]
     fn offdiagonal_2_upper() {
-        let rows = vec![vec![(0, RB!(1)), (1, RB!(1))], vec![(1, RB!(1))]];
-        let result = LUDecomposition::rows(rows);
+        let columns = VecDeque::from([vec![(0, RB!(1))], vec![(0, RB!(1)), (1, RB!(1))]]);
+        let result = LUDecomposition::decompose(columns);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::identity(2),
             column_permutation: FullPermutation::identity(2),
@@ -366,8 +597,8 @@ mod test {
 
     #[test]
     fn offdiagonal_2_lower() {
-        let rows = vec![vec![(0, RB!(1))], vec![(0, RB!(1)), (1, RB!(1))]];
-        let result = LUDecomposition::rows(rows);
+        let columns = VecDeque::from([vec![(0, RB!(1)), (1, RB!(1))], vec![(1, RB!(1))]]);
+        let result = LUDecomposition::decompose(columns);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::identity(2),
             column_permutation: FullPermutation::identity(2),
@@ -382,8 +613,8 @@ mod test {
 
     #[test]
     fn offdiagonal_2_both() {
-        let rows = vec![vec![(0, RB!(1)), (1, RB!(1))], vec![(0, RB!(1))]];
-        let result = LUDecomposition::rows(rows);
+        let columns = VecDeque::from([vec![(0, RB!(1)), (1, RB!(1))], vec![(0, RB!(1))]]);
+        let result = LUDecomposition::decompose(columns);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::new(vec![1, 0]),
             column_permutation: FullPermutation::identity(2),
@@ -397,9 +628,41 @@ mod test {
     }
 
     #[test]
+    fn upper_triangular() {
+        let columns = VecDeque::from([vec![(0, R8!(2))], vec![(0, R8!(3)), (1, R8!(5))], vec![(0, R8!(7)), (1, R8!(11)), (2, R8!(13))]]);
+        let result = LUDecomposition::decompose(columns);
+        let expected = LUDecomposition {
+            row_permutation: FullPermutation::identity(3),
+            column_permutation: FullPermutation::identity(3),
+            lower_triangular: vec![vec![], vec![]],
+            upper_triangular: vec![vec![(0, R8!(3))], vec![(0, R8!(7)), (1, R8!(11))]],
+            upper_diagonal: vec![R8!(2), R8!(5), R8!(13)],
+            updates: vec![],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn lower_triangular() {
+        let columns = VecDeque::from([vec![(0, R8!(2)), (1, R8!(7)), (2, R8!(13))], vec![(1, R8!(3)), (2, R8!(11))], vec![(2, R8!(5))]]);
+        let result = LUDecomposition::decompose(columns);
+        let expected = LUDecomposition {
+            row_permutation: FullPermutation::identity(3),
+            column_permutation: FullPermutation::identity(3),
+            lower_triangular: vec![vec![(1, R8!(7, 2)), (2, R8!(13, 2))], vec![(2, R8!(11, 3))]],
+            upper_triangular: vec![vec![], vec![]],
+            upper_diagonal: vec![R8!(2), R8!(3), R8!(5)],
+            updates: vec![],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
     fn wikipedia_example() {
-        let columns = vec![vec![(0, RB!(4)), (1, RB!(3))], vec![(0, RB!(6)), (1, RB!(3))]];
-        let result = LUDecomposition::rows(columns);
+        let columns = VecDeque::from([vec![(0, RB!(4)), (1, RB!(6))], vec![(0, RB!(3)), (1, RB!(3))]]);
+        let result = LUDecomposition::decompose(columns);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::identity(2),
             column_permutation: FullPermutation::identity(2),
@@ -414,8 +677,8 @@ mod test {
 
     #[test]
     fn wikipedia_example2() {
-        let rows = vec![vec![(0, RB!(-1)), (1, RB!(3, 2))], vec![(0, RB!(1)), (1, RB!(-1))]];
-        let result = LUDecomposition::rows(rows);
+        let columns = VecDeque::from([vec![(0, RB!(-1)), (1, RB!(1))], vec![(0, RB!(3, 2)), (1, RB!(-1))]]);
+        let result = LUDecomposition::decompose(columns);
         let expected = LUDecomposition {
             row_permutation: FullPermutation::identity(2),
             column_permutation: FullPermutation::identity(2),
@@ -453,14 +716,8 @@ mod test {
 
     fn test_matrix<const M: usize>(rows: [[i32; M]; M]) {
         let columns = to_columns(&rows);
-        let result = LUDecomposition::<RationalBig>::rows(
-            rows.iter().map(|row| {
-                row.iter().enumerate()
-                    .filter(|(_, v)| v.is_not_zero())
-                    .map(|(i, v)| (i, v.into()))
-                    .collect()
-            }).collect()
-        );
+        let result = LUDecomposition::<RationalBig>::decompose(columns.clone());
+
         for (j, column) in columns.iter().enumerate() {
             assert_eq!(
                 result.left_multiply_by_basis_inverse(SparseSliceIterator::new(column)).into_column(),
@@ -468,6 +725,7 @@ mod test {
                 "{}", j,
             );
         }
+
         for (j, row) in rows.into_iter().enumerate() {
             assert_eq!(
                 result.right_multiply_by_basis_inverse(DenseSliceIterator::new(&row)),
@@ -475,6 +733,30 @@ mod test {
                 "{}", j,
             );
         }
+    }
+
+    #[test]
+    fn test_2x2_1() {
+        test_matrix([
+            [ 2,  3],
+            [ 5,  0],
+        ]);
+    }
+
+    #[test]
+    fn test_2x2_2() {
+        test_matrix([
+            [ 2,  3],
+            [ 5,  7],
+        ]);
+    }
+
+    #[test]
+    fn test_2x2_3() {
+        test_matrix([
+            [ 2,  0],
+            [ 5,  3],
+        ]);
     }
 
     #[test]
@@ -650,65 +932,20 @@ mod test {
         ]);
     }
 
-    mod subtract_multiple_of_column_from_other_column {
-        use relp_num::R32;
+    #[test]
+    fn test_sort() {
+        let n = 4;
+        let initial = (0..n).map(|i| (i, i)).collect::<Vec<_>>();
+        let mut v = initial.clone();
+        let permutation = FullPermutation::identity(n);
+        sort_in_three_groups(&mut v, n / 2, &permutation);
+        assert_eq!(v, initial);
 
-        use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::subtract_multiple_of_row_from_other_row;
-
-        #[test]
-        fn empty() {
-            let mut column1 = vec![];
-            let column2 = vec![];
-            subtract_multiple_of_row_from_other_row(&mut column1, &R32!(1), &column2);
-            assert_eq!(column1, vec![]);
-        }
-
-        #[test]
-        fn edited_empty() {
-            let mut column1 = vec![];
-            let column2 = vec![(1, R32!(1))];
-            subtract_multiple_of_row_from_other_row(&mut column1, &R32!(1), &column2);
-            assert_eq!(column1, vec![(1, R32!(-1))]);
-        }
-
-        #[test]
-        fn other_empty() {
-            let mut column1 = vec![(1, R32!(1))];
-            let column2 = vec![];
-            subtract_multiple_of_row_from_other_row(&mut column1, &R32!(1), &column2);
-            assert_eq!(column1, vec![(1, R32!(1))]);
-        }
-
-        #[test]
-        fn single_before() {
-            let mut column1 = vec![(1, R32!(1))];
-            let column2 = vec![(2, R32!(3))];
-            subtract_multiple_of_row_from_other_row(&mut column1, &R32!(1), &column2);
-            assert_eq!(column1, vec![(1, R32!(1)), (2, R32!(-3))]);
-        }
-
-        #[test]
-        fn single_at() {
-            let mut column1 = vec![(1, R32!(1))];
-            let column2 = vec![(1, R32!(3))];
-            subtract_multiple_of_row_from_other_row(&mut column1, &R32!(1), &column2);
-            assert_eq!(column1, vec![(1, R32!(-2))]);
-        }
-
-        #[test]
-        fn single_at_make_zero() {
-            let mut column1 = vec![(1, R32!(1))];
-            let column2 = vec![(1, R32!(3))];
-            subtract_multiple_of_row_from_other_row(&mut column1, &R32!(1, 3), &column2);
-            assert_eq!(column1, vec![]);
-        }
-
-        #[test]
-        fn single_after() {
-            let mut column1 = vec![(1, R32!(1))];
-            let column2 = vec![(0, R32!(3))];
-            subtract_multiple_of_row_from_other_row(&mut column1, &R32!(1), &column2);
-            assert_eq!(column1, vec![(0, R32!(-3)), (1, R32!(1))]);
-        }
+        let n = 3;
+        let mut v = (0..n).map(|i| (i, i)).collect::<Vec<_>>();
+        let mut permutation = FullPermutation::identity(n);
+        permutation.swap(0, 2);
+        sort_in_three_groups(&mut v, 1, &permutation);
+        assert_eq!(v, vec![(2, 2), (1, 1), (0, 0)]);
     }
 }

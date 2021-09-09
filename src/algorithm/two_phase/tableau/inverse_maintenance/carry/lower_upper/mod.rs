@@ -49,8 +49,10 @@ pub struct LUDecomposition<F> {
     /// Upper triangular matrix `U`.
     ///
     /// Column major, diagonal stored separately. So the length of the vector is `m - 1`.
-    // TODO(PERFORMANCE): Consider storing the diagonal separately.
     upper_triangular: Vec<Vec<(usize, F)>>,
+    /// Diagonal of the upper triangular matrix.
+    ///
+    /// Of size `m`.
     upper_diagonal: Vec<F>,
 
     // TODO(PERFORMANCE): Consider an Option<Permutation> instead to avoid doing identities
@@ -80,16 +82,9 @@ where
     where
         Self::F: ops::Column<C::F>,
     {
-        let m = columns.len();
-        let mut rows = vec![Vec::new(); m];
-        for (j, column) in columns.into_iter().enumerate() {
-            for (i, value) in column {
-                rows[i].push((j, value.into()));
-            }
-        }
-        debug_assert!(rows.iter().all(|row| row.is_sorted_by_key(|&(j, _)| j)));
-
-        Self::rows(rows)
+        Self::decompose(
+            columns.map(|column| column.into_iter().collect()).collect()
+        )
     }
 
     fn change_basis(
@@ -514,8 +509,9 @@ where
 #[cfg(test)]
 mod test {
     use std::collections::BTreeMap;
+    use std::collections::VecDeque;
 
-    use relp_num::{R64, RB};
+    use relp_num::{R64, R8, RB};
     use relp_num::{Rational64, RationalBig};
 
     use crate::algorithm::two_phase::matrix_provider::column::Column as ColumnTrait;
@@ -687,6 +683,10 @@ mod test {
     }
 
     mod change_basis {
+        use std::collections::VecDeque;
+
+        use crate::algorithm::two_phase::matrix_provider::column::SparseSliceIterator;
+        use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::test::to_columns;
         use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::eta_file::EtaFile;
         use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::RotateToBackPermutation;
 
@@ -737,6 +737,145 @@ mod test {
                 )],
             };
             assert_eq!(modified, expected);
+        }
+
+        #[test]
+        fn from_diagonal_left_corner_spike_same() {
+            let m = 3;
+            let columns = VecDeque::from([vec![(0, R8!(2))], vec![(1, R8!(1))], vec![(2, R8!(1))]]);
+            let mut lu = LUDecomposition::decompose(columns);
+
+            let spike = vec![(0, R8!(2))];
+            let column_computation_info = ColumnAndSpike {
+                column: SparseVector::new(vec![], m), // could be anything
+                spike,
+            };
+            lu.change_basis(0, column_computation_info);
+
+            let expected = LUDecomposition {
+                row_permutation: FullPermutation::identity(m),
+                column_permutation: FullPermutation::identity(m),
+                lower_triangular: vec![vec![]; m - 1],
+                upper_triangular: vec![vec![]; m - 1],
+                upper_diagonal: vec![R8!(1), R8!(1), R8!(2)],
+                updates: vec![(
+                    EtaFile::new(vec![], 0, m),
+                    RotateToBackPermutation::new(0, m),
+                )],
+            };
+            assert_eq!(lu, expected);
+        }
+
+        #[test]
+        fn from_diagonal_left_corner_spike_larger() {
+            let pivot = 0;
+            let m = 3;
+            let columns = VecDeque::from([vec![(0, R8!(2))], vec![(1, R8!(3))], vec![(2, R8!(5))]]);
+            let mut lu = LUDecomposition::decompose(columns);
+
+            let spike = vec![(0, R8!(7)), (1, R8!(11))];
+            let column_computation_info = ColumnAndSpike {
+                column: SparseVector::new(vec![], m), // could be anything
+                spike,
+            };
+            lu.change_basis(pivot, column_computation_info);
+
+            let expected = LUDecomposition {
+                row_permutation: FullPermutation::identity(m),
+                column_permutation: FullPermutation::identity(m),
+                lower_triangular: vec![vec![]; m - 1],
+                upper_triangular: vec![vec![], vec![(0, R8!(11))]],
+                upper_diagonal: vec![R8!(3), R8!(5), R8!(7)],
+                updates: vec![(
+                    EtaFile::new(vec![], pivot, m),
+                    RotateToBackPermutation::new(pivot, m),
+                )],
+            };
+            assert_eq!(lu, expected);
+        }
+
+        #[test]
+        fn from_diagonal_middle_spike_same() {
+            let pivot = 1;
+            let m = 3;
+            let columns = VecDeque::from([vec![(0, R8!(2))], vec![(1, R8!(3))], vec![(2, R8!(5))]]);
+            let mut lu = LUDecomposition::decompose(columns);
+
+            let spike = vec![(0, R8!(7)), (1, R8!(11))];
+            let column_computation_info = ColumnAndSpike {
+                column: SparseVector::new(vec![], m), // could be anything
+                spike,
+            };
+            lu.change_basis(pivot, column_computation_info);
+
+            let expected = LUDecomposition {
+                row_permutation: FullPermutation::identity(m),
+                column_permutation: FullPermutation::identity(m),
+                lower_triangular: vec![vec![]; m - 1],
+                upper_triangular: vec![vec![], vec![(0, R8!(7))]],
+                upper_diagonal: vec![R8!(2), R8!(5), R8!(11)],
+                updates: vec![(
+                    EtaFile::new(vec![], pivot, m),
+                    RotateToBackPermutation::new(pivot, m),
+                )],
+            };
+            assert_eq!(lu, expected);
+        }
+
+        #[test]
+        fn from_diagonal_middle_spike_larger() {
+            let pivot = 1;
+            let m = 3;
+            let columns = VecDeque::from([vec![(0, R8!(2))], vec![(1, R8!(3))], vec![(2, R8!(5))]]);
+            let mut lu = LUDecomposition::decompose(columns);
+
+            let spike = vec![(0, R8!(7)), (1, R8!(11)), (2, R8!(13))];
+            let column_computation_info = ColumnAndSpike {
+                column: SparseVector::new(vec![], m), // could be anything
+                spike,
+            };
+            lu.change_basis(pivot, column_computation_info);
+
+            let expected = LUDecomposition {
+                row_permutation: FullPermutation::identity(m),
+                column_permutation: FullPermutation::identity(m),
+                lower_triangular: vec![vec![]; m - 1],
+                upper_triangular: vec![vec![], vec![(0, R8!(7)), (1, R8!(13))]],
+                upper_diagonal: vec![R8!(2), R8!(5), R8!(11)],
+                updates: vec![(
+                    EtaFile::new(vec![], pivot, m),
+                    RotateToBackPermutation::new(pivot, m),
+                )],
+            };
+            assert_eq!(lu, expected);
+        }
+
+        #[test]
+        fn from_diagonal_corner_spike_same() {
+            let pivot = 2;
+            let m = 3;
+            let columns = VecDeque::from([vec![(0, R8!(2))], vec![(1, R8!(3))], vec![(2, R8!(5))]]);
+            let mut lu = LUDecomposition::decompose(columns);
+
+            let spike = vec![(0, R8!(7)), (1, R8!(11)), (2, R8!(13))];
+            let column_computation_info = ColumnAndSpike {
+                column: SparseVector::new(vec![], m), // could be anything
+                spike,
+            };
+            lu.change_basis(pivot, column_computation_info);
+
+            let expected = LUDecomposition {
+                row_permutation: FullPermutation::identity(m),
+                column_permutation: FullPermutation::identity(m),
+                lower_triangular: vec![vec![]; m - 1],
+                upper_triangular: vec![vec![], vec![(0, R8!(7)), (1, R8!(11))]],
+                upper_diagonal: vec![R8!(2), R8!(3), R8!(13)],
+                updates: vec![(
+                    EtaFile::new(vec![], pivot, m),
+                    RotateToBackPermutation::new(pivot, m),
+                )],
+            };
+            assert_eq!(lu, expected);
         }
 
         /// Doesn't require any `r`, permutations only are sufficient
@@ -937,6 +1076,90 @@ mod test {
                 modified.basis_inverse_row(4),
                 SparseVector::new(vec![(4, RB!(1, 55))], m),
             );
+        }
+
+        #[test]
+        fn from_identity() {
+            let mut matrix = to_columns(&[
+                [ -60,    0,    0,   92,  -48,   20,    0,  -84,   94,   64,    0],
+                [  -2,  -84,  -88,  -32,   13,   55,    0,  -54,  -26,  119,   23],
+                [ -20,    8,    0,    0,    0,  121,   53,  -65,  -84,   69,   30],
+                [ -49,  -82,  -32,   90,   49,    0, -115,  -83,   45,   65,    0],
+                [  95,  -41,   91, -120,   -7,    0,  118,    0,    0,  -50,  -93],
+                [ -46,   34,  -41,   30,   15,    0,   91,  126,    0,    0,    0],
+                [ -36,  -96, -118,  -70,   18,   -8,    0,   69,  -21,  -73,   14],
+                [   0,   37,  -14,  -91,    0,    0,   86,    0,   -5,    1,  -42],
+                [   0,    0,   41,   11,   26,    0,    0,    0,    0,    0,  125],
+                [   0,  -36,    0,  -27,   57,   71,  -74,    0,  -83,  -84,   10],
+                [ 118,    0,  -25,    0,   24, -125,  116,  -63,    0,    0,   45],
+            ]);
+
+            let m = matrix.len();
+            let mut lu = LUDecomposition::<RationalBig>::identity(m);
+
+            for (j, column) in matrix.make_contiguous().iter().enumerate() {
+                // compute the spike
+                let cci = lu.left_multiply_by_basis_inverse(SparseSliceIterator::new(column));
+                lu.change_basis(j, cci);
+            }
+
+            for (j, column) in matrix.make_contiguous().iter().enumerate() {
+                assert_eq!(
+                    lu.left_multiply_by_basis_inverse(SparseSliceIterator::new(column)).into_column(),
+                    SparseVector::standard_basis_vector(j, m),
+                    "{}", j,
+                );
+            }
+        }
+
+
+        #[test]
+        fn from_non_identity() {
+            const M: usize = 11;
+
+            let initial = to_columns::<M>(&[
+                [ -60,    0,    0,   92,  -48,   20,    0,  -84,   94,   64,    0],
+                [  -2,  -84,  -88,  -32,   13,   55,    0,  -54,  -26,  119,   23],
+                [ -20,    8,    0,    0,    0,  121,   53,  -65,  -84,   69,   30],
+                [ -49,  -82,  -32,   90,   49,    0, -115,  -83,   45,   65,    0],
+                [  95,  -41,   91, -120,   -7,    0,  118,    0,    0,  -50,  -93],
+                [ -46,   34,  -41,   30,   15,    0,   91,  126,    0,    0,    0],
+                [ -36,  -96, -118,  -70,   18,   -8,    0,   69,  -21,  -73,   14],
+                [   0,   37,  -14,  -91,    0,    0,   86,    0,   -5,    1,  -42],
+                [   0,    0,   41,   11,   26,    0,    0,    0,    0,    0,  125],
+                [   0,  -36,    0,  -27,   57,   71,  -74,    0,  -83,  -84,   10],
+                [ 118,    0,  -25,    0,   24, -125,  116,  -63,    0,    0,   45],
+            ]);
+
+            let mut target = to_columns::<M>(&[
+                [-127,    0,  -35,   43,   63,   -5,  -60,  -87,   70,   44,   42],
+                [  46,  -53,   28,    0,    0,    0,   77,    0,    0,  -15,    0],
+                [  32,  -16,   -1,    0,    0,  125,    0, -108,    0,  -51,    0],
+                [ -81,  121,   55,   73, -120,    0, -102,  101,  114,    0, -118],
+                [   0,    0,    0,    0,  -78, -108,    0, -119,   29,   96,    0],
+                [ -26,   41,  -18,  -10,    0,    0,  -26,    0,  -49,   47,   81],
+                [ -54,  115, -118,  -22,    0,    0,  -97,    0,    0,  -34,    0],
+                [-101,  105,    0, -113,  123,    0,   -7,    5,  -90,    1,    0],
+                [   0,   53,  105,   91,    0,   80,   95,   95,  -70,    0,  118],
+                [ -56,   18,   98,  -68,  -22,  -24,   56,  -10,   12,  -37,  -96],
+                [ 125,   69,  -62,  -26,    0,   25,   -6,  -76,   35,  -16,    0],
+            ]);
+
+            let mut lu = LUDecomposition::<RationalBig>::decompose(initial);
+
+            for (j, column) in target.make_contiguous().iter().enumerate() {
+                // compute the spike
+                let cci = lu.left_multiply_by_basis_inverse(SparseSliceIterator::new(column));
+                lu.change_basis(j, cci);
+            }
+
+            for (j, column) in target.make_contiguous().iter().enumerate() {
+                assert_eq!(
+                    lu.left_multiply_by_basis_inverse(SparseSliceIterator::new(column)).into_column(),
+                    SparseVector::standard_basis_vector(j, M),
+                    "{}", j,
+                );
+            }
         }
     }
 }

@@ -124,7 +124,7 @@ fn presolve_constraint_if_slack_with_suitable_bounds() {
     assert!(index.presolve_slack(0).is_ok());
     assert_eq!(index.counters.constraint, vec![2]);
     assert_eq!(index.counters.variable, vec![0, 1, 1]);
-    let empty_vec: Vec<usize> = vec![];
+    let empty_vec: Vec<usize> = vec![]; // TODO(ARCHITECTURE): Why are type annotations needed? -> Probably a compiler bug.
     assert_eq!(index.updates.constraints_marked_removed, empty_vec);
     assert_eq!(index.updates.removed_variables, vec![(0, RemovedVariable::FunctionOfOthers {
         constant: R32!(3, 2),

@@ -4,6 +4,8 @@
 //! numerical stability). Choosing the "best" pivot is often an intractable problem, so heuristics
 //! are used.
 
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::FullPermutation;
+
 /// Choosing the next pivot.
 ///
 /// A trait with associated methods allows implementors to speed up the search for a good pivot
@@ -19,15 +21,13 @@ pub(super) trait PivotRule {
     /// that still is to be decomposed.
     /// * `nnz_column`: For each column, the number of nonzeros that are left in the part of the
     /// matrix that still is to be decomposed.
-    /// * `rows`: Rows from the start of the decomposition, but partially modified: some values in
+    /// * `columns`: Rows from the start of the decomposition, but partially modified: some values in
     /// the lower rows (i < k) have been eliminated to move toward an upper triangular matrix.
-    /// * `k`: Current row being "processed", meaning that the next pivot will be permuted to index
-    /// `(k, k)`. Items at indices lower than `k` from the other arguments should typically not be
     /// considered.
     fn choose_pivot<T>(
         &self,
-        nnz_row: &[usize], nnz_column: &[usize],
-        rows: &[Vec<(usize, T)>],
+        columns: &[Vec<(usize, T)>],
+        row_permutation: &FullPermutation,
         k: usize,
     ) -> (usize, usize);
 }
@@ -44,39 +44,89 @@ impl PivotRule for Markowitz {
 
     fn choose_pivot<T>(
         &self,
-        row_counts: &[usize], column_counts: &[usize],
-        rows: &[Vec<(usize, T)>],
+        columns: &[Vec<(usize, T)>],
+        row_permutation: &FullPermutation,
         k: usize,
     ) -> (usize, usize) {
-        let m = rows.len();
-        debug_assert!(m > 0);
-        debug_assert!(row_counts.len() == m);
-        debug_assert!(column_counts.len() == m);
-        debug_assert!(row_counts[k..].iter().all(|&count| count > 0));
-        debug_assert!(column_counts[k..].iter().all(|&count| count > 0));
-        debug_assert!(rows.iter().all(|row| row.is_sorted_by_key(|&(j, _)| j)));
+        let m_minus_k = columns.len();
+        debug_assert!(
+            m_minus_k > 0,
+            "there is no column to pivot on",
+        );
+        debug_assert!(
+            columns.iter().all(|column| column.is_sorted_by_key(|&(i, _)| i)),
+            "columns should be sorted by their old index",
+        );
+
+        let mut row_nnz = vec![0; m_minus_k];
+        let mut column_nnz = vec![0; m_minus_k];
 
         // TODO(ENHANCEMENT): This is a very slow O(log(nnz(B)) * nnz(B)) search, see #15.
-        let mut pairs = rows.iter()
-            .enumerate()
-            .skip(k)
-            .flat_map(|(i, row)| {
-                let first_relevant_index = match row.binary_search_by_key(&k, |&(j, _)| j) {
-                    Ok(index) | Err(index) => index,
-                };
+        for (j, column) in columns.iter().enumerate() {
+            for &(old_space, _) in column {
+                let new_space = row_permutation[old_space];
 
-                row[first_relevant_index..].iter().map(move |&(j, _)| (i, j))
+                if new_space >= k {
+                    row_nnz[new_space - k] += 1;
+                    column_nnz[j] += 1;
+                }
+            }
+        }
+
+        columns.iter().enumerate()
+            .flat_map(|(j, column)| {
+                column.iter().filter_map(move |&(old_space, _)| {
+                    let new_space = row_permutation[old_space];
+
+                    if new_space >= k {
+                        Some((new_space - k, j))
+                    } else {
+                        None
+                    }
+                })
             })
-            .collect::<Vec<_>>();
+            .min_by_key(|&(i, j)| (row_nnz[i] - 1) * (column_nnz[j] - 1))
+            .expect("no element to pivot on")
+    }
+}
 
-        // We prefer to do row swaps, so try to find a low (= close to k) column first.
-        // This could be either stable sorting (to keep row ordering from above) or unstable sorting
-        // by the entire reversed tuple.
-        pairs.sort_by_key(|&(_, j)| j);
+#[cfg(test)]
+mod test {
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::pivoting::{Markowitz, PivotRule};
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::FullPermutation;
 
-        pairs
-            .into_iter()
-            .min_by_key(|&(i, j)| (row_counts[i] - 1) * (column_counts[j] - 1))
-            .unwrap()
+    #[test]
+    fn test_identity() {
+        let rule = Markowitz::new();
+
+        const N: usize = 3;
+        let columns = (0..N).map(|i| vec![(i, 1)]).collect::<Vec<_>>();
+        let identity = FullPermutation::identity(N);
+        let selected = rule.choose_pivot(&columns, &identity, 0);
+
+        assert_eq!(selected, (0, 0));
+    }
+
+    #[test]
+    fn test_2x2_triangle() {
+        let rule = Markowitz::new();
+
+        const N: usize = 2;
+        let columns = vec![vec![(0, 1)], vec![(0, 1), (1, 1)]];
+        let identity = FullPermutation::identity(N);
+        let selected = rule.choose_pivot(&columns, &identity, 0);
+
+        assert_eq!(selected, (0, 0));
+    }
+
+    #[test]
+    fn test_2x2_triangle_permuted() {
+        let rule = Markowitz::new();
+
+        let columns = vec![vec![(0, 1)], vec![(0, 1), (1, 1)]];
+        let permutation = FullPermutation::new(vec![2, 1, 0]);
+        let selected = rule.choose_pivot(&columns, &permutation, 1);
+
+        assert_eq!(selected, (1, 0));
     }
 }

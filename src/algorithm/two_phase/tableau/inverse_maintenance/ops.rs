@@ -7,8 +7,7 @@ use std::iter::Sum;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 use num_traits::{One, Zero};
-use relp_num::NonZero;
-use relp_num::Signed;
+use relp_num::{Negateable, NonZero, Signed};
 
 use crate::data::linear_algebra::traits::SparseElement;
 
@@ -20,6 +19,7 @@ pub trait Field =
 
     Signed +
     Neg<Output=Self> +
+    Negateable +
 
     Add<Self, Output=Self> +
     for<'r> Add<&'r Self, Output=Self> +
@@ -44,6 +44,8 @@ pub trait Field =
     Sum +
 
     Column<relp_num::One> +
+
+    Default +
 
     Eq +
     PartialEq +
@@ -70,9 +72,23 @@ where
 
 /// Operations with the values in the columns.
 pub trait Column<Rhs> =
-    for<'r> AddAssign<&'r Rhs> +
+    Add<Rhs, Output=Self> +
+    AddAssign<Rhs> +
+    Sub<Rhs, Output=Self> +
+    SubAssign<Rhs> +
+    Mul<Rhs, Output=Self> +
+    MulAssign<Rhs> +
+    Div<Rhs, Output=Self> +
+    DivAssign<Rhs> +
+
     for<'r> Add<&'r Rhs, Output=Self> +
+    for<'r> AddAssign<&'r Rhs> +
+    for<'r> Sub<&'r Rhs, Output=Self> +
+    for<'r> SubAssign<&'r Rhs> +
     for<'r> Mul<&'r Rhs, Output=Self> +
+    for<'r> MulAssign<&'r Rhs> +
+    for<'r> Div<&'r Rhs, Output=Self> +
+    for<'r> DivAssign<&'r Rhs> +
 
     From<Rhs> +
     for<'r> From<&'r Rhs> +
