@@ -15,17 +15,8 @@ mod swap;
 ///
 /// Contains a few trivial implementations to avoid duplication.
 pub trait Permutation {
-    /// Apply the permutation to an index in the forward direction.
-    ///
-    /// What this direction actually is (w.r.t. the backward direction) depends on the implementor.
-    ///
-    /// The choice for in-place mutation was made for idiomatic application of different
-    /// transformations after each other.
-    ///
-    /// # Arguments
-    ///
-    /// * `i`: Value in range `0..self.len()` that will be mutated in place.
-    fn forward(&self, i: &mut usize);
+    fn forward(&self, i: usize) -> usize;
+    fn backward(&self, i: usize) -> usize;
 
     /// Apply the permutation to an index in the forward direction.
     ///
@@ -37,7 +28,23 @@ pub trait Permutation {
     /// # Arguments
     ///
     /// * `i`: Value in range `0..self.len()` that will be mutated in place.
-    fn backward(&self, i: &mut usize);
+    fn forward_ref(&self, i: &mut usize) {
+        *i = self.forward(*i);
+    }
+
+    /// Apply the permutation to an index in the forward direction.
+    ///
+    /// What this direction actually is (w.r.t. the backward direction) depends on the implementor.
+    ///
+    /// The choice for in-place mutation was made for idiomatic application of different
+    /// transformations after each other.
+    ///
+    /// # Arguments
+    ///
+    /// * `i`: Value in range `0..self.len()` that will be mutated in place.
+    fn backward_ref(&self, i: &mut usize) {
+        *i = self.backward(*i);
+    }
 
     /// Apply the forward permutation to a collection of items, keeping them sorted.
     ///
@@ -80,7 +87,7 @@ pub trait Permutation {
         debug_assert!(items.iter().all(|&(i, _)| i < self.len()));
 
         for (i, _) in items {
-            Permutation::forward(self, i)
+            Permutation::forward_ref(self, i)
         }
     }
 
@@ -97,7 +104,7 @@ pub trait Permutation {
         debug_assert!(items.iter().all(|&(i, _)| i < self.len()));
 
         for (i, _) in items {
-            Permutation::backward(self, i)
+            Permutation::backward_ref(self, i)
         }
     }
 
