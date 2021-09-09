@@ -1,4 +1,5 @@
 //! # LU decomposition
+use std::cmp::max;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -47,9 +48,10 @@ pub struct LUDecomposition<F> {
     lower_triangular: Vec<Vec<(usize, F)>>,
     /// Upper triangular matrix `U`.
     ///
-    /// Column major.
+    /// Column major, diagonal stored separately. So the length of the vector is `m - 1`.
     // TODO(PERFORMANCE): Consider storing the diagonal separately.
     upper_triangular: Vec<Vec<(usize, F)>>,
+    upper_diagonal: Vec<F>,
 
     // TODO(PERFORMANCE): Consider an Option<Permutation> instead to avoid doing identities
     // TODO(ARCHITECTURE): Consider grouping pivot index and eta file in a single update struct.
@@ -68,7 +70,8 @@ where
             row_permutation: FullPermutation::identity(m),
             column_permutation: FullPermutation::identity(m),
             lower_triangular: vec![vec![]; m - 1],
-            upper_triangular: (0..m).map(|i| vec![(i, F::one())]).collect(),
+            upper_triangular: vec![vec![]; m - 1],
+            upper_diagonal: vec![F::one(); m],
             updates: vec![],
         }
     }
@@ -109,11 +112,11 @@ where
         // Compute r
         let (u_bar, indices_to_zero): (Vec<_>, Vec<_>) = ((pivot_column_index + 1)..m)
             .filter_map(|j| {
-                self.upper_triangular[j]
-                    .binary_search_by_key(&pivot_column_index, |&(i, _)| i)
-                    .ok()
+                let column = &self.upper_triangular[j - 1];
+                column
+                    .binary_search_by_key(&pivot_column_index, |&(i, _)| i).ok()
                     .map(|data_index| (
-                        (j, self.upper_triangular[j][data_index].1.clone()),
+                        (j, column[data_index].1.clone()),
                         (j, data_index),
                     ))
             })
@@ -125,34 +128,53 @@ where
         // We now have all information needed to recover the triangle, start modifying it
         // Zero out part of a row that will be rotated to the bottom
         for (j, data_index) in indices_to_zero {
-            self.upper_triangular[j].remove(data_index);
+            self.upper_triangular[j - 1].remove(data_index);
         }
         let Self::ColumnComputationInfo { column, mut spike } = column;
-        debug_assert!(spike.iter().is_sorted_by_key(|&(i, _)| i));
+        debug_assert!(spike.windows(2).all(|w| w[0].0 < w[1].0));
 
         eta_file.update_spike_pivot_value(&mut spike);
         debug_assert!(
             spike.binary_search_by_key(&pivot_column_index, |&(i, _)| i).is_ok(),
             "This value should be present to avoid singularity because it will be the bottom corner value.",
         );
-        // Insert the spike for upper
-        self.upper_triangular[pivot_column_index] = spike;
 
-        // Move the spike to the end
-        self.upper_triangular[pivot_column_index..].rotate_left(1);
+        let disappearing_column_index = if pivot_column_index == 0 {
+            // The first column is replaced, but this column is not explicitly represented in the
+            // `upper_triangular` field. The non-diagonal item of the second column, if it exists,
+            // will be zeroed. The diagonal item will be shifted separately.
+            0
+        } else {
+            // In the usual case, subtract one because the column indices are shifted
+            pivot_column_index - 1
+        };
+        // Insert the spike
+        self.upper_triangular[disappearing_column_index] = spike;
+
+        // Rotate the non-spike columns to the left, the spike ends up on the right
+        self.upper_triangular[disappearing_column_index..].rotate_left(1);
+        self.upper_diagonal[pivot_column_index..].rotate_left(1);
 
         // Rotate the "empty except for one value" pivot row to the bottom
         let q = RotateToBackPermutation::new(pivot_column_index, self.m());
-        for j in pivot_column_index..m {
-            q.forward_sorted(&mut self.upper_triangular[j])
+        for j in max(pivot_column_index, 1)..m {
+            q.forward_sorted(&mut self.upper_triangular[j - 1]);
         }
+        let (corner_index, corner_value) = self.upper_triangular.last_mut().unwrap().pop().unwrap();
+        debug_assert_eq!(corner_index, self.m() - 1);
+        *self.upper_diagonal.last_mut().unwrap() = corner_value;
 
         // `upper_triangular` is diagonal again
-        debug_assert!(self.upper_triangular.iter().enumerate().all(|(j, column)| {
-            column.last().unwrap().0 == j && column.is_sorted_by_key(|&(i, _)| i)
+        debug_assert!(self.upper_triangular.iter().all(|column| {
+            column.windows(2).all(|w| w[0].0 < w[1].0)
+        }));
+        debug_assert!(self.upper_triangular.iter().enumerate().all(|(data_j, column)| {
+            let j = data_j + 1;
+            column.last().map_or(true, |&(i, _)| i < j)
         }));
         self.updates.push((eta_file, q));
 
+        // return the column, unmodified
         column
     }
 
@@ -277,9 +299,9 @@ where
             let result_value = rhs_value; // Implicit 1 on the diagonal.
 
             if column != self.m() - 1 {
-                // Introduce new nonzeros
-                for &(row, ref value) in &self.lower_triangular[column] {
-                    insert_or_shift_maybe_remove(row, &result_value * value, &mut rhs);
+                // Introduce new non zeros
+                for &(i, ref value) in &self.lower_triangular[column] {
+                    insert_or_shift_maybe_remove(i, &result_value * value, &mut rhs);
                 }
             }
 
@@ -294,7 +316,7 @@ where
 
         while let Some((row, rhs_value)) = rhs.pop_last() {
             let column = row;
-            let result_value = self.compute_result(column, rhs_value);
+            let result_value = rhs_value / &self.upper_diagonal[column];
             self.update_rhs(column, &result_value, &mut rhs);
             result.push((row, result_value));
         }
@@ -310,9 +332,9 @@ where
             let column = row;
             match row.cmp(&target_row) {
                 Ordering::Less => return None,
-                Ordering::Equal => return Some(self.compute_result(column, rhs_value)),
+                Ordering::Equal => return Some(rhs_value / &self.upper_diagonal[column]),
                 Ordering::Greater => {
-                    let result_value = self.compute_result(column, rhs_value);
+                    let result_value = rhs_value / &self.upper_diagonal[column];
                     self.update_rhs(column, &result_value, &mut rhs);
                 },
             }
@@ -321,20 +343,11 @@ where
         None
     }
 
-    fn compute_result(&self, column: usize, rhs_value: F) -> F {
-        debug_assert_eq!(
-            self.upper_triangular[column].last().unwrap().0,
-            column, "Needs to have a diagonal element",
-        );
-
-        let diagonal_item = &self.upper_triangular[column].last().unwrap().1;
-        rhs_value / diagonal_item
-    }
-
     fn update_rhs(&self, column: usize, result_value: &F, rhs: &mut BTreeMap<usize, F>) {
-        let nr_column_items = self.upper_triangular[column].len();
-        for &(row, ref value) in &self.upper_triangular[column][..(nr_column_items - 1)] {
-            insert_or_shift_maybe_remove(row, result_value * value, rhs);
+        if column > 0 {
+            for &(row, ref value) in &self.upper_triangular[column - 1] {
+                insert_or_shift_maybe_remove(row, result_value * value, rhs);
+            }
         }
     }
 
@@ -369,15 +382,15 @@ where
 
         while let Some((column, rhs_value)) = rhs.pop_first() {
             let row = column;
-            let diagonal_item = &self.upper_triangular[column].last().unwrap().1;
-            let result_value = rhs_value / diagonal_item;
+            let result_value = rhs_value / &self.upper_diagonal[column];
 
             // Introduce new nonzeros, by rows
             for j in (column + 1)..self.m() {
+                let column = &self.upper_triangular[j - 1];
                 // TODO(PERFORMANCE): Avoid scanning all columns for row values
-                let has_row = self.upper_triangular[j].binary_search_by_key(&row, |&(i, _)| i);
+                let has_row = column.binary_search_by_key(&row, |&(i, _)| i);
                 if let Ok(data_index) = has_row {
-                    let value = &self.upper_triangular[j][data_index].1;
+                    let value = &column[data_index].1;
                     insert_or_shift_maybe_remove(j, &result_value * value, &mut rhs);
                 }
             }
@@ -473,13 +486,15 @@ where
             write!(f, "{0:>width$} |", i, width = column_width)?;
             for j in 0..self.m() {
                 let value = match j.cmp(&i) {
-                    Ordering::Equal | Ordering::Greater => {
-                        match self.upper_triangular[j].binary_search_by_key(&i, |&(i, _)| i) {
-                            Ok(index) => self.upper_triangular[j][index].1.to_string(),
+                    Ordering::Less => "".to_string(),
+                    Ordering::Equal => self.upper_diagonal[j].to_string(),
+                    Ordering::Greater => {
+                        let column = &self.upper_triangular[j - 1];
+                        match column.binary_search_by_key(&i, |&(i, _)| i) {
+                            Ok(index) => column[index].1.to_string(),
                             Err(_) => "0".to_string(),
                         }
                     },
-                    Ordering::Less => "".to_string(),
                 };
                 write!(f, "{0:^width$}", value, width = width)?;
             }
@@ -505,8 +520,9 @@ where
 #[cfg(test)]
 mod test {
     use std::collections::BTreeMap;
+    use std::collections::VecDeque;
 
-    use relp_num::{R64, RB};
+    use relp_num::{R64, R8, RB};
     use relp_num::{Rational64, RationalBig};
 
     use crate::algorithm::two_phase::matrix_provider::column::Column as ColumnTrait;
@@ -598,7 +614,8 @@ mod test {
                 row_permutation: FullPermutation::identity(2),
                 column_permutation: FullPermutation::identity(2),
                 lower_triangular: vec![vec![(1, RB!(1))]],
-                upper_triangular: vec![vec![(0, RB!(1))], vec![(1, RB!(1))]],
+                upper_triangular: vec![vec![]],
+                upper_diagonal: vec![RB!(1), RB!(1)],
                 updates: vec![],
             };
 
@@ -616,7 +633,8 @@ mod test {
                 row_permutation: FullPermutation::identity(2),
                 column_permutation: FullPermutation::identity(2),
                 lower_triangular: vec![vec![(1, RB!(1))]],
-                upper_triangular: vec![vec![(0, RB!(1))], vec![(1, RB!(1))]],
+                upper_triangular: vec![vec![]],
+                upper_diagonal: vec![RB!(1), RB!(1)],
                 updates: vec![],
             };
 
@@ -651,7 +669,8 @@ mod test {
                 row_permutation: FullPermutation::new(vec![1, 0]),
                 column_permutation: FullPermutation::new(vec![0, 1]),
                 lower_triangular: vec![vec![(1, RB!(1, 3))]],
-                upper_triangular: vec![vec![(0, RB!(3))], vec![(0, RB!(4)), (1, RB!(2, 3))]],
+                upper_triangular: vec![vec![(0, RB!(4))]],
+                upper_diagonal: vec![RB!(3), RB!(2, 3)],
                 updates: vec![],
             };
 
@@ -717,7 +736,8 @@ mod test {
                 row_permutation: FullPermutation::identity(2),
                 column_permutation: FullPermutation::identity(2),
                 lower_triangular: vec![vec![]],
-                upper_triangular: vec![vec![(0, RB!(1))], vec![(0, RB!(1)), (1, RB!(1))]],
+                upper_triangular: vec![vec![(0, RB!(1))]],
+                upper_diagonal: vec![RB!(1), RB!(1)],
                 updates: vec![(
                     EtaFile::new(vec![], 0, 2),
                     RotateToBackPermutation::new(0, 2),
@@ -744,13 +764,8 @@ mod test {
                 row_permutation: FullPermutation::identity(m),
                 column_permutation: FullPermutation::identity(m),
                 lower_triangular: vec![vec![]; m - 1],
-                upper_triangular: vec![
-                    vec![(0, RB!(1))],
-                    vec![(1, RB!(1))],
-                    vec![(2, RB!(1))],
-                    vec![(3, RB!(1))],
-                    vec![(0, RB!(2)), (1, RB!(5)), (2, RB!(7)), (4, RB!(3))],
-                ],
+                upper_triangular: vec![vec![], vec![], vec![], vec![(0, RB!(2)), (1, RB!(5)), (2, RB!(7))]],
+                upper_diagonal: vec![RB!(1), RB!(1), RB!(1), RB!(1), RB!(3)],
                 updates: vec![(
                     EtaFile::new(vec![], 1, m),
                     RotateToBackPermutation::new(1, m),
@@ -767,12 +782,8 @@ mod test {
                 row_permutation: FullPermutation::identity(m),
                 column_permutation: FullPermutation::identity(m),
                 lower_triangular: vec![vec![]; m - 1],
-                upper_triangular: vec![
-                    vec![(0, RB!(1))],
-                    vec![(1, RB!(1))],
-                    vec![(2, RB!(4))],
-                    vec![(1, RB!(5)), (3, RB!(6))],
-                ],
+                upper_triangular: vec![vec![], vec![], vec![(1, RB!(5))]],
+                upper_diagonal: vec![RB!(1), RB!(1), RB!(4), RB!(6)],
                 updates: vec![],
             };
 
@@ -789,12 +800,8 @@ mod test {
                 row_permutation: FullPermutation::identity(m),
                 column_permutation: FullPermutation::identity(m),
                 lower_triangular: vec![vec![]; m - 1],
-                upper_triangular: vec![
-                    vec![(0, RB!(1))],
-                    vec![(1, RB!(4))],
-                    vec![(2, RB!(6))],
-                    vec![(1, RB!(3)), (2, RB!(4)), (3, -RB!(8, 6))],
-                ],
+                upper_triangular: vec![vec![], vec![], vec![(1, RB!(3)), (2, RB!(4))]],
+                upper_diagonal: vec![RB!(1), RB!(4), RB!(6), RB!(-8, 6)],
                 updates: vec![(
                     EtaFile::new(vec![(3, RB!(5, 6))], 1, m),
                     RotateToBackPermutation::new(1, m),
@@ -849,12 +856,12 @@ mod test {
                 column_permutation: FullPermutation::identity(m),
                 lower_triangular: vec![vec![]; m - 1],
                 upper_triangular: vec![
-                    vec![(0, RB!(11))],
-                    vec![(0, RB!(12)), (1, RB!(22))],
-                    vec![(0, RB!(13)), (1, RB!(23)), (2, RB!(33))],
-                    vec![(0, RB!(14)), (1, RB!(24)), (2, RB!(34)), (3, RB!(44))],
-                    vec![(0, RB!(15)), (1, RB!(25)), (2, RB!(35)), (3, RB!(45)), (4, RB!(55))],
+                    vec![(0, RB!(12))],
+                    vec![(0, RB!(13)), (1, RB!(23))],
+                    vec![(0, RB!(14)), (1, RB!(24)), (2, RB!(34))],
+                    vec![(0, RB!(15)), (1, RB!(25)), (2, RB!(35)), (3, RB!(45))],
                 ],
+                upper_diagonal: vec![RB!(11), RB!(22), RB!(33), RB!(44), RB!(55)],
                 updates: vec![],
             };
 
@@ -871,12 +878,12 @@ mod test {
                 column_permutation: FullPermutation::identity(m),
                 lower_triangular: vec![vec![]; m - 1],
                 upper_triangular: vec![
-                    vec![(0, RB!(11))],
-                    vec![(0, RB!(13)), (1, RB!(33))],
-                    vec![(0, RB!(14)), (1, RB!(34)), (2, RB!(44))],
-                    vec![(0, RB!(15)), (1, RB!(35)), (2, RB!(45)), (3, RB!(55))],
-                    vec![(0, RB!(12)), (1, RB!(32)), (2, RB!(42)), (4, RB!(-215, 363))],
+                    vec![(0, RB!(13))],
+                    vec![(0, RB!(14)), (1, RB!(34))],
+                    vec![(0, RB!(15)), (1, RB!(35)), (2, RB!(45))],
+                    vec![(0, RB!(12)), (1, RB!(32)), (2, RB!(42))],
                 ],
+                upper_diagonal: vec![RB!(11), RB!(33), RB!(44), RB!(55), RB!(-215, 363)],
                 updates: vec![(
                     EtaFile::new(vec![
                             (2, RB!(23, 33)),
