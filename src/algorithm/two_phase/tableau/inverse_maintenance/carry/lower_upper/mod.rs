@@ -514,8 +514,9 @@ where
 #[cfg(test)]
 mod test {
     use std::collections::BTreeMap;
+    use std::collections::VecDeque;
 
-    use relp_num::{R64, RB};
+    use relp_num::{R64, R8, RB};
     use relp_num::{Rational64, RationalBig};
 
     use crate::algorithm::two_phase::matrix_provider::column::Column as ColumnTrait;
