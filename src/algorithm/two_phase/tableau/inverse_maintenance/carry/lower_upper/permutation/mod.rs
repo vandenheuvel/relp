@@ -19,25 +19,40 @@ pub trait Permutation {
     ///
     /// What this direction actually is (w.r.t. the backward direction) depends on the implementor.
     ///
-    /// The choice for in-place mutation was made for idiomatic application of different
-    /// transformations after each other.
+    /// # Arguments
+    ///
+    /// * `i`: Value in range `0..self.len()`.
+    fn forward(&self, i: usize) -> usize;
+    /// Apply the permutation to an index in the backward direction.
+    ///
+    /// What this direction actually is (w.r.t. the forward direction) depends on the implementor.
     ///
     /// # Arguments
     ///
-    /// * `i`: Value in range `0..self.len()` that will be mutated in place.
-    fn forward(&self, i: &mut usize);
+    /// * `i`: Value in range `0..self.len()`.
+    fn backward(&self, i: usize) -> usize;
 
-    /// Apply the permutation to an index in the forward direction.
+    /// Apply the permutation to an index in the forward direction by reference.
     ///
-    /// What this direction actually is (w.r.t. the backward direction) depends on the implementor.
-    ///
-    /// The choice for in-place mutation was made for idiomatic application of different
-    /// transformations after each other.
+    /// See the documentation of `forward`.
     ///
     /// # Arguments
     ///
     /// * `i`: Value in range `0..self.len()` that will be mutated in place.
-    fn backward(&self, i: &mut usize);
+    fn forward_ref(&self, i: &mut usize) {
+        *i = self.forward(*i);
+    }
+
+    /// Apply the permutation to an index in the backward direction by reference.
+    ///
+    /// See the documentation of `forward`.
+    ///
+    /// # Arguments
+    ///
+    /// * `i`: Value in range `0..self.len()` that will be mutated in place.
+    fn backward_ref(&self, i: &mut usize) {
+        *i = self.backward(*i);
+    }
 
     /// Apply the forward permutation to a collection of items, keeping them sorted.
     ///
@@ -80,7 +95,7 @@ pub trait Permutation {
         debug_assert!(items.iter().all(|&(i, _)| i < self.len()));
 
         for (i, _) in items {
-            Permutation::forward(self, i)
+            Permutation::forward_ref(self, i)
         }
     }
 
@@ -97,7 +112,7 @@ pub trait Permutation {
         debug_assert!(items.iter().all(|&(i, _)| i < self.len()));
 
         for (i, _) in items {
-            Permutation::backward(self, i)
+            Permutation::backward_ref(self, i)
         }
     }
 

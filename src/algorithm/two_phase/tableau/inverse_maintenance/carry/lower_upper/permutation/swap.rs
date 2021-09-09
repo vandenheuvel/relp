@@ -22,20 +22,22 @@ impl Swap {
 }
 
 impl Permutation for Swap {
-    fn forward(&self, i: &mut usize) {
-        debug_assert!(*i < self.len());
+    fn forward(&self, i: usize) -> usize {
+        debug_assert!(i < self.len());
 
-        if *i == self.indices.0 {
-            *i = self.indices.1
-        } else if *i == self.indices.1 {
-            *i = self.indices.0
+        if i == self.indices.0 {
+            self.indices.1
+        } else if i == self.indices.1 {
+            self.indices.0
+        } else {
+            i
         }
     }
 
-    fn backward(&self, i: &mut usize) {
-        debug_assert!(*i < self.len());
+    fn backward(&self, i: usize) -> usize {
+        debug_assert!(i < self.len());
 
-        self.forward(i);
+        self.forward(i)
     }
 
     fn forward_sorted<T>(&self, items: &mut [(usize, T)]) {

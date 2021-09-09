@@ -49,7 +49,6 @@ pub struct LUDecomposition<F> {
     /// Upper triangular matrix `U`.
     ///
     /// Column major, diagonal stored separately. So the length of the vector is `m - 1`.
-    // TODO(PERFORMANCE): Consider storing the diagonal separately.
     upper_triangular: Vec<Vec<(usize, F)>>,
     /// Diagonal of the upper triangular matrix. Length is `m`.
     upper_diagonal: Vec<F>,
@@ -102,9 +101,9 @@ where
         let pivot_column_index = {
             // Column with a pivot in `pivot_row_index` is leaving
             let mut pivot_column_index = pivot_row_index;
-            self.column_permutation.forward(&mut pivot_column_index);
+            self.column_permutation.forward_ref(&mut pivot_column_index);
             for (_, q) in &self.updates {
-                Permutation::forward(q, &mut pivot_column_index);
+                Permutation::forward_ref(q, &mut pivot_column_index);
             }
             pivot_column_index
         };
@@ -183,10 +182,7 @@ where
         Self::F: ops::Column<I::F>,
     {
         let rhs = iter
-            .map(|(mut i, v)| {
-                self.row_permutation.forward(&mut i);
-                (i, v.into())
-            })
+            .map(|(i, v)| (self.row_permutation[i], v.into()))
             // Also sorts after the row permutation
             .collect::<BTreeMap<_, _>>();
         let mut w = self.left_multiply_by_lower_inverse(rhs);
@@ -220,10 +216,7 @@ where
         Self::F: ops::Column<I::F>,
     {
         let mut lhs = row
-            .map(|(mut i, v)| {
-                self.column_permutation.forward(&mut i);
-                (i, v.into())
-            })
+            .map(|(i, v)| (self.column_permutation[i], v.into()))
             .collect::<Vec<_>>();
 
         for (_, q) in &self.updates {
@@ -259,9 +252,9 @@ where
     }
 
     fn basis_inverse_row(&self, mut row: usize) -> SparseVector<Self::F, Self::F> {
-        self.column_permutation.forward(&mut row);
+        self.column_permutation.forward_ref(&mut row);
         for (_, q) in &self.updates {
-            q.forward(&mut row);
+            q.forward_ref(&mut row);
         }
 
         let initial_rhs = iter::once((row, Self::F::one())).collect();
@@ -520,9 +513,8 @@ where
 #[cfg(test)]
 mod test {
     use std::collections::BTreeMap;
-    use std::collections::VecDeque;
 
-    use relp_num::{R64, R8, RB};
+    use relp_num::{R64, RB};
     use relp_num::{Rational64, RationalBig};
 
     use crate::algorithm::two_phase::matrix_provider::column::Column as ColumnTrait;

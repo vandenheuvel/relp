@@ -39,25 +39,26 @@ impl RotateToBack {
 }
 
 impl Permutation for RotateToBack {
-    fn forward(&self, i: &mut usize) {
-        debug_assert!(*i < self.len());
+    fn forward(&self, i: usize) -> usize {
+        debug_assert!(i < self.len());
 
-        match (*i).cmp(&self.index) {
-            Ordering::Less => (),
-            Ordering::Equal => *i = self.len() - 1,
-            Ordering::Greater => *i -= 1,
+        match i.cmp(&self.index) {
+            Ordering::Less => i,
+            Ordering::Equal => self.len() - 1,
+            Ordering::Greater => i - 1,
         }
     }
 
-    fn backward(&self, i: &mut usize) {
-        debug_assert!(*i < self.len());
+    fn backward(&self, i: usize) -> usize {
+        debug_assert!(i < self.len());
 
-        if *i < self.index {
-        } else if *i < self.len() - 1 {
-            *i += 1
+        if i < self.index {
+            i
+        } else if i < self.len() - 1 {
+            i + 1
         } else {
             // i == self.len - 1
-            *i = self.index
+            self.index
         }
     }
 
