@@ -1,11 +1,7 @@
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub};
-
-use num_traits::{One, Zero};
-use relp_num::{NonZeroFactorizable, Rational16, Rational8, RationalBig};
-use relp_num::{R16, R8, RB};
+use relp_num::{R16, R8, Rational16, Rational8, RationalBig, RB};
 
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
-use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
+use crate::data::linear_algebra::traits::SparseComparator;
 use crate::data::linear_algebra::vector::DenseVector;
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{Objective, RangedConstraintRelation, VariableType};
@@ -478,40 +474,4 @@ fn test_big() {
         constraint_column_factors: vec![RB!(1), RB!(1)],
     };
     assert_eq!(scaling, expected);
-
-    f::<RationalBig>();
 }
-
-fn f<R>()
-where
-
-        for<'r> R: NonZeroFactorizable<Power=i32> + Multiplication<R::Factor> + SparseElement<R> + SparseComparator,
-        for<'r> &'r R: Mul<&'r R, Output=R> + Div<&'r R, Output=R>,
-        R::Power: Addition + One + Ord,
-{}
-
-/// Multiplication traits necessary for scaling.
-pub trait Multiplication<F> =
-One +
-MulAssign<F> +
-DivAssign<F> +
-MulAssign<Self> +
-DivAssign<Self> +
-    where
-            for<'r> Self:
-    MulAssign<&'r F> +
-    DivAssign<&'r F> +
-    MulAssign<&'r Self> +
-    DivAssign<&'r Self> +
-    Mul<&'r Self, Output=Self> +
-    ,
-;
-
-/// Addition traits necessary for scaling.
-pub trait Addition =
-Zero +
-Neg<Output=Self> +
-Sub<Output=Self> +
-Add<Output=Self> +
-AddAssign +
-;
