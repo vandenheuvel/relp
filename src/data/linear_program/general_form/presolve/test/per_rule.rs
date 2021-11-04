@@ -124,7 +124,7 @@ fn presolve_constraint_if_slack_with_suitable_bounds() {
     assert!(index.presolve_slack(0).is_ok());
     assert_eq!(index.counters.constraint, vec![2]);
     assert_eq!(index.counters.variable, vec![0, 1, 1]);
-    assert_eq!(index.updates.constraints_marked_removed, vec![]);
+    assert!(index.updates.constraints_marked_removed.is_empty());
     assert_eq!(index.updates.removed_variables, vec![(0, RemovedVariable::FunctionOfOthers {
         constant: R32!(3, 2),
         coefficients: vec![(1, R32!(1)), (2, R32!(1))],
@@ -136,7 +136,7 @@ fn presolve_constraint_if_slack_with_suitable_bounds() {
     assert!(index.presolve_slack(0).is_ok());
     assert_eq!(index.counters.constraint, vec![2]);
     assert_eq!(index.counters.variable, vec![0, 1, 1]);
-    assert_eq!(index.updates.constraints_marked_removed, vec![]);
+    assert!(index.updates.constraints_marked_removed.is_empty());
     assert_eq!(index.updates.constraint_type(0), &RangedConstraintRelation::<Rational32>::Less);
     assert_eq!(index.updates.removed_variables, vec![(0, RemovedVariable::FunctionOfOthers {
         constant: R32!(3, 2),
@@ -149,7 +149,7 @@ fn presolve_constraint_if_slack_with_suitable_bounds() {
     assert!(index.presolve_slack(0).is_ok());
     assert_eq!(index.counters.constraint, vec![2]);
     assert_eq!(index.counters.variable, vec![0, 1, 1]);
-    assert_eq!(index.updates.constraints_marked_removed, vec![]);
+    assert!(index.updates.constraints_marked_removed.is_empty());
     assert_eq!(index.updates.constraint_type(0), &RangedConstraintRelation::<Rational32>::Greater);
     assert_eq!(index.updates.removed_variables, vec![(0, RemovedVariable::FunctionOfOthers {
         constant: R32!(3, 2),
