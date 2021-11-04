@@ -23,7 +23,7 @@ index-utils = { version = "2.2.0", features = ["num-traits"] }
 enum-map = "1.1.1"
 
 # TODO(PACKAGING): Make this an optional dependency.
-daggy = "0.7.0"  # Currently only for debug asserts
+daggy = "0.8.0"  # Currently only for debug asserts
 
 [features]
 burkardt = []
