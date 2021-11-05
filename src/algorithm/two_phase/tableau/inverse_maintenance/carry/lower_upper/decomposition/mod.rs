@@ -110,7 +110,7 @@ fn gather(ids: impl ExactSizeIterator<Item=usize>) -> Vec<(usize, usize)>{
     let mut size_counts = vec![0_usize; n];  // 1 through n
     for count in id_counts {
         if count > 0 {
-            size_counts[count] += 1;
+            size_counts[count - 1] += 1;
         }
     }
 
