@@ -1,3 +1,4 @@
+use std::cmp::min;
 /// # LU Decomposition
 ///
 
@@ -14,6 +15,117 @@ use crate::algorithm::two_phase::tableau::inverse_maintenance::ops;
 
 mod pivoting;
 
+fn count<F>(rows: &Vec<Vec<(usize, F)>>) {
+    let counts = compute(rows);
+    let largest = counts.last().unwrap().0;
+    let non_trivial = counts.iter()
+        .filter(|&&(group_size, _)| group_size > 1 && group_size < largest);
+    let nr_non_trivial = non_trivial.clone().count();
+    let total_size_non_trivial = non_trivial
+        .map(|&(group_size, count)| count * group_size)
+        .sum::<usize>();
+
+    print!("Size {} with {} in {} intermediate size blocks: ", rows.len(), total_size_non_trivial, nr_non_trivial);
+    for (group_size, count) in counts {
+        print!("({}, {}) ", group_size, count)
+    }
+    println!();
+}
+
+fn compute<F>(rows: &Vec<Vec<(usize, F)>>) -> Vec<(usize, usize)> {
+    let m = rows.len();
+    let mut ids = vec![None; m];
+    let mut low = vec![None; m];
+    let mut on_stack = vec![false; m];
+    let mut stack = vec![];
+
+    let mut id_counter = 0;
+    let mut component_counter = 0;
+
+    for i in 0..m {
+        if ids[i].is_none() {
+            // dfs
+            dfs(i, &mut ids, &mut low, &mut on_stack, &mut stack, &mut id_counter, &mut component_counter, rows);
+        }
+    }
+
+    assert!(ids.iter().all(|id| id.is_some()));
+    assert!(low.iter().all(|id| id.is_some()));
+    assert!(on_stack.iter().all(|&v| !v));
+    assert!(stack.is_empty());
+    assert_eq!(id_counter, m);
+
+    gather(low.into_iter().map(Option::unwrap))
+}
+
+fn dfs<F>(
+    at: usize,
+    ids: &mut Vec<Option<usize>>,
+    low: &mut Vec<Option<usize>>,
+    on_stack: &mut Vec<bool>,
+    stack: &mut Vec<usize>,
+    id_counter: &mut usize,
+    component_counter: &mut usize,
+    rows: &Vec<Vec<(usize, F)>>,
+) {
+    stack.push(at);
+    on_stack[at] = true;
+    ids[at] = Some(*id_counter);
+    low[at] = Some(*id_counter);
+    *id_counter += 1;
+
+    for &(outgoing, _) in &rows[at] {
+        if ids[outgoing].is_none() {
+            dfs(outgoing, ids, low, on_stack, stack, id_counter, component_counter, rows);
+        }
+        if on_stack[outgoing] {
+            low[at] = min(low[at], low[outgoing])
+        }
+    }
+
+    if ids[at] == low[at] {
+        while let Some(node) = stack.pop() {
+            on_stack[node] = false;
+            low[node] = ids[at];
+            if node == at {
+                break;
+            }
+        }
+
+        *component_counter += 1;
+    }
+}
+
+// Return (size, count) tuples from high to low
+fn gather(ids: impl ExactSizeIterator<Item=usize>) -> Vec<(usize, usize)>{
+    let n = ids.len();
+
+    // Count how often ids occur
+    let mut id_counts = vec![0_usize; n];
+    for item in ids {
+        id_counts[item] += 1;
+    }
+
+    // Count how often certain group sizes occur
+    let mut size_counts = vec![0_usize; n];  // 1 through n
+    for count in id_counts {
+        if count > 0 {
+            size_counts[count] += 1;
+        }
+    }
+
+    // Make it sparse
+    let mut sparse_size_counts = size_counts.into_iter()
+        .enumerate()
+        .filter(|&(_size, count)| count > 0)
+        .collect::<Vec<_>>();
+
+    // Sort by group size
+    sparse_size_counts.sort_unstable_by_key(|(size, _count)| *size);
+
+    sparse_size_counts
+}
+
 impl<F> LUDecomposition<F>
 where
     F: ops::Field + ops::FieldHR,
@@ -26,6 +138,8 @@ where
     #[must_use]
     pub fn rows(mut rows: Vec<Vec<(usize, F)>>) -> Self {
         debug_assert!(rows.iter().all(|row| row.iter().is_sorted_by_key(|&(i, _)| i)));
+
+        count(&rows);
 
         // The number of columns gets smaller over time.
         let m = rows.len();
