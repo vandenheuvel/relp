@@ -27,15 +27,15 @@ where
     MP: MatrixProvider<Column: Identity + IntoFilteredColumn>,
 {
     // TODO(ENHANCEMENT): Specialize for MatrixProviders that can be filtered directly.
-    default fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
+    default fn solve_relaxation<'provider, IM>(&'provider self) -> OptimizationResult<IM::F>
     where
         IM: InverseMaintener<F:
             im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<ArtificialCost> +
+            im_ops::Cost<MP::Cost<'provider>> +
             im_ops::Rhs<MP::Rhs> +
         >,
-        for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     {
         match self.compute_bfs_giving_im::<IM>() {
             RankedFeasibilityResult::Feasible {
@@ -84,15 +84,15 @@ where
     MP: MatrixProvider<Column: Identity + IntoFilteredColumn>,
     MP::Rhs: 'static + ColumnNumber,
 {
-    fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
+    fn solve_relaxation<'provider, IM>(&'provider self) -> OptimizationResult<IM::F>
     where
         IM: InverseMaintener<F:
             im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
+            im_ops::Cost<MP::Cost<'provider>> +
             im_ops::Rhs<Self::Rhs> +
             im_ops::Column<Self::Rhs> +
         >,
-        for<'r> IM::F: im_ops::Cost<MP::Cost<'r>>,
     {
         let basis_indices = self.pivot_element_indices();
         // Sorting of identity matrix columns
