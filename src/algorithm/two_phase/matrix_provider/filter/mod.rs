@@ -18,7 +18,7 @@ pub trait Filtered: MatrixProvider {
 /// Derive a variant of the matrix provider that has rows removed from it.
 pub trait ToFiltered: MatrixProvider {
     /// The resulting matrix provider type.
-    type Filtered<'provider>: Filtered<Column: Column<F=<Self::Column as Column>::F>>;
+    type Filtered<'provider>: Filtered<Column: Column<F=<Self::Column as Column>::F>> where Self: 'provider;
 
     /// Derive a variant of the matrix provider that has rows removed from it.
     ///

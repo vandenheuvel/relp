@@ -45,7 +45,7 @@ pub trait MatrixProvider {
     ///
     /// This type will often be of the form `Option<_>` so to not have to store any zero values, the
     /// inner type would never be zero in that case.
-    type Cost<'a>;
+    type Cost<'a> where Self: 'a;
 
     /// Right hand side type.
     type Rhs: ops::Rhs;
