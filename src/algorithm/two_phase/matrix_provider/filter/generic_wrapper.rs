@@ -226,7 +226,7 @@ where
     MP: MatrixProvider<Column: IntoFilteredColumn>,
 {
     type Column = <MP::Column as IntoFilteredColumn>::Filtered;
-    type Cost<'a> where Self: 'a = MP::Cost<'a>;
+    type Cost<'a> where Self: 'a = MP::Cost<'provider>;
     type Rhs = MP::Rhs;
 
     fn column(&self, j: usize) -> Self::Column {
