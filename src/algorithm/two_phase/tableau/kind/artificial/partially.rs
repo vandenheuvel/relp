@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Column, Cost};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -104,7 +104,7 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, Partially<'provider, MP>>
 where
-    IM: InverseMaintener<F:
+    IM: InverseMaintainer<F:
         im_ops::Column<<MP::Column as Column>::F> +
         im_ops::Rhs<MP::Rhs> +
     >,

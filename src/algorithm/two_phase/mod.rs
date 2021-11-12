@@ -10,7 +10,7 @@ use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::{Into
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::{FeasibilityComputeTrait, FullInitialBasis, Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::SteepestDescentAlongObjective;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::artificial::Cost as ArtificialCost;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -29,7 +29,7 @@ where
     // TODO(ENHANCEMENT): Specialize for MatrixProviders that can be filtered directly.
     default fn solve_relaxation<'provider, IM>(&'provider self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintener<F:
+        IM: InverseMaintainer<F:
             im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<ArtificialCost> +
@@ -86,7 +86,7 @@ where
 {
     fn solve_relaxation<'provider, IM>(&'provider self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintener<F:
+        IM: InverseMaintainer<F:
             im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<MP::Cost<'provider>> +

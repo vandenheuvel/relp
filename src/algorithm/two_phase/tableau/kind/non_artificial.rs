@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -72,7 +72,7 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintener<F:
+    IM: InverseMaintainer<F:
         im_ops::FieldHR +
         im_ops::Column<<MP::Column as Column>::F> +
         im_ops::Cost<MP::Cost<'provider>> +
@@ -174,7 +174,7 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<MP::Column as Column>::F> + im_ops::Cost<MP::Cost<'provider>>>,
+    IM: InverseMaintainer<F: im_ops::FieldHR + im_ops::Column<<MP::Column as Column>::F> + im_ops::Cost<MP::Cost<'provider>>>,
     MP: Filtered,
 {
     /// Create a `Tableau` from an artificial tableau while removing some rows.

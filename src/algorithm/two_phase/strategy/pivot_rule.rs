@@ -7,7 +7,7 @@ use num_traits::One;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::tableau::{BasisChangeComputationInfo, Tableau};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::SparseTuple;
@@ -24,7 +24,7 @@ pub trait PivotRule<F> {
     /// Create a new instance.
     fn new<IM, K>(tableau: &Tableau<IM, K>) -> Self
     where
-        IM: InverseMaintener<F=F>,
+        IM: InverseMaintainer<F=F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     ;
@@ -35,7 +35,7 @@ pub trait PivotRule<F> {
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintener<F=F>,
+        IM: InverseMaintainer<F=F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     ;
@@ -46,7 +46,7 @@ pub trait PivotRule<F> {
         _tableau: &Tableau<IM, K>,
     )
     where
-        IM: InverseMaintener<F=F>,
+        IM: InverseMaintainer<F=F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -97,7 +97,7 @@ where
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintener<F=F>,
+        IM: InverseMaintainer<F=F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -126,7 +126,7 @@ where
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintener<F=F>,
+        IM: InverseMaintainer<F=F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -165,7 +165,7 @@ where
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintener<F=F>,
+        IM: InverseMaintainer<F=F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -201,7 +201,7 @@ where
 {
     fn new<IM, K>(tableau: &Tableau<IM, K>) -> Self
     where
-        IM: InverseMaintener<F=F>,
+        IM: InverseMaintainer<F=F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -223,7 +223,7 @@ where
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintener<F=F>,
+        IM: InverseMaintainer<F=F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -246,7 +246,7 @@ where
         tableau: &Tableau<IM, K>,
     )
     where
-        IM: InverseMaintener<F=F>,
+        IM: InverseMaintainer<F=F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -298,7 +298,7 @@ where
 
 fn initial_gamma<IM, K>(j: usize, tableau: &Tableau<IM, K>) -> IM::F
 where
-    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Kind,
 {
     IM::F::one() + tableau.generate_column(j).into_column().squared_norm()

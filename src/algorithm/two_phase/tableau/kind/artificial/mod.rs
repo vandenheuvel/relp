@@ -9,7 +9,7 @@ use relp_num::Binary;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
 
@@ -62,7 +62,7 @@ pub trait Artificial: Kind<Column: Identity, Cost=Cost> {
 /// artificial variables from the problem at zero level.
 impl<'provider, IM, A> Tableau<IM, A>
 where
-    IM: InverseMaintener<F: im_ops::Column<<A::Column as Column>::F> + im_ops::Cost<A::Cost>>,
+    IM: InverseMaintainer<F: im_ops::Column<<A::Column as Column>::F> + im_ops::Cost<A::Cost>>,
     A: Artificial,
 {
     /// Whether there are any artificial variables in the basis.

@@ -9,7 +9,7 @@ use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::strategy::pivot_rule::{PivotRule, SteepestDescentAlongObjective};
 use crate::algorithm::two_phase::tableau::{debug_assert_in_basic_feasible_solution_state, Tableau};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
 use crate::algorithm::two_phase::tableau::kind::artificial::Cost;
 use crate::algorithm::two_phase::tableau::kind::artificial::fully::Fully as FullyArtificial;
@@ -28,7 +28,7 @@ pub trait FeasibilityComputeTrait: MatrixProvider<Column: Identity> {
     /// A value representing the basic feasible solution, or an indicator that there is none.
     fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintener<F:
+        IM: InverseMaintainer<F:
             im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<Cost> +
@@ -44,7 +44,7 @@ where
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintener<F:
+        IM: InverseMaintainer<F:
             im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<Cost> +
@@ -85,7 +85,7 @@ where
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintener<F:
+        IM: InverseMaintainer<F:
             im_ops::FieldHR +
             im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
             im_ops::Cost<Cost> +
@@ -124,7 +124,7 @@ pub(crate) fn primal<IM, K, MP, PR>(
     mut tableau: Tableau<IM, K>,
 ) -> RankedFeasibilityResult<IM>
 where
-    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Artificial,
     MP: MatrixProvider,
     PR: PivotRule<IM::F>,
@@ -233,7 +233,7 @@ fn remove_artificial_basis_variables<IM, K>(
     tableau: &mut Tableau<IM, K>,
 ) -> Vec<usize>
 where
-    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Artificial,
 {
     let artificial_variable_indices = tableau.artificial_basis_columns();

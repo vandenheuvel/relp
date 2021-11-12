@@ -16,7 +16,7 @@ use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColu
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::tableau::BasisChangeComputationInfo;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintainer, ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
@@ -363,7 +363,7 @@ where
     }
 }
 
-impl<F, BI> InverseMaintener for Carry<F, BI>
+impl<F, BI> InverseMaintainer for Carry<F, BI>
 where
     F: ops::Field + ops::FieldHR + Signed,
     BI: BasisInverse<F=F>,
@@ -665,7 +665,7 @@ where
     }
 }
 
-impl<F, BI> InverseMaintener for Carry<F, BI>
+impl<F, BI> InverseMaintainer for Carry<F, BI>
 where
     F: ops::Field + ops::FieldHR + Signed,
     BI: BasisInverse<F=F> + RemoveBasisPart,

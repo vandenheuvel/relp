@@ -27,7 +27,7 @@ pub mod ops;
 ///
 /// TODO(ARCHITECTURE): Consider making this trait generic over `MatrixProvider`'s associated types.
 ///  See issue #14.
-pub trait InverseMaintener: Display + Sized {
+pub trait InverseMaintainer: Display + Sized {
     /// Type used for computations inside the instance.
     ///
     /// Because the algorithm works with results from this object, many other parts of the code use
