@@ -14,12 +14,16 @@ impl Identity {
 }
 
 impl Permutation for Identity {
-    fn forward(&self, i: &mut usize) {
-        debug_assert!(*i < self.0);
+    fn forward(&self, i: usize) -> usize {
+        debug_assert!(i < self.0);
+
+        i
     }
 
-    fn backward(&self, i: &mut usize) {
-        debug_assert!(*i < self.0);
+    fn backward(&self, i: usize) -> usize {
+        debug_assert!(i < self.0);
+
+        i
     }
 
     fn forward_sorted<T>(&self, items: &mut [(usize, T)]) {

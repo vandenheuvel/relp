@@ -3,6 +3,8 @@
 /// Explicitly store both the permutation and its inverse. Used for the column and row permutation
 /// produced by the pivoting during the decomposition.
 use std::{fmt, mem};
+use std::collections::HashSet;
+use std::ops::Index;
 
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::Permutation;
 
@@ -22,6 +24,9 @@ impl Full {
     ///
     /// Computes the inverse by sorting.
     pub fn new(forward: Vec<usize>) -> Self {
+        debug_assert_eq!(forward.iter().collect::<HashSet<_>>().len(), forward.len());
+        debug_assert!(*forward.iter().max().unwrap() < forward.len());
+
         let mut backward = forward.iter()
             .enumerate()
             .map(|(i, j)| (*j, i))
@@ -55,24 +60,62 @@ impl Full {
     pub fn invert(&mut self) {
         mem::swap(&mut self.forward, &mut self.backward);
     }
+
+    pub fn swap(&mut self, i: usize, j: usize) {
+        debug_assert!(i < self.len());
+        debug_assert!(j < self.len());
+
+        let i_target = self.forward[i];
+        let j_target = self.forward[j];
+
+        self.forward.swap(i, j);
+        self.backward.swap(i_target, j_target);
+    }
+
+    pub fn swap_inverse(&mut self, i: usize, j: usize) {
+        debug_assert!(i < self.len());
+        debug_assert!(j < self.len());
+
+        let i_target = self.backward[i];
+        let j_target = self.backward[j];
+
+        self.forward.swap(i_target, j_target);
+        self.backward.swap(i, j);
+    }
+
+    pub fn rotate_right_from(&mut self, i: usize) {
+        debug_assert!(i < self.len());
+
+        self.forward[i..].rotate_right(1);
+        self.backward[i..].rotate_left(1);
+    }
 }
 
 impl Permutation for Full {
-    fn forward(&self, i: &mut usize) {
-        debug_assert!(*i < self.len());
+    fn forward(&self, i: usize) -> usize {
+        debug_assert!(i < self.len());
 
-        *i = self.forward[*i]
+        self.forward[i]
     }
+    fn backward(&self, i: usize) -> usize {
+        debug_assert!(i < self.len());
 
-    fn backward(&self, i: &mut usize) {
-        debug_assert!(*i < self.len());
-
-        *i = self.backward[*i]
+        self.backward[i]
     }
 
     fn len(&self) -> usize {
         self.forward.len()
         // == self.backward.len()
+    }
+}
+
+impl Index<usize> for Full {
+    type Output = usize;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        debug_assert!(index < self.len());
+
+        &self.forward[index] // == &self.forward(index)
     }
 }
 
@@ -98,7 +141,7 @@ mod test {
         let n = 4;
         let permutation = FullPermutation::identity(n);
         let mut i = 1;
-        permutation.forward(&mut i);
+        permutation.forward_ref(&mut i);
 
         assert_eq!(i, 1);
     }
@@ -107,27 +150,27 @@ mod test {
     fn forward_backward() {
         let permutation = FullPermutation::new(vec![3, 1, 2, 0]);
         let mut i = 1;
-        permutation.forward(&mut i);
+        permutation.forward_ref(&mut i);
         assert_eq!(i, 1);
 
         let mut i = 0;
-        permutation.forward(&mut i);
+        permutation.forward_ref(&mut i);
         assert_eq!(i, 3);
 
         let mut i = 3;
-        permutation.forward(&mut i);
+        permutation.forward_ref(&mut i);
         assert_eq!(i, 0);
 
         let mut i = 1;
-        permutation.backward(&mut i);
+        permutation.backward_ref(&mut i);
         assert_eq!(i, 1);
 
         let mut i = 0;
-        permutation.backward(&mut i);
+        permutation.backward_ref(&mut i);
         assert_eq!(i, 3);
 
         let mut i = 3;
-        permutation.backward(&mut i);
+        permutation.backward_ref(&mut i);
         assert_eq!(i, 0);
     }
 
@@ -149,5 +192,68 @@ mod test {
         permutation.invert();
         permutation.forward_unsorted(&mut test);
         assert_eq!(test, original);
+    }
+
+    #[test]
+    fn swap_identity() {
+        let n = 3;
+        let mut p = FullPermutation::identity(n);
+        p.swap(1, 2);
+        for i in 0..n {
+            let mut j = i;
+            p.forward_ref(&mut j);
+            p.backward_ref(&mut j);
+            assert_eq!(j, i);
+        }
+    }
+
+    #[test]
+    fn swap_non_identity_matches() {
+        let mut p = FullPermutation::new(vec![0, 2, 3, 1, 4, 9, 8, 7, 6, 5]);
+
+        for i in 0..p.len() {
+            for j in 0..p.len() {
+                p.swap(i, j);
+
+                for k in 0..p.len() {
+                    let mut copy = k;
+
+                    p.forward_ref(&mut copy);
+                    p.backward_ref(&mut copy);
+
+                    assert_eq!(copy, k, "i: {}, j: {}, k: {}", i, j, k);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn swap_non_identity() {
+        let mut p = FullPermutation::new(vec![0, 2, 3, 1, 4, 9, 8, 7, 6, 5]);
+
+        assert_eq!(p[6], 8);
+        assert_eq!(p.backward(8), 6);
+        assert_eq!(p[9], 5);
+        assert_eq!(p.backward(5), 9);
+
+        p.swap_inverse(8, 5);
+
+        assert_eq!(p[6], 5);
+        assert_eq!(p.backward(8), 9);
+        assert_eq!(p[9], 8);
+        assert_eq!(p.backward(5), 6);
+    }
+
+    #[test]
+    fn rotate() {
+        let n = 5;
+        let mut p = FullPermutation::identity(n);
+        p.rotate_right_from(3);
+        for i in 0..n {
+            let mut j = i;
+            p.forward_ref(&mut j);
+            p.backward_ref(&mut j);
+            assert_eq!(j, i);
+        }
     }
 }
