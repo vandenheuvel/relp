@@ -36,7 +36,7 @@ pub trait Column: ColumnIntoIterator<Self::F> + Debug {
     /// Type of struct to iterate over this column.
     ///
     /// It should be somewhat cheaply cloneable and as such not be too large.
-    type Iter<'a>: ColumnIterator<'a, F=Self::F>;
+    type Iter<'a>: ColumnIterator<'a, F=Self::F> where Self: 'a;
 
     /// Derive the iterator object.
     ///

@@ -284,7 +284,7 @@ where
     for<'r> &'r F: FieldRef<F>,
 {
     type Column = Column<F>;
-    type Cost<'a> = Option<&'a <Self::Column as ColumnTrait>::F>;
+    type Cost<'a> where Self: 'a = Option<&'a <Self::Column as ColumnTrait>::F>;
     type Rhs = F;
 
     #[inline]

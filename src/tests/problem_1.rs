@@ -402,11 +402,11 @@ pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>, Rhs=
     )
 }
 
-pub fn tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
-    provider: &MP,
+pub fn tableau_form<'provider, MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
+    provider: &'provider MP,
 ) -> Tableau<Carry<S, BasisInverseRows<S>>, NonArtificial<MP>>
 where
-    for<'a> S: im_ops::Cost<MP::Cost<'a>>,
+    S: im_ops::Cost<MP::Cost<'provider>>,
 {
     let carry = {
         let minus_objective = RB!(-58);

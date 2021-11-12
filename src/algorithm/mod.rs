@@ -22,16 +22,16 @@ pub trait SolveRelaxation: MatrixProvider {
     /// # Return value
     /// 
     /// Whether the problem is feasible, and if so, a solution if the problem is bounded.
-    fn solve_relaxation<IM>(&self) -> OptimizationResult<IM::F>
+    fn solve_relaxation<'provider, IM>(&'provider self) -> OptimizationResult<IM::F>
     where
         IM: InverseMaintener<F:
             im_ops::FieldHR +
             im_ops::Column<<Self::Column as Column>::F> +
             im_ops::Cost<ArtificialCost> +
+            im_ops::Cost<Self::Cost<'provider>> +
             im_ops::Rhs<Self::Rhs> +
             im_ops::Column<Self::Rhs> +
         >,
-        for<'r> IM::F: im_ops::Cost<Self::Cost<'r>>,
     ;
 }
 
