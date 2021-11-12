@@ -28,7 +28,7 @@ use relp::algorithm::two_phase::phase_two;
 use relp::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use relp::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintener;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
 use relp::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use relp::algorithm::two_phase::tableau::Tableau;
 use relp::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};

@@ -14,7 +14,7 @@ use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, Carry};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;

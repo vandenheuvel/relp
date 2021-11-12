@@ -10,7 +10,7 @@ use num_traits::One;
 use num_traits::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, SparseSliceIterator};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::vector::{SparseVector, Vector};
 
@@ -40,7 +40,7 @@ pub struct Tableau<IM, K> {
 
 impl<IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Kind,
 {
     /// Brings a column into the basis by updating the `self.carry` matrix and updating the
@@ -262,7 +262,7 @@ where
 
 impl<IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintener<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Kind,
 {
     /// Determine the row to pivot on.
@@ -318,7 +318,7 @@ where
 /// Only used for debug purposes.
 pub fn debug_assert_in_basic_feasible_solution_state<IM, K>(tableau: &Tableau<IM, K>)
 where
-    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Kind,
 {
     // Checking basis_columns
@@ -358,7 +358,7 @@ where
 
 impl<IM, K> Display for Tableau<IM, K>
 where
-    IM: InverseMaintener<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Kind,
 {
     fn fmt(&self, f: &mut Formatter) -> FormatResult {

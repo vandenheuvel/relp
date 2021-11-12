@@ -5,7 +5,7 @@
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Cost};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
@@ -70,7 +70,7 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, Fully<'provider, MP>>
 where
-    IM: InverseMaintener<F: im_ops::Rhs<MP::Rhs>>,
+    IM: InverseMaintainer<F: im_ops::Rhs<MP::Rhs>>,
     MP: MatrixProvider,
 {
     /// Create a `Tableau` augmented with artificial variables.

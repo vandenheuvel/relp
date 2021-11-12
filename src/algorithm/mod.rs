@@ -1,7 +1,7 @@
 //! # Algorithms
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintener;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::ops as im_ops;
 use crate::algorithm::two_phase::tableau::kind::artificial::Cost as ArtificialCost;
 use crate::data::linear_algebra::vector::SparseVector;
@@ -24,7 +24,7 @@ pub trait SolveRelaxation: MatrixProvider {
     /// Whether the problem is feasible, and if so, a solution if the problem is bounded.
     fn solve_relaxation<'provider, IM>(&'provider self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintener<F:
+        IM: InverseMaintainer<F:
             im_ops::FieldHR +
             im_ops::Column<<Self::Column as Column>::F> +
             im_ops::Cost<ArtificialCost> +

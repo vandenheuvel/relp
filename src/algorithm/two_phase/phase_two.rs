@@ -4,7 +4,7 @@ use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::strategy::pivot_rule::PivotRule;
 use crate::algorithm::two_phase::tableau::{debug_assert_in_basic_feasible_solution_state, Tableau};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintener, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 
 /// Reduces the cost of the basic feasible solution to the minimum.
@@ -23,7 +23,7 @@ pub fn primal<'provider, IM, MP, PR>(
     tableau: &mut Tableau<IM, NonArtificial<'provider, MP>>,
 ) -> OptimizationResult<IM::F>
 where
-    IM: InverseMaintener<F:
+    IM: InverseMaintainer<F:
         im_ops::FieldHR +
         im_ops::Column<<MP::Column as Column>::F> +
         im_ops::Cost<MP::Cost<'provider>> +

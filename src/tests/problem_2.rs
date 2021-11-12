@@ -12,7 +12,7 @@ use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, Carry};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintener;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::tableau::Tableau;
