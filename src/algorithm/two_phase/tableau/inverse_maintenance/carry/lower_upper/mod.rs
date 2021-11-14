@@ -1,7 +1,7 @@
 //! # LU decomposition
 use std::cmp::max;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::fmt::Display;
 use std::iter;
@@ -15,6 +15,8 @@ use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_uppe
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{FullPermutation, Permutation, RotateToBackPermutation};
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_algebra::vector::{SparseVector, Vector};
+use relp_num::NonZero;
+use std::ops::Range;
 
 mod decomposition;
 mod permutation;
@@ -57,6 +59,52 @@ pub struct LUDecomposition<F> {
     updates: Vec<(EtaFile<F>, RotateToBackPermutation)>,
 }
 
+impl<F> LUDecomposition<F>
+where
+    F: NonZero,
+{
+    pub fn new(
+        row_permutation: FullPermutation,
+        column_permutation: FullPermutation,
+        lower_triangular: Vec<Vec<(usize, F)>>,
+        upper_triangular: Vec<Vec<(usize, F)>>,
+        upper_diagonal: Vec<F>,
+    ) -> Self {
+        let m = upper_triangular.len();
+
+        // Shapes match
+        debug_assert_eq!(row_permutation.len(), m);
+        debug_assert_eq!(column_permutation.len(), m);
+        debug_assert_eq!(lower_triangular.len(), m);
+        debug_assert_eq!(upper_triangular.len(), m);
+        debug_assert_eq!(upper_diagonal.len(), m);
+
+        // Triangle consistency
+        fn verify<G: NonZero>(triangle: &Vec<Vec<(usize, G)>>, range: impl Fn(usize) -> Range<usize>) {
+            for (j, column) in triangle.iter().enumerate() {
+                debug_assert!(column.iter().all(|(_, v)| v.is_not_zero()));
+                debug_assert!(column.iter().all(|&(i, _)| range(j).contains(&i)));
+                let nr_indexes = column.iter().map(|&(i, _)| i).collect::<HashSet<_>>().len();
+                debug_assert_eq!(column.len(), nr_indexes);
+            }
+        }
+        verify(&lower_triangular, |j| (j + 1)..m);
+        verify(&upper_triangular, |j| 0..j);
+
+        // Diagonal consistency
+        debug_assert!(upper_diagonal.iter().all(|v| v.is_not_zero()));
+
+        Self {
+            row_permutation,
+            column_permutation,
+            lower_triangular,
+            upper_triangular,
+            upper_diagonal,
+            updates: Vec::new(),
+        }
+    }
+}
+
 impl<F> BasisInverse for LUDecomposition<F>
 where
     F: ops::Field + ops::FieldHR,
@@ -68,8 +116,8 @@ where
         Self {
             row_permutation: FullPermutation::identity(m),
             column_permutation: FullPermutation::identity(m),
-            lower_triangular: vec![vec![]; m - 1],
-            upper_triangular: vec![vec![]; m - 1],
+            lower_triangular: vec![vec![]; m],
+            upper_triangular: vec![vec![]; m],
             upper_diagonal: vec![F::one(); m],
             updates: vec![],
         }
@@ -79,16 +127,13 @@ where
     where
         Self::F: ops::Column<C::F>,
     {
-        let m = columns.len();
-        let mut rows = vec![Vec::new(); m];
-        for (j, column) in columns.into_iter().enumerate() {
-            for (i, value) in column {
-                rows[i].push((j, value.into()));
-            }
-        }
-        debug_assert!(rows.iter().all(|row| row.is_sorted_by_key(|&(j, _)| j)));
-
-        Self::rows(rows)
+        Self::decompose(
+            columns
+                .map(|column| {
+                    column.iter().map(|(i, v)| (i, v.into())).collect::<Vec<_>>()
+                })
+                .collect()
+        )
     }
 
     fn change_basis(
@@ -111,11 +156,10 @@ where
         // Compute r
         let (u_bar, indices_to_zero): (Vec<_>, Vec<_>) = ((pivot_column_index + 1)..m)
             .filter_map(|j| {
-                let column = &self.upper_triangular[j - 1];
-                column
+                self.upper_triangular[j]
                     .binary_search_by_key(&pivot_column_index, |&(i, _)| i).ok()
                     .map(|data_index| (
-                        (j, column[data_index].1.clone()),
+                        (j, self.upper_triangular[j][data_index].1.clone()),
                         (j, data_index),
                     ))
             })
@@ -127,7 +171,7 @@ where
         // We now have all information needed to recover the triangle, start modifying it
         // Zero out part of a row that will be rotated to the bottom
         for (j, data_index) in indices_to_zero {
-            self.upper_triangular[j - 1].remove(data_index);
+            self.upper_triangular[j].remove(data_index);
         }
         let Self::ColumnComputationInfo { column, mut spike } = column;
         debug_assert!(spike.windows(2).all(|w| w[0].0 < w[1].0));
@@ -138,26 +182,18 @@ where
             "This value should be present to avoid singularity because it will be the bottom corner value.",
         );
 
-        let disappearing_column_index = if pivot_column_index == 0 {
-            // The first column is replaced, but this column is not explicitly represented in the
-            // `upper_triangular` field. The non-diagonal item of the second column, if it exists,
-            // will be zeroed. The diagonal item will be shifted separately.
-            0
-        } else {
-            // In the usual case, subtract one because the column indices are shifted
-            pivot_column_index - 1
-        };
         // Insert the spike
-        self.upper_triangular[disappearing_column_index] = spike;
+        self.upper_triangular[pivot_column_index] = spike;
 
         // Rotate the non-spike columns to the left, the spike ends up on the right
-        self.upper_triangular[disappearing_column_index..].rotate_left(1);
+        // TODO(PERFORMANCE): Consider avoiding this rotation by storing a permutation
+        self.upper_triangular[pivot_column_index..].rotate_left(1);
         self.upper_diagonal[pivot_column_index..].rotate_left(1);
 
         // Rotate the "empty except for one value" pivot row to the bottom
         let q = RotateToBackPermutation::new(pivot_column_index, self.m());
         for j in max(pivot_column_index, 1)..m {
-            q.forward_sorted(&mut self.upper_triangular[j - 1]);
+            q.forward_sorted(&mut self.upper_triangular[j]);
         }
         let (corner_index, corner_value) = self.upper_triangular.last_mut().unwrap().pop().unwrap();
         debug_assert_eq!(corner_index, self.m() - 1);
@@ -167,8 +203,7 @@ where
         debug_assert!(self.upper_triangular.iter().all(|column| {
             column.windows(2).all(|w| w[0].0 < w[1].0)
         }));
-        debug_assert!(self.upper_triangular.iter().enumerate().all(|(data_j, column)| {
-            let j = data_j + 1;
+        debug_assert!(self.upper_triangular.iter().enumerate().all(|(j, column)| {
             column.last().map_or(true, |&(i, _)| i < j)
         }));
         self.updates.push((eta_file, q));
@@ -291,15 +326,15 @@ where
 
             let result_value = rhs_value; // Implicit 1 on the diagonal.
 
-            if column != self.m() - 1 {
-                // Introduce new non zeros
-                for &(i, ref value) in &self.lower_triangular[column] {
-                    insert_or_shift_maybe_remove(i, &result_value * value, &mut rhs);
-                }
+            // Introduce new non zeros
+            for &(i, ref value) in &self.lower_triangular[column] {
+                insert_or_shift_maybe_remove(i, &result_value * value, &mut rhs);
             }
 
             result.push((row, result_value));
         }
+        // TODO(PERFORMANCE): Work with an unsorted result
+        result.sort_unstable_by_key(|&(i, _)| i);
 
         result
     }
@@ -315,7 +350,8 @@ where
         }
 
         result.reverse();
-        debug_assert!(result.is_sorted_by_key(|&(i, _)| i));
+        // TODO(PERFORMANCE): Work with an unsorted result
+        result.sort_unstable_by_key(|&(i, _)| i);
 
         result
     }
@@ -338,7 +374,7 @@ where
 
     fn update_rhs(&self, column: usize, result_value: &F, rhs: &mut BTreeMap<usize, F>) {
         if column > 0 {
-            for &(row, ref value) in &self.upper_triangular[column - 1] {
+            for &(row, ref value) in &self.upper_triangular[column] {
                 insert_or_shift_maybe_remove(row, result_value * value, rhs);
             }
         }
@@ -379,11 +415,10 @@ where
 
             // Introduce new nonzeros, by rows
             for j in (column + 1)..self.m() {
-                let column = &self.upper_triangular[j - 1];
                 // TODO(PERFORMANCE): Avoid scanning all columns for row values
-                let has_row = column.binary_search_by_key(&row, |&(i, _)| i);
+                let has_row = self.upper_triangular[j].binary_search_by_key(&row, |&(i, _)| i);
                 if let Ok(data_index) = has_row {
-                    let value = &column[data_index].1;
+                    let value = &self.upper_triangular[j][data_index].1;
                     insert_or_shift_maybe_remove(j, &result_value * value, &mut rhs);
                 }
             }
@@ -482,7 +517,7 @@ where
                     Ordering::Less => "".to_string(),
                     Ordering::Equal => self.upper_diagonal[j].to_string(),
                     Ordering::Greater => {
-                        let column = &self.upper_triangular[j - 1];
+                        let column = &self.upper_triangular[j];
                         match column.binary_search_by_key(&i, |&(i, _)| i) {
                             Ok(index) => column[index].1.to_string(),
                             Err(_) => "0".to_string(),
@@ -624,8 +659,8 @@ mod test {
             let offdiag = LUDecomposition {
                 row_permutation: FullPermutation::identity(2),
                 column_permutation: FullPermutation::identity(2),
-                lower_triangular: vec![vec![(1, RB!(1))]],
-                upper_triangular: vec![vec![]],
+                lower_triangular: vec![vec![(1, RB!(1))], vec![]],
+                upper_triangular: vec![vec![], vec![]],
                 upper_diagonal: vec![RB!(1), RB!(1)],
                 updates: vec![],
             };
@@ -660,8 +695,8 @@ mod test {
             let dense = LUDecomposition {
                 row_permutation: FullPermutation::new(vec![1, 0]),
                 column_permutation: FullPermutation::new(vec![0, 1]),
-                lower_triangular: vec![vec![(1, RB!(1, 3))]],
-                upper_triangular: vec![vec![(0, RB!(4))]],
+                lower_triangular: vec![vec![(1, RB!(1, 3))], vec![]],
+                upper_triangular: vec![vec![], vec![(0, RB!(4))]],
                 upper_diagonal: vec![RB!(3), RB!(2, 3)],
                 updates: vec![],
             };
@@ -727,8 +762,8 @@ mod test {
             let expected = LUDecomposition {
                 row_permutation: FullPermutation::identity(2),
                 column_permutation: FullPermutation::identity(2),
-                lower_triangular: vec![vec![]],
-                upper_triangular: vec![vec![(0, RB!(1))]],
+                lower_triangular: vec![vec![], vec![]],
+                upper_triangular: vec![vec![], vec![(0, RB!(1))]],
                 upper_diagonal: vec![RB!(1), RB!(1)],
                 updates: vec![(
                     EtaFile::new(vec![], 0, 2),
@@ -755,8 +790,8 @@ mod test {
             let expected = LUDecomposition {
                 row_permutation: FullPermutation::identity(m),
                 column_permutation: FullPermutation::identity(m),
-                lower_triangular: vec![vec![]; m - 1],
-                upper_triangular: vec![vec![], vec![], vec![], vec![(0, RB!(2)), (1, RB!(5)), (2, RB!(7))]],
+                lower_triangular: vec![vec![]; m],
+                upper_triangular: vec![vec![], vec![], vec![], vec![], vec![(0, RB!(2)), (1, RB!(5)), (2, RB!(7))]],
                 upper_diagonal: vec![RB!(1), RB!(1), RB!(1), RB!(1), RB!(3)],
                 updates: vec![(
                     EtaFile::new(vec![], 1, m),
@@ -773,8 +808,8 @@ mod test {
             let mut initial = LUDecomposition {
                 row_permutation: FullPermutation::identity(m),
                 column_permutation: FullPermutation::identity(m),
-                lower_triangular: vec![vec![]; m - 1],
-                upper_triangular: vec![vec![], vec![], vec![(1, RB!(5))]],
+                lower_triangular: vec![vec![]; m],
+                upper_triangular: vec![vec![], vec![], vec![], vec![(1, RB!(5))]],
                 upper_diagonal: vec![RB!(1), RB!(1), RB!(4), RB!(6)],
                 updates: vec![],
             };
@@ -791,8 +826,8 @@ mod test {
             let expected = LUDecomposition {
                 row_permutation: FullPermutation::identity(m),
                 column_permutation: FullPermutation::identity(m),
-                lower_triangular: vec![vec![]; m - 1],
-                upper_triangular: vec![vec![], vec![], vec![(1, RB!(3)), (2, RB!(4))]],
+                lower_triangular: vec![vec![]; m],
+                upper_triangular: vec![vec![], vec![], vec![], vec![(1, RB!(3)), (2, RB!(4))]],
                 upper_diagonal: vec![RB!(1), RB!(4), RB!(6), RB!(-8, 6)],
                 updates: vec![(
                     EtaFile::new(vec![(3, RB!(5, 6))], 1, m),
@@ -846,8 +881,9 @@ mod test {
             let mut initial = LUDecomposition {
                 row_permutation: FullPermutation::identity(m),
                 column_permutation: FullPermutation::identity(m),
-                lower_triangular: vec![vec![]; m - 1],
+                lower_triangular: vec![vec![]; m],
                 upper_triangular: vec![
+                    vec![],
                     vec![(0, RB!(12))],
                     vec![(0, RB!(13)), (1, RB!(23))],
                     vec![(0, RB!(14)), (1, RB!(24)), (2, RB!(34))],
@@ -868,8 +904,9 @@ mod test {
             let expected = LUDecomposition {
                 row_permutation: FullPermutation::identity(m),
                 column_permutation: FullPermutation::identity(m),
-                lower_triangular: vec![vec![]; m - 1],
+                lower_triangular: vec![vec![]; m],
                 upper_triangular: vec![
+                    vec![],
                     vec![(0, RB!(13))],
                     vec![(0, RB!(14)), (1, RB!(34))],
                     vec![(0, RB!(15)), (1, RB!(35)), (2, RB!(45))],

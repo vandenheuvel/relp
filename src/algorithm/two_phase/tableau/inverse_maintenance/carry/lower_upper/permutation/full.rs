@@ -82,13 +82,6 @@ impl Full {
         self.forward.swap(i_target, j_target);
         self.backward.swap(i, j);
     }
-
-    pub fn rotate_right_from(&mut self, i: usize) {
-        debug_assert!(i < self.len());
-
-        self.forward[i..].rotate_right(1);
-        self.backward[i..].rotate_left(1);
-    }
 }
 
 impl Permutation for Full {
@@ -242,18 +235,5 @@ mod test {
         assert_eq!(p.backward(8), 9);
         assert_eq!(p[9], 8);
         assert_eq!(p.backward(5), 6);
-    }
-
-    #[test]
-    fn rotate() {
-        let n = 5;
-        let mut p = FullPermutation::identity(n);
-        p.rotate_right_from(3);
-        for i in 0..n {
-            let mut j = i;
-            p.forward_ref(&mut j);
-            p.backward_ref(&mut j);
-            assert_eq!(j, i);
-        }
     }
 }
