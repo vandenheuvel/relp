@@ -132,6 +132,10 @@ where
         let mut column_permutation = FullPermutation::new(column_permutation);
         column_permutation.invert();
 
+        let in_l = lower_triangular.iter().map(|c| c.len()).sum::<usize>();
+        let in_u = upper_triangular.iter().map(|c| c.len()).sum::<usize>();
+        println!("Total: {:>5}, L: {:>5}, U: {:>5}", in_l + in_u, in_l, in_u);
+
         Self {
             row_permutation,
             column_permutation,
