@@ -59,6 +59,10 @@ where
             column.sort_unstable_by_key(|&(i, _)| i);
         }
 
+        let in_l = lower_triangular.iter().map(|c| c.len()).sum::<usize>();
+        let in_u = upper_triangular.iter().map(|c| c.len()).sum::<usize>();
+        println!("Total: {:>5}, L: {:>5}, U: {:>5}", in_l + in_u, in_l, in_u);
+
         Self::new(
             row_permutation,
             column_permutation,
