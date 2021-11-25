@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 
 use itertools::repeat_n;
 
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::pivoting::{Markowitz, NonZeroCounter, PivotRule};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::pivoting::{Markowitz, NonZeroCounter, PivotRule, Pivot};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{FullPermutation, Permutation};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::ops;
@@ -28,30 +28,26 @@ where
     /// * `columns`: A column major representation of the basis columns.
     #[must_use]
     pub fn decompose(mut columns: Vec<Vec<(usize, F)>>) -> Self {
-        debug_assert!(columns.iter().all(|column| column.iter().is_sorted_by_key(|&(i, _)| i)));
-        let m = columns.len();
-        debug_assert!(m > 1, "Problems should have at least two unsolved variables, was {}", m);
+        // TODO(PERFORMANCE): Create these structures outside this method and reuse allocations
+        let (mut structures, mut pivot_rule) = create_initial_structures(columns);
 
-        let mut structures = create_initial_structures(&columns, m);
+        let top_left_triangle_size = top_left_upper_triangle(&mut structures, &mut pivot_rule);
 
-        let top_left_triangle_size = top_left_upper_triangle(&mut structures, &mut columns);
-
-        let size_left = m - top_left_triangle_size;
+        let size_left = structures.m - top_left_triangle_size;
         structures.upper_diagonal.extend(repeat_n(Default::default(), size_left));
-        let highest_nucleus_index = bottom_right_upper_triangle(&mut structures, &mut columns, top_left_triangle_size, m);
+        let highest_nucleus_index = bottom_right_upper_triangle(top_left_triangle_size, &mut structures, &mut pivot_rule);
 
-        nucleus(&mut structures, &mut columns, top_left_triangle_size, highest_nucleus_index);
+        nucleus(top_left_triangle_size, highest_nucleus_index, &mut structures, &mut pivot_rule);
 
-        index_updates(&mut structures, &mut columns, top_left_triangle_size, highest_nucleus_index, m);
+        index_updates(&mut structures, &mut pivot_rule, top_left_triangle_size, highest_nucleus_index);
 
-        let mut upper_triangular = columns;
         let Structures {
+            columns,
             mut lower_triangular,
             upper_diagonal,
-            row_permutation,
-            column_permutation,
             ..
         } = structures;
+        let mut upper_triangular = columns;
 
         // TODO(PERFORMANCE): Make sorting unnecessary by adapting other triangular solve algorithms
         for column in &mut upper_triangular {
@@ -60,6 +56,11 @@ where
         for column in &mut lower_triangular {
             column.sort_unstable_by_key(|&(i, _)| i);
         }
+
+        // TODO(ENHANCEMENT): Update the row major index and keep it for faster algorithms on the
+        //  transpose
+
+        let (row_permutation, column_permutation) = pivot_rule.into_permutations();
 
         Self::new(
             row_permutation,
@@ -72,54 +73,51 @@ where
 }
 
 struct Structures<F> {
+    /// The initial columns get transformed into the upper triangle.
+    columns: Vec<Vec<(usize, F)>>,
+    /// Column-major and indexed by new indices from the start. We keep columns indexed by the old
+    /// indices until the columns are not touched again.
     lower_triangular: Vec<Vec<(usize, F)>>,
     upper_diagonal: Vec<F>,
 
+    /// Map from row to (column, data_index) list, used only during algorithm
     row_major_index: Vec<Vec<(usize, usize)>>,
 
+    /// Workspace (index by the old indices)
+    // TODO(PERFORMANCE): These Option<usize> values use too much space, how about using usize::MAX
+    //  as an indicator?
     index_scatter: Vec<Option<usize>>,
-    non_zero: NonZeroCounter,
-
-    row_permutation: FullPermutation,
-    column_permutation: FullPermutation,
+    /// Size of the matrix.
+    m: usize,
 }
 
-fn create_initial_structures<F>(columns: &Vec<Vec<(usize, F)>>, m: usize) -> Structures<F>
+fn create_initial_structures<F, R>(columns: Vec<Vec<(usize, F)>>) -> (Structures<F>, R)
 where
     F: Clone,
+    R: PivotRule,
 {
-    // Column-major and indexed by new indices from the start. We keep columns indexed by the
-    // old indices until the columns are not touched again.
+    debug_assert!(columns.iter().all(|column| column.iter().is_sorted_by_key(|&(i, _)| i)));
+    let m = columns.len();
+    debug_assert!(m > 1, "Problems should have at least two unsolved variables, was {}", m);
+
     // TODO(OPTIMIZATION): Avoid creating all these values that will be erased
-    let lower_triangular = vec![Vec::with_capacity(0); m];
-    let upper_diagonal = Vec::with_capacity(m);
-    // The `columns` structure will be the upper triangular part.
 
-    // Supporting data structures
-    // Map from row to (column, data_index) list
     let row_major_index = build_index(&columns);
-    // TODO(PERFORMANCE): These Option<usize> values use too much space, how about using isize?
-    // TODO(PERFORMANCE): Reuse this workspace.
-    let index_scatter = vec![None; m];
-    // Indexed by the old indices
-    let non_zero = NonZeroCounter::new(&columns, &row_major_index);
 
-    // Permute from old to new
-    let row_permutation = FullPermutation::identity(m);
-    let column_permutation = FullPermutation::identity(m);
+    let pivot_rule = PivotRule::new(&columns, &row_major_index);
 
-    Structures {
-        lower_triangular,
-        upper_diagonal,
+    let structures = Structures {
+        columns,
+        lower_triangular: vec![Vec::with_capacity(0); m],
+        upper_diagonal: Vec::with_capacity(m),
 
         row_major_index,
 
-        index_scatter,
-        non_zero,
+        index_scatter: vec![None; m],
+        m,
+    };
 
-        row_permutation,
-        column_permutation,
-    }
+    (structures, pivot_rule)
 }
 
 fn build_index<T>(columns: &[Vec<SparseTuple<T>>]) -> Vec<Vec<(usize, usize)>> {
@@ -135,101 +133,56 @@ fn build_index<T>(columns: &[Vec<SparseTuple<T>>]) -> Vec<Vec<(usize, usize)>> {
     return rows
 }
 
-fn top_left_upper_triangle<F>(
+fn top_left_upper_triangle<F, R>(
     Structures {
+        columns,
         upper_diagonal,
         row_major_index,
-        non_zero,
-        row_permutation,
-        column_permutation,
         ..
     }: &mut Structures<F>,
-    columns: &mut Vec<Vec<(usize, F)>>,
+    pivot_rule: &mut R,
 ) -> usize
 where
     F: ops::Field + ops::FieldHR,
+    R: PivotRule,
 {
     // Tracks the number of rows/columns already selected in this triangle
-    let mut k_from_below = 0;
-    while let Some(pivot_column) = non_zero.column_candidates.pop() {
+    let get_next_pivot = || pivot_rule.pivot_on_column_singleton(columns, row_major_index);
+    while let Some(Pivot { row_index, column_index, data_index, k }) = get_next_pivot() {
         // There is still a pivot column with exactly one value (the pivot) in the active part
         // of the matrix
 
-        // We search for the index of the pivot row in the column.
-        // TODO(PERFORMANCE): Can this scan be avoided? Maybe at least for all the initial column candidates? How about with the rows?
-        let (pivot_data_index, pivot_row) = columns[pivot_column].iter()
-            .enumerate()
-            .map(|(data_index, &(i, _))| (data_index, i))
-            .find(|&(_, i)| row_permutation[i] >= k_from_below)
-            .expect("The pivot should exist.");
-
-        // Update the permutations
-        column_permutation.swap_inverse(column_permutation[pivot_column], k_from_below);
-        row_permutation.swap_inverse(row_permutation[pivot_row], k_from_below);
-
-        // Update the non zero counts in the active part of the matrix.
-        //
-        // It is not necessary to update the row counts, because all rows where this column has
-        // non zero values are in rows which were already pivoted on (that is, these rows `i`
-        // have `row_permutation[i] <= k_from_below`.
-        for &(j, _) in &row_major_index[pivot_row] {
-            // TODO(PERFORMANCE): It is possible to remove this if statement and always subtract
-            //  if the value is not set to zero at the end?
-            if column_permutation[j] > k_from_below {
-                non_zero.column[j] -= 1;
-                debug_assert!(
-                    non_zero.column[j] > 0,
-                    "Each column in the active matrix should contain at least one non zero",
-                );
-                if non_zero.column[j] == 1 {
-                    // Only one item is left in the column in the active part, so this column
-                    // contains the / a next pivot.
-                    non_zero.column_candidates.push(j);
-                }
-            }
-        }
-
         // The column major structure is modified, which results in inconsistency with the row
         // major index. As this column is never modified or read again, so that's okay.
-        let (_i, pivot) = columns[pivot_column].remove(pivot_data_index);
-        debug_assert_eq!(_i, pivot_row);
+        let (_i, pivot) = columns[column_index].remove(data_index);
+        debug_assert_eq!(_i, row_index);
         upper_diagonal.push(pivot);
 
-        for (i, _) in &mut columns[pivot_column] {
+        for (i, _) in &mut columns[column_index] {
             // Updating the index is the last edit made to the column, it should not be
             // interacted with again.
             row_permutation.forward_ref(i);
-            debug_assert!(*i < k_from_below, "The element should be above the pivot");
+            debug_assert!(*i < k, "The element should be above the pivot");
         }
-
-        // Update the nonzero counts
-        // Note that no further row count updating needs to happen, as any non-pivot rows have
-        // already been chosen. After sorting, there should be no non zeros below the pivot.
-        // TODO(PERFORMANCE): These values are not used, updating the counts could be removed?
-        non_zero.column[pivot_column] = 0;
-        non_zero.row[pivot_row] = 0;
-
-        k_from_below += 1;
     }
 
-    k_from_below
+    pivot_rule.times_pivoted()
 }
 
-fn bottom_right_upper_triangle<F>(
+fn bottom_right_upper_triangle<F, R>(
+    top_left_triangle_size: usize,
     Structures {
+        columns,
         upper_diagonal,
         row_major_index,
-        non_zero,
-        row_permutation,
-        column_permutation,
+        m,
         ..
     }: &mut Structures<F>,
-    columns: &mut Vec<Vec<(usize, F)>>,
-    top_left_triangle_size: usize,
-    m: usize,
+    pivot_rule: &mut R,
 ) -> usize
 where
     F: ops::Field + ops::FieldHR,
+    R: PivotRule,
 {
     // Tracks the number of rows/columns already selected in this triangle
     let mut k_from_above = m - 1;
@@ -289,25 +242,22 @@ where
     k_from_above
 }
 
-fn nucleus<F>(
-    Structures {
-        lower_triangular,
-        upper_diagonal,
-
-        row_major_index,
-
-        index_scatter,
-        non_zero,
-
-        row_permutation,
-        column_permutation,
-    }: &mut Structures<F>,
-    columns: &mut Vec<Vec<(usize, F)>>,
+fn nucleus<F, R>(
     top_left_triangle_size: usize,
     highest_nucleus_index: usize,
+    Structures {
+        columns,
+        lower_triangular,
+        upper_diagonal,
+        row_major_index,
+        index_scatter,
+        ..
+    }: &mut Structures<F>,
+    pivot_rule: &mut R,
 )
 where
     F: ops::Field + ops::FieldHR,
+    R: PivotRule,
 {
     let pivot_rule = Markowitz::new();
     let nucleus = top_left_triangle_size..=highest_nucleus_index;

@@ -12,7 +12,7 @@ use relp_num::NonZero;
 /// A trait with associated methods allows implementors to speed up the search for a good pivot
 /// using storage.
 pub(super) trait PivotRule {
-    fn new() -> Self;
+    fn new<T>(columns: &[Vec<(usize, T)>], rows: &[Vec<(usize, usize)>]) -> Self;
 
     /// Choose the next pivot.
     ///
@@ -35,16 +35,48 @@ pub(super) trait PivotRule {
         row_permutation: &FullPermutation, column_permutation: &FullPermutation,
         columns: &[Vec<(usize, T)>],
     ) -> (usize, usize);
+
+    fn pivot_on_column_singleton<T>(
+        &mut self,
+        columns: &[Vec<(usize, T)>],
+        row_major_index: &[Vec<(usize, usize)>],
+    ) -> Option<Pivot>;
+
+    fn finalize_pivot(&mut self);
+
+    fn times_pivoted(&self) -> usize;
+
+    fn into_permutations(self) -> (FullPermutation, FullPermutation);
+}
+
+pub(super) struct Pivot {
+    row_index: usize,
+    column_index: usize,
+    data_index: usize,
+    k: usize,
 }
 
 /// Markowitz's pivot rule minimizes `(nnz(row) - 1) * (nnz(column) - 1)` at each step.
 ///
 /// If possible, the row and column are chosen to minimize the amount of swapping that needs to
 /// happen in the decomposition.
-pub(super) struct Markowitz;
+pub(super) struct Markowitz {
+    non_zero_counter: NonZeroCounter,
+    /// Permute from old to new
+    row_permutation: FullPermutation,
+    column_permutation: FullPermutation,
+    k: usize,
+}
 impl PivotRule for Markowitz {
-    fn new() -> Self {
-        Self
+    fn new<T>(columns: &[Vec<(usize, T)>], rows: &[Vec<(usize, usize)>]) -> Self {
+        let m = columns.len();
+
+        Self {
+            non_zero_counter: NonZeroCounter::new(columns, rows),
+            row_permutation: FullPermutation::identity(m),
+            column_permutation: FullPermutation::identity(m),
+            k: m,
+        }
     }
 
     fn choose_pivot<T: NonZero>(
@@ -74,6 +106,64 @@ impl PivotRule for Markowitz {
             })
             .min_by_key(|&(i, j)| (row_counts[i] - 1) * (column_counts[j] - 1))
             .unwrap()
+    }
+
+    fn pivot_on_column_singleton<T>(
+        &mut self,
+        columns: &[Vec<(usize, T)>],
+        row_major_index: &[Vec<(usize, usize)>],
+    ) -> Option<Pivot> {
+        self.non_zero_counter.column_candidates.pop()
+            .map(|column| {
+                // We search for the index of the pivot row in the column.
+                // TODO(PERFORMANCE): Can this scan be avoided?
+                let (data_index, row) = columns[column].iter()
+                    .enumerate()
+                    .map(|(data_index, &(i, _))| (data_index, i))
+                    .find(|&(_, i)| self.row_permutation[i] >= self.k)
+                    .expect("The pivot should exist.");
+
+                // Update the permutations
+                self.column_permutation.swap_inverse(column_permutation[pivot_column], k_from_below);
+                self.row_permutation.swap_inverse(row_permutation[pivot_row], k_from_below);
+
+                // Update the non zero counts in the active part of the matrix.
+                //
+                // It is not necessary to update the row counts, because all rows where this column has
+                // non zero values are in rows which were already pivoted on (that is, these rows `i`
+                // have `row_permutation[i] <= k_from_below`.
+                for &(j, _) in &row_major_index[pivot_row] {
+                    // TODO(PERFORMANCE): It is possible to remove this if statement and always subtract
+                    //  if the value is not set to zero at the end?
+                    if column_permutation[j] > k_from_below {
+                        non_zero.column[j] -= 1;
+                        debug_assert!(
+                            non_zero.column[j] > 0,
+                            "Each column in the active matrix should contain at least one non zero",
+                        );
+                        if non_zero.column[j] == 1 {
+                            // Only one item is left in the column in the active part, so this column
+                            // contains the / a next pivot.
+                            non_zero.column_candidates.push(j);
+                        }
+                    }
+                }
+
+                // Note that no further row count updating needs to happen, as any non-pivot rows have
+                // already been chosen. After sorting, there should be no non zeros below the pivot.
+                // TODO(PERFORMANCE): These values are not used, updating the counts could be removed?
+                self.non_zero_counter.set_zero(row, column);
+
+                Pivot { row_index: row, column_index: column, data_index }
+            })
+    }
+
+    fn finalize_pivot(&mut self) {
+        self.k += 1;
+    }
+
+    fn into_permutations(self) -> (FullPermutation, FullPermutation) {
+        (self.row_permutation, self.column_permutation)
     }
 }
 
@@ -133,6 +223,16 @@ impl NonZeroCounter {
         }
 
         (nnz_column, initial_column_candidates)
+    }
+
+    fn set_zero(&mut self, row_index: usize, column_index: usize) {
+        debug_assert_ne!(self.row[row_index], 0);
+        debug_assert_ne!(self.column[column_index], 0);
+        debug_assert!(!self.row_candidates.contains(&row_index));
+        debug_assert!(!self.column_candidates.contains(&column_index));
+
+        self.row[row_index] = 0;
+        self.column_candidates[column_index] = 0;
     }
 }
 
