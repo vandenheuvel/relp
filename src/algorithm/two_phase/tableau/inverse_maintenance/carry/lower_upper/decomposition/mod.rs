@@ -1,18 +1,16 @@
-use core::mem;
 /// # LU Decomposition
-///
-
+use core::mem;
 use std::cmp::Ordering;
 
 use itertools::repeat_n;
+use relp_num::NonZero;
 
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::pivoting::{Markowitz, NonZeroCounter, PivotRule};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::pivoting::{NonZeroCounter, PivotRule, MinimumDeficiency};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::row_subtraction::{get_column, subtract_rows};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{FullPermutation, Permutation};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::ops;
 use crate::data::linear_algebra::SparseTuple;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::decomposition::row_subtraction::{subtract_rows, get_column};
-use relp_num::NonZero;
 
 mod pivoting;
 mod row_subtraction;
@@ -309,7 +307,16 @@ fn nucleus<F>(
 where
     F: ops::Field + ops::FieldHR,
 {
-    let pivot_rule = Markowitz::new();
+    let mut pivot_rule = MinimumDeficiency::new(
+        columns,
+        row_major_index,
+        row_permutation,
+        column_permutation,
+        top_left_triangle_size,
+        highest_nucleus_index,
+        non_zero,
+    );
+
     let nucleus = top_left_triangle_size..=highest_nucleus_index;
     for k in nucleus.clone() {
         // Choose the next pivot
@@ -318,6 +325,8 @@ where
             &non_zero.row, &non_zero.column,
             &row_permutation, &column_permutation,
             &columns,
+            row_major_index,
+            non_zero,
         );
 
         // Update the permutations

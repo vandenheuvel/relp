@@ -12,7 +12,13 @@ use relp_num::NonZero;
 /// A trait with associated methods allows implementors to speed up the search for a good pivot
 /// using storage.
 pub(super) trait PivotRule {
-    fn new() -> Self;
+    fn new<T: NonZero>(
+        columns: &[Vec<(usize, T)>],
+        row_major_index: &[Vec<(usize, usize)>],
+        row_permutation: &FullPermutation, column_permutation: &FullPermutation,
+        top_left_triangle_size: usize, highest_nucleus_index: usize,
+        non_zero: &NonZeroCounter,
+    ) -> Self;
 
     /// Choose the next pivot.
     ///
@@ -29,11 +35,13 @@ pub(super) trait PivotRule {
     /// `(k, k)`. Items at indices lower than `k` from the other arguments should typically not be
     /// considered.
     fn choose_pivot<T: NonZero>(
-        &self,
+        &mut self,
         k_from_below: usize, k_from_above: usize,
         nnz_row: &[usize], nnz_column: &[usize],
         row_permutation: &FullPermutation, column_permutation: &FullPermutation,
         columns: &[Vec<(usize, T)>],
+        row_major_index: &[Vec<(usize, usize)>],
+        non_zero: &NonZeroCounter,
     ) -> (usize, usize);
 }
 
@@ -43,16 +51,24 @@ pub(super) trait PivotRule {
 /// happen in the decomposition.
 pub(super) struct Markowitz;
 impl PivotRule for Markowitz {
-    fn new() -> Self {
+    fn new<T: NonZero>(
+        columns: &[Vec<(usize, T)>],
+        row_major_index: &[Vec<(usize, usize)>],
+        row_permutation: &FullPermutation, column_permutation: &FullPermutation,
+        top_left_triangle_size: usize, highest_nucleus_index: usize,
+        non_zero: &NonZeroCounter,
+    ) -> Self {
         Self
     }
 
     fn choose_pivot<T: NonZero>(
-        &self,
+        &mut self,
         k_from_below: usize, k_from_above: usize,
         row_counts: &[usize], column_counts: &[usize],
         row_permutation: &FullPermutation, column_permutation: &FullPermutation,
         columns: &[Vec<(usize, T)>],
+        row_major_index: &[Vec<(usize, usize)>],
+        non_zero: &NonZeroCounter,
     ) -> (usize, usize) {
         let m = columns.len();
         debug_assert!(m > 0);
@@ -74,6 +90,139 @@ impl PivotRule for Markowitz {
             })
             .min_by_key(|&(i, j)| (row_counts[i] - 1) * (column_counts[j] - 1))
             .unwrap()
+    }
+}
+
+pub(super) struct MinimumDeficiency {
+    costs: Vec<Vec<(usize, usize)>>,
+}
+impl PivotRule for MinimumDeficiency {
+    fn new<T: NonZero>(
+        columns: &[Vec<(usize, T)>],
+        row_major_index: &[Vec<(usize, usize)>],
+        row_permutation: &FullPermutation, column_permutation: &FullPermutation,
+        top_left_triangle_size: usize, highest_nucleus_index: usize,
+        non_zero: &NonZeroCounter,
+    ) -> Self {
+        let mut costs = vec![Vec::with_capacity(0); columns.len()];
+
+        let mut work = vec![false; columns.len()];
+
+        let nucleus_range = top_left_triangle_size..=highest_nucleus_index;
+        let column_fill_in_range = top_left_triangle_size..;
+
+        for new_column_index in nucleus_range.clone() {
+            let pivot_column = column_permutation.backward(new_column_index);
+            let column = &columns[pivot_column];
+
+            let mut c = Vec::with_capacity(non_zero.column[pivot_column]);
+
+            for &(pivot_row, ref value) in column {
+                if !value.is_not_zero() {
+                    continue;
+                }
+
+                if !nucleus_range.contains(&row_permutation[pivot_row]) {
+                    continue;
+                }
+
+                // Compute the cost of pivoting on (pivot_row, pivot_column)
+
+                let mut cost = (non_zero.column[pivot_column] - 1) * (non_zero.row[pivot_row] - 1);
+                debug_assert!(cost != 0 || nucleus_range.start() == nucleus_range.end(),
+                    "Free pivots should have been done during triangularization",
+                );
+
+                for &(j, data_index_in_column) in &row_major_index[pivot_row] {
+                    if column_fill_in_range.contains(&column_permutation[j]) {
+                        // Column is still active
+                        if j != pivot_column {
+                            if columns[j][data_index_in_column].1.is_not_zero() {
+                                work[j] = true;
+                            }
+                        }
+                    }
+                }
+
+                for &(i, ref value) in column {
+                    if value.is_not_zero() {
+                        if i != pivot_row {
+                            if nucleus_range.contains(&row_permutation[i]) {
+                                // Row is still active, imagine it is being erased
+
+                                for &(j, data_index_in_column) in &row_major_index[i] {
+                                    if column_fill_in_range.contains(&column_permutation[j]) {
+                                        // Column is still active
+                                        if j != pivot_column {
+                                            if columns[j][data_index_in_column].1.is_not_zero() {
+                                                if work[j] {
+                                                    // No new fill-in will be introduced
+                                                    cost -= 1;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                for &(j, data_index_in_column) in &row_major_index[pivot_row] {
+                    if column_fill_in_range.contains(&column_permutation[j]) {
+                        // Column is still active
+                        if j != pivot_column {
+                            if columns[j][data_index_in_column].1.is_not_zero() {
+                                work[j] = false;
+                            }
+                        }
+                    }
+                }
+                debug_assert!(work.iter().all(|&v| !v));
+
+                c.push((pivot_row, cost));
+            }
+
+            costs[pivot_column] = c;
+        }
+
+        Self {
+            costs,
+        }
+    }
+
+    fn choose_pivot<T: NonZero>(
+        &mut self,
+        k_from_below: usize, k_from_above: usize,
+        nnz_row: &[usize], nnz_column: &[usize],
+        row_permutation: &FullPermutation, column_permutation: &FullPermutation,
+        columns: &[Vec<(usize, T)>],
+        row_major_index: &[Vec<(usize, usize)>],
+        non_zero: &NonZeroCounter,
+    ) -> (usize, usize) {
+        *self = Self::new(
+            columns,
+            row_major_index,
+            row_permutation,
+            column_permutation,
+            k_from_below,
+            k_from_above,
+            non_zero,
+        );
+        let nucleus_range = k_from_below..=k_from_above;
+
+        let (pivot_row, pivot_column) = (k_from_below..=k_from_above)
+            .map(|j| column_permutation.backward(j))
+            .flat_map(|j| {
+                self.costs[j].iter()
+                    .filter(|&&(i, _)| nucleus_range.contains(&row_permutation[i]))
+                    .map(move |&(i, cost)| (i, j, cost))
+            })
+            .min_by_key(|&(_, _, cost)| cost)
+            .map(|(i, j, _)| (i, j))
+            .unwrap();
+
+        (pivot_row, pivot_column)
     }
 }
 
