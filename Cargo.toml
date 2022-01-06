@@ -1,6 +1,6 @@
 [package]
 name = "relp"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Bram van den Heuvel <bram@vandenheuvel.online>"]
 edition = "2021"
 description = "Rust Exact Linear Programming"
@@ -13,10 +13,10 @@ categories = ["algorithms", "science"]
 exclude = ["tests"]
 
 [dependencies]
-relp-num = "0.1.8"
+relp-num = "0.1.10"
 num-traits = "0.2.14"
 
-itertools = "0.10.0"
+itertools = "0.10.3"
 fifo-set = "1.0.0"
 cumsum = "1.0.0"
 index-utils = { version = "2.2.0", features = ["num-traits"] }
