@@ -203,7 +203,7 @@ where
     C: SparseComparator,
 {
     type F = F;
-    type Iter<'a> where C: 'a = SparseSliceIterator<'a, F>;
+    type Iter<'a> = SparseSliceIterator<'a, F> where C: 'a;
 
     fn iter(&self) -> Self::Iter<'_> {
         SparseSliceIterator::new(&self.data)
