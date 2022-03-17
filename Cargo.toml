@@ -20,7 +20,7 @@ itertools = "0.10.3"
 fifo-set = "1.0.0"
 cumsum = "1.0.0"
 index-utils = { version = "2.2.0", features = ["num-traits"] }
-enum-map = "1.1.1"
+enum-map = "2.0.3"
 
 # TODO(PACKAGING): Make this an optional dependency.
 daggy = "0.8.0"  # Currently only for debug asserts
