@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use relp_num::RationalBig;
+use relp_num::{Rational64, RationalBig};
 
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -52,7 +52,7 @@ fn solve(file_name: &str) -> Solution<S> {
         .map_err(Import::IO).unwrap()
         .read_to_string(&mut program)
         .map_err(Import::IO).unwrap();
-    let mps = parse_fixed(&program).unwrap();
+    let mps = parse_fixed::<Rational64>(&program).unwrap();
 
     let mut general: GeneralForm<T> = mps.try_into().unwrap();
     general.presolve().unwrap();

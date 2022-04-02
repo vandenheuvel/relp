@@ -9,7 +9,22 @@ use crate::io::mps::parse::{ColumnLineContent, ColumnRetriever};
 use crate::io::mps::parse::free::Free;
 use crate::io::mps::token::COLUMN_SECTION_MARKER;
 
+/// Parse an MPS program, in string form, to a MPS with struct assumptions on file layout.
+/// 
 /// Read a linear program with the "fixed columns" parsing strategy.
+///
+/// # Arguments
+///
+/// * `program`: The input in [MPS format](https://en.wikipedia.org/wiki/MPS_(format)).
+///
+/// # Return value
+///
+/// A `Result<MPS, ImportError>` instance.
+///
+/// # Errors
+///
+/// An Import error, wrapping either a parse error indicating that the file was syntactically
+/// incorrect, or an Inconsistency error indicating that the file is "logically" incorrect.
 pub fn parse<N: Parse>(program_string: &str) -> Result<MPS<N>, ImportError> {
     super::parse::<_, Fixed>(program_string)
 }

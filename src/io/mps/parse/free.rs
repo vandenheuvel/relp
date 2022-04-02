@@ -6,8 +6,25 @@ use crate::io::mps::number::parse::Parse;
 use crate::io::mps::parse::{ColumnLineContent, ColumnRetriever};
 use crate::io::mps::token::COLUMN_SECTION_MARKER;
 
-pub fn parse<F: Parse>(program_string: &str) -> Result<MPS<F>, ImportError> {
-    super::parse::<_, Free>(program_string)
+
+/// Parse an MPS program, in string form, to a MPS.
+///
+/// This is the flexible mode, which doesn't require columns to be in exactly the right place.
+///
+/// # Arguments
+///
+/// * `program`: The input in [MPS format](https://en.wikipedia.org/wiki/MPS_(format)).
+///
+/// # Return value
+///
+/// A `Result<MPS, ImportError>` instance.
+///
+/// # Errors
+///
+/// An Import error, wrapping either a parse error indicating that the file was syntactically
+/// incorrect, or an Inconsistency error indicating that the file is "logically" incorrect.
+pub fn parse<F: Parse>(program_string: &impl AsRef<str>) -> Result<MPS<F>, ImportError> {
+    super::parse::<_, Free>(program_string.as_ref())
 }
 
 pub(super) struct Free;

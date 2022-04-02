@@ -15,8 +15,11 @@ use crate::io::mps::RowType;
 use crate::io::mps::Section;
 use crate::io::mps::token::{COMMENT_INDICATOR, END_OF_INTEGER, NAME, START_OF_INTEGER};
 
-pub(crate) mod fixed;
-pub(crate) mod free;
+mod fixed;
+mod free;
+
+pub use fixed::parse as parse_fixed;
+pub use free::parse as parse_free;
 
 // TODO(ARCHITECTURE): Consider moving all methods in a trait to reduce the number of type
 //  annotations. Might need impl trait in trait definitions?
@@ -203,7 +206,7 @@ fn parse_program_name<'a, CR: ColumnRetriever<'a>>(
 /// # Errors
 ///
 /// If the iterator is empty, or the next lines don't pretty much look like
-/// ```compile_fail
+/// ```text
 /// OBJSENSE
 ///   MAXIMIZE
 /// ```

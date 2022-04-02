@@ -12,15 +12,19 @@ use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 use crate::data::linear_program::elements::{ConstraintRelation, Objective};
 use crate::data::linear_program::elements::VariableType;
 use crate::io::error::Import;
-use crate::io::mps::parse::{fixed, free};
 
 #[allow(clippy::type_complexity)]
 mod convert;
 pub mod number;
-pub mod parse;
+mod parse;
 mod token;
 
+pub use parse::{parse_fixed, parse_free};
+
 /// Parse an MPS program, in string form, to a MPS.
+///
+/// The default mode is the flexible mode, which doesn't require columns to be in exactly the right
+/// place.
 ///
 /// # Arguments
 ///
@@ -37,27 +41,7 @@ mod token;
 pub fn parse(
     program: &impl AsRef<str>,
 ) -> Result<MPS<Rational64>, Import> {
-    free::parse(program.as_ref())
-}
-
-/// Parse an MPS program, in string form, to a MPS with struct assumptions on file layout.
-///
-/// # Arguments
-///
-/// * `program`: The input in [MPS format](https://en.wikipedia.org/wiki/MPS_(format)).
-///
-/// # Return value
-///
-/// A `Result<MPS, ImportError>` instance.
-///
-/// # Errors
-///
-/// An Import error, wrapping either a parse error indicating that the file was syntactically
-/// incorrect, or an Inconsistency error indicating that the file is "logically" incorrect.
-pub fn parse_fixed(
-    program: &impl AsRef<str>,
-) -> Result<MPS<Rational64>, Import> {
-    fixed::parse(program.as_ref())
+    parse_free(program)
 }
 
 /// Represents the contents of a MPS file in a structured manner.

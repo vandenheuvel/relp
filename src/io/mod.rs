@@ -2,8 +2,7 @@
 //!
 //! This module provides read and write functionality for linear program formats.
 use std::convert::TryInto;
-use std::fs::File;
-use std::io::Read;
+use std::fs::read_to_string;
 use std::ops::{Add, Neg};
 use std::path::Path;
 
@@ -38,10 +37,7 @@ where
     for<'r> &'r F: Neg<Output=F>,
 {
     // Open and read the file
-    let mut program = String::new();
-    File::open(&file_path)
-        .map_err(Import::IO)?
-        .read_to_string(&mut program)
+    let program = read_to_string(file_path)
         .map_err(Import::IO)?;
 
     // Choose the right parser
