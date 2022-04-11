@@ -21,6 +21,22 @@ where
 {
     /// Compute the factorization `PBQ = LU`.
     ///
+    /// The shape of the permutation is as follows:
+    ///
+    /// +-----------------------------+
+    /// | \                           |
+    /// |    \           U            |
+    /// |       \                     |
+    /// |         +---------+---------+
+    /// |         |         |         |
+    /// |         |    N    |    L    |
+    /// |    0    |         |         |
+    /// |         +---------+---------+
+    /// |         |         | \       |
+    /// |         |    0    |    \    |
+    /// |         |         |  L    \ |
+    /// +---------+---------+---------+
+    ///
     /// # Arguments
     ///
     /// * `columns`: A column major representation of the basis columns.
