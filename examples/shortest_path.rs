@@ -1,6 +1,4 @@
 //! # Shortest path problem
-#![feature(generic_associated_types)]
-
 use std::fmt::{Display, Formatter, Result as FormatResult};
 
 use relp_num::{Rational64, RationalBig};

@@ -1,6 +1,5 @@
 //! # Maximum Flow Problem
 #![feature(type_alias_impl_trait)]
-#![feature(generic_associated_types)]
 
 use std::iter;
 use std::iter::once;
@@ -143,7 +142,7 @@ where
     F: SparseElement<F> + Zero + Eq + NonZero,
 {
     type Column = Column;
-    type Cost<'a> where Self: 'a = Cost;
+    type Cost<'a> = Cost where Self: 'a;
     type Rhs = F;
 
     fn column(&self, j: usize) -> Self::Column {
