@@ -16,7 +16,7 @@ exclude = ["tests"]
 relp-num = "0.1.11"
 num-traits = "0.2.15"
 
-itertools = "0.10.5"
+itertools = "0.11.0"
 fifo-set = "1.0.0"
 cumsum = "1.0.0"
 index-utils = { version = "2.2.0", features = ["num-traits"] }
