@@ -13,17 +13,14 @@ categories = ["algorithms", "science"]
 exclude = ["tests"]
 
 [dependencies]
-relp-num = "0.1.11"
-num-traits = "0.2.15"
+relp-num = "0.1.12"
+num-traits = "0.2.18"
 
-itertools = "0.10.5"
+itertools = "0.12.1"
 fifo-set = "1.0.0"
 cumsum = "1.0.0"
-index-utils = { version = "2.2.0", features = ["num-traits"] }
-enum-map = "2.0.3"
-
-# TODO(PACKAGING): Make this an optional dependency.
-daggy = "0.8.0"  # Currently only for debug asserts
+index-utils = { version = "2.2.3", features = ["num-traits"] }
+enum-map = "2.7.2"
 
 [features]
 burkardt = []

@@ -10,6 +10,7 @@
 #![feature(type_alias_impl_trait)]
 #![feature(associated_type_bounds)]
 #![feature(trait_alias)]
+#![feature(impl_trait_in_assoc_type)]
 
 pub mod algorithm;
 pub mod data;
