@@ -13,8 +13,8 @@ categories = ["algorithms", "science"]
 exclude = ["tests"]
 
 [dependencies]
-relp-num = "0.1.12"
-num-traits = "0.2.18"
+relp-num = "0.1.13"
+num-traits = "0.2.19"
 
 itertools = "0.13.0"
 fifo-set = "1.0.0"
