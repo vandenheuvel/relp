@@ -56,7 +56,7 @@ impl<'a> ColumnRetriever<'a> for Fixed {
         }
     }
 
-    fn is_column_marker_line(line: &'a str) -> ParseResult<ColumnLineContent<Self::RestOfLine>> {
+    fn is_column_marker_line(line: &'a str) -> ParseResult<ColumnLineContent<'a, Self::RestOfLine>> {
         if line.len() >= FIELDS[4].end {
             if &line[FIELDS[3].clone()] == COLUMN_SECTION_MARKER {
                 if line.len() >= FIELDS[5].end {
@@ -76,7 +76,7 @@ impl<'a> ColumnRetriever<'a> for Fixed {
         }
     }
 
-    fn two_through_four(line: &'a str) -> ParseResult<([&str; 3], Self::RestOfLine)> {
+    fn two_through_four(line: &'a str) -> ParseResult<([&'a str; 3], Self::RestOfLine)> {
         if line.len() >= FIELDS[4].end {
             Ok(([
                 line[FIELDS[2].clone()].trim_end(),
@@ -107,7 +107,7 @@ impl<'a> ColumnRetriever<'a> for Fixed {
         Ok(result)
     }
 
-    fn one_through_three(line: &'a str) -> ParseResult<([&str; 3], Self::RestOfLine)> {
+    fn one_through_three(line: &'a str) -> ParseResult<([&'a str; 3], Self::RestOfLine)> {
         if line.len() >= FIELDS[3].start {
             let type_text = &line[FIELDS[1].clone()];
             let name = line[FIELDS[2].clone()].trim_end();

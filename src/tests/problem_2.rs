@@ -116,7 +116,7 @@ pub fn matrix_data_form<'a>(
 
 pub fn artificial_tableau_form<'a>(
     data: &'a MatrixData<'a, T>,
-) -> Tableau<Carry<S, BasisInverseRows<S>>, Partially<MatrixData<'a, T>>> {
+) -> Tableau<Carry<S, BasisInverseRows<S>>, Partially<'a, MatrixData<'a, T>>> {
     let m = 3;
     let artificials = (0..m).collect::<Vec<_>>();
     let carry = {
@@ -139,7 +139,7 @@ pub fn artificial_tableau_form<'a>(
 
 pub fn tableau_form<'a>(
     data: &'a MatrixData<'a, T>,
-) -> Tableau<Carry<S, BasisInverseRows<S>>, NonArtificial<MatrixData<'a, T>>> {
+) -> Tableau<Carry<S, BasisInverseRows<S>>, NonArtificial<'a, MatrixData<'a, T>>> {
     let carry = {
         let minus_objective = RationalBig::from((-9, 2));
         let minus_pi = DenseVector::from_test_data(vec![(5, 2), (-1, 1), (-1, 1)]);

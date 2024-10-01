@@ -101,7 +101,7 @@ fn parse<'a, F: Parse, CR: ColumnRetriever<'a>>(
 /// # Return value
 ///
 /// An iterator over numbered lines.
-fn into_lines<'a>(text: &'a str) -> impl Iterator<Item = FileLocation> + 'a {
+fn into_lines<'a>(text: &'a str) -> impl Iterator<Item = FileLocation<'a>> + 'a {
     text.lines()
         .enumerate()
         .map(|(number, line)| (number + 1, line)) // Count from 1
@@ -135,21 +135,21 @@ trait ColumnRetriever<'a> {
     /// Depending on whether it is, either the marker field is returned (marker name is discarded)
     /// or the column name, row name and value text are returned (typically happens).
     /// TODO(OPTIMIZATION): Should the implementors of this method use branch prediction hints?
-    fn is_column_marker_line(line: &'a str) -> ParseResult<ColumnLineContent<Self::RestOfLine>>;
+    fn is_column_marker_line(line: &'a str) -> ParseResult<ColumnLineContent<'a, Self::RestOfLine>>;
 
     /// Read three columns from either the RHS or RANGES section.
     ///
     /// # Return value
     ///
     /// If successful, the group name, row name and value text, as well as the rest of the line.
-    fn two_through_four(line: &'a str) -> ParseResult<([&str; 3], Self::RestOfLine)>;
+    fn two_through_four(line: &'a str) -> ParseResult<([&'a str; 3], Self::RestOfLine)>;
 
     /// Try to read two more columns.
     ///
     /// TODO(CORRECTNESS): Let this fail when there is e.g. only one value?
     fn five_and_six(line_after_first_four: Self::RestOfLine) -> ParseResult<Option<[&'a str; 2]>>;
 
-    fn one_through_three(line: &'a str) -> ParseResult<([&str; 3], Self::RestOfLine)>;
+    fn one_through_three(line: &'a str) -> ParseResult<([&'a str; 3], Self::RestOfLine)>;
 
     /// While parsing bounds: if the bound type demands it, try to read one more field.
     fn four(rest_of_line: Self::RestOfLine) -> ParseResult<[&'a str; 1]>;

@@ -404,7 +404,7 @@ pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F=T>, Rhs=
 
 pub fn tableau_form<'provider, MP: MatrixProvider<Column: ColumnTrait<F=T>>>(
     provider: &'provider MP,
-) -> Tableau<Carry<S, BasisInverseRows<S>>, NonArtificial<MP>>
+) -> Tableau<Carry<S, BasisInverseRows<S>>, NonArtificial<'provider, MP>>
 where
     S: im_ops::Cost<MP::Cost<'provider>>,
 {

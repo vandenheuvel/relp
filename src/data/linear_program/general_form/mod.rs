@@ -159,18 +159,18 @@ fn is_consistent<F: LinearAlgebraElement<F> + SparseComparator>(general_form: &G
                 _ => None,
             }).is_sorted();
         let no_cycles = {
-///            let nodes = repeat_n(Element::Node { weight: (), }, nr_original_variables);
-///            let edges = general_form.original_variables
-///                .iter().enumerate()
-///                .filter_map(|(target, (_, variable))| match variable {
-///                    OriginalVariable::Removed(FunctionOfOthers{ constant: _, coefficients: els, }) => Some((els, target)),
-///                    _ => None,
-///                })
-///                .flat_map(|(els, target)| {
-///                    els.iter().map(move |&(j, _)| Element::<(), ()>::Edge { source: j, target, weight: (), })
-///                });
-///
-///            !matches!(Dag::<(), (), usize>::from_elements(nodes.chain(edges)), Err(WouldCycle(_)))
+           // let nodes = repeat_n(Element::Node { weight: (), }, nr_original_variables);
+           // let edges = general_form.original_variables
+           //     .iter().enumerate()
+           //     .filter_map(|(target, (_, variable))| match variable {
+           //         OriginalVariable::Removed(FunctionOfOthers{ constant: _, coefficients: els, }) => Some((els, target)),
+           //         _ => None,
+           //     })
+           //     .flat_map(|(els, target)| {
+           //         els.iter().map(move |&(j, _)| Element::<(), ()>::Edge { source: j, target, weight: (), })
+           //     });
+           //
+           // !matches!(Dag::<(), (), usize>::from_elements(nodes.chain(edges)), Err(WouldCycle(_)))
             true
         };
 

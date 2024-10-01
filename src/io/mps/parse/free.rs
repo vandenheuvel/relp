@@ -1,3 +1,5 @@
+use std::str::SplitWhitespace;
+
 use crate::io::error::Import as ImportError;
 use crate::io::error::Parse as ParseError;
 use crate::io::error::ParseResult;
@@ -29,7 +31,7 @@ pub fn parse<F: Parse>(program_string: &impl AsRef<str>) -> Result<MPS<F>, Impor
 
 pub(super) struct Free;
 impl<'a> ColumnRetriever<'a> for Free {
-    type RestOfLine = impl Iterator<Item = &'a str>;
+    type RestOfLine = SplitWhitespace<'a>;
 
     fn two_or_three(line_after_name: &str) -> ParseResult<[&str; 1]> {
         let mut splitted = line_after_name.split_whitespace();
@@ -64,7 +66,7 @@ impl<'a> ColumnRetriever<'a> for Free {
         })
     }
 
-    fn two_through_four(line: &'a str) -> ParseResult<([&str; 3], Self::RestOfLine)> {
+    fn two_through_four(line: &'a str) -> ParseResult<([&'a str; 3], Self::RestOfLine)> {
         let mut parts = line.split_whitespace();
 
         let two = parts.next()
@@ -96,7 +98,7 @@ impl<'a> ColumnRetriever<'a> for Free {
         }
     }
 
-    fn one_through_three(line: &'a str) -> ParseResult<([&str; 3], Self::RestOfLine)> {
+    fn one_through_three(line: &'a str) -> ParseResult<([&'a str; 3], Self::RestOfLine)> {
         let mut parts = line.split_whitespace();
 
         let one = parts.next()
