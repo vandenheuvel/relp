@@ -14,13 +14,13 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-relp = "0.2.4"
+relp = "0.2.6"
 ```
 
 You'll probably want to use the number types provided by the [`relp-num`](https://github.com/vandenheuvel/relp-num) crate, so include that dependency as well:
 
 ```toml
-relp-num = "0.1.11"
+relp-num = "0.1.13"
 ```
 
 You can now use both crates, for example to read a linear program in the classic [MPS format](https://en.wikipedia.org/wiki/MPS_(format)) in arbitrary precision:
