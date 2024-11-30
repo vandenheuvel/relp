@@ -229,7 +229,7 @@ where
             }
 
             let bound_to_edit = direction * coefficient.non_zero_signum();
-            if let Some(ref mut bound) = match bound_to_edit {
+            if let Some(bound) = match bound_to_edit {
                 BoundDirection::Lower => &mut self.activity_bounds[row].0,
                 BoundDirection::Upper => &mut self.activity_bounds[row].1,
             } {

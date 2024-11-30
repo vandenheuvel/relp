@@ -2,7 +2,7 @@
 name = "relp"
 version = "0.2.6"
 authors = ["Bram van den Heuvel <bram@vandenheuvel.online>"]
-edition = "2021"
+edition = "2024"
 description = "Rust Exact Linear Programming"
 repository = "https://github.com/vandenheuvel/relp"
 license = "GPL-3.0-only"

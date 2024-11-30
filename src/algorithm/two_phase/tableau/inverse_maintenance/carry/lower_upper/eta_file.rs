@@ -52,12 +52,12 @@ where
 
         let pivot_index = vector.binary_search_by_key(&self.pivot, |&(i, _)| i);
         if let Ok(pivot_index) = pivot_index {
-            for &(j, ref value) in &self.values {
-                let has_index = vector.binary_search_by_key(&j, |&(jj, _)| jj);
+            for (j, value) in &self.values {
+                let has_index = vector.binary_search_by_key(j, |&(jj, _)| jj);
 
                 // TODO(PERFORMANCE): Sort once at the end instead of inserting all the time.
                 let difference = value * &vector[pivot_index].1;
-                update_value(difference, has_index, j, vector);
+                update_value(difference, has_index, *j, vector);
             }
 
             debug_assert!(vector.windows(2).all(|w| w[0].0 < w[1].0));
@@ -120,10 +120,9 @@ where
         };
 
         let difference = self.values.iter()
-            .filter_map(|&(j, ref value)| {
-                let row = j;
+            .filter_map(|(row, value)| {
                 spike[search_index..]
-                    .binary_search_by_key(&row, |&(i, _)| i)
+                    .binary_search_by_key(row, |&(i, _)| i)
                     .ok()
                     .map(|shift| {
                         value * &spike[search_index + shift].1

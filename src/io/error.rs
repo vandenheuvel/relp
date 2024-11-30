@@ -90,7 +90,7 @@ impl Error for Parse {
     ///
     /// Option<&Error> which may be a `ParseErrorCause`.
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        if let Some(Source::Other(ref error)) = self.source {
+        if let Some(Source::Other(error)) = &self.source {
             Some(error.as_ref())
         } else { None }
     }
@@ -167,7 +167,7 @@ impl Parse {
 
     /// Get all errors in the chain, leading up to this one.
     fn trace(&self) -> Vec<String> {
-        let mut descriptions = if let Some(ref source) = self.source {
+        let mut descriptions = if let Some(source) = &self.source {
             match source {
                 Source::FileLocation(line_number, line) => {
                     vec![format!("Caused at line {}: \t{}", line_number, line)]

@@ -526,9 +526,9 @@ where
             };
 
             // Shift such that any lower bound is zero.
-            if let Some(ref mut lower) = variable.lower_bound {
+            if let Some(lower) = &mut variable.lower_bound {
                 variable.shift -= &*lower;
-                if let Some(ref mut upper) = variable.upper_bound {
+                if let Some(upper) = &mut variable.upper_bound {
                     *upper -= &*lower;
                 }
 
@@ -597,7 +597,7 @@ where
 
         self.constraints.change_row_signs(&rows_to_negate);
         for row in rows_to_negate {
-            match self.constraint_types[row] {
+            match &self.constraint_types[row] {
                 RangedConstraintRelation::Less => {
                     self.constraint_types[row] = RangedConstraintRelation::Greater;
                     self.b[row] *= -OF::one();
@@ -609,7 +609,7 @@ where
                     self.constraint_types[row] = RangedConstraintRelation::Less;
                     self.b[row] *= -OF::one();
                 },
-                RangedConstraintRelation::Range(ref range) => {
+                RangedConstraintRelation::Range(range) => {
                     let minus_old_lower_bound = range - &self.b[row];
                     self.b[row] = minus_old_lower_bound;
                 },
@@ -918,7 +918,7 @@ where
                     (Some(positive), Some(negative)) => positive - negative,
                 }
             },
-            OriginalVariable::Removed(Solved(ref v)) => v.clone().into(),
+            OriginalVariable::Removed(Solved(v)) => v.clone().into(),
             OriginalVariable::Removed(FunctionOfOthers { constant, coefficients }) => {
                 -coefficients.iter()
                     .map(|(j, coefficient)| {

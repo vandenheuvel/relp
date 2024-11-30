@@ -427,9 +427,8 @@ where
         }
 
         // Remove changes that are not actually changes (might have been changed back and forth)
-        let existing_b = &self.general_form.b;
         let b = self.b.into_iter()
-            .filter(|&(i, ref new_b)| new_b != &existing_b[i])
+            .filter(|(i, new_b)| new_b != &self.general_form.b[*i])
             .collect();
 
         let existing_constraint_types = &self.general_form.constraint_types;

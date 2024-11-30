@@ -272,7 +272,7 @@ fn replace_existing_with<OF: Ord>(option: &mut Option<OF>, new_value: OF, orderi
     // Nothing would change if they would need to be equal, so this doesn't make sense.
     debug_assert_ne!(ordering, Ordering::Equal);
 
-    if let Some(ref mut existing_value) = option {
+    if let Some(existing_value) = option {
         if new_value.cmp(existing_value) == ordering {
             *existing_value = new_value;
         }
