@@ -494,7 +494,6 @@ impl<F: 'static> Identity for Column<F>
 where
     F: ColumnNumber + One,
 {
-    #[must_use]
     fn identity(i: usize, len: usize) -> Self {
         assert!(i < len);
 
