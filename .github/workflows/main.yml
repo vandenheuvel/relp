@@ -10,34 +10,25 @@ jobs:
   check:
     name: Rust project
     runs-on: ubuntu-latest
+    container:
+      image: xd009642/tarpaulin:develop-nightly
+      options: --security-opt seccomp=unconfined
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      - name: Install nightly toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-          
       - name: Run cargo test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          
-      - name: Run integration tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --package relp --all-features --release --test mod
+        run: |
+          cargo +nightly test
 
-      - name: Run cargo-tarpaulin
-        uses: actions-rs/tarpaulin@v0.1
-        with:
-          version: '0.22.0'
-          args: '--ignore-tests -- --test-threads 1'
+      - name: Run integration tests
+        run: |
+          cargo +nightly test --package relp --all-features --release --test mod
+
+      - name: Generate code coverage
+        run: |
+          cargo +nightly tarpaulin --verbose --workspace --out xml
 
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
-
+        uses: codecov/codecov-action@v5
 
