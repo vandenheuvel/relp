@@ -253,11 +253,11 @@ where
             candidates
                 .filter(|(_, cost)| cost.is_zero())
                 .find(|&(j, _)| tableau.generate_element(pivot_row, j)
-                    .map_or(false, |element| IM::F::is_positive(&element)))
+                    .is_some_and(|element| IM::F::is_positive(&element)))
         } else {
             candidates
                 .find(|&(j, _)| tableau.generate_element(pivot_row, j)
-                    .map_or(false, |element| element.is_not_zero()))
+                    .is_some_and(|element| element.is_not_zero()))
         };
 
         if let Some((pivot_column, cost)) = column_and_cost {

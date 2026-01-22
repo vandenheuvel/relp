@@ -257,7 +257,7 @@ where
         //  left-most element of equal elements in the cumulative group indices.
 
         if j < self.column_group_end[ColumnType::Normal] {
-            (ColumnType::Normal, j - 0)
+            (ColumnType::Normal, j)
         } else if j < self.column_group_end[ColumnType::RangeSlack] {
             (ColumnType::RangeSlack, j - self.column_group_end[ColumnType::Normal])
         } else if j < self.column_group_end[ColumnType::UpperInequalitySlack] {
@@ -301,7 +301,7 @@ where
                     //  feature to be more mature).
                     constraint_values: self.constraints.iter_column(j).cloned().collect(),
                     slack: self.bound_row_index(j, BoundDirection::Upper)
-                        .map(|i| 0 + i)
+                        .map(|i| i)
                         .map(|i| (i, F::one())),
                 }
             }
@@ -514,7 +514,7 @@ impl<F> IntoIterator for Column<F> {
     fn into_iter(self) -> Self::IntoIter {
         match self {
             Column::Sparse { constraint_values, slack, } =>
-                ColumnIntoIterator::Sparse(constraint_values.into_iter().chain(slack.into_iter())),
+                ColumnIntoIterator::Sparse(constraint_values.into_iter().chain(slack)),
             Column::Slack(single_value) =>
                 ColumnIntoIterator::Slack(once(single_value)),
             Column::TwoSlack(first, second) =>

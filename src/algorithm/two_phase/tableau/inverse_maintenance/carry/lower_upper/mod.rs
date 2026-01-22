@@ -169,7 +169,7 @@ where
         }));
         debug_assert!(self.upper_triangular.iter().enumerate().all(|(data_j, column)| {
             let j = data_j + 1;
-            column.last().map_or(true, |&(i, _)| i < j)
+            column.last().is_none_or(|&(i, _)| i < j)
         }));
         self.updates.push((eta_file, q));
 

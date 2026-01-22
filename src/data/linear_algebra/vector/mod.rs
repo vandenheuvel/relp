@@ -58,9 +58,9 @@ pub trait Vector<F>: Deref<Target=[Self::Inner]> + PartialEq + FromIterator<F> +
     /// Remove the items at the specified indices.
     fn remove_indices(&mut self, indices: &[usize]);
     /// Iterate over the internal values.
-    fn iter(&self) -> Iter<Self::Inner>;
+    fn iter(&self) -> Iter<'_, Self::Inner>;
     /// Iterate over the internal values mutably.
-    fn iter_mut(&mut self) -> IterMut<Self::Inner>;
+    fn iter_mut(&mut self) -> IterMut<'_, Self::Inner>;
     /// Number of items represented by the vector.
     fn len(&self) -> usize;
     /// Whether the vector is empty.

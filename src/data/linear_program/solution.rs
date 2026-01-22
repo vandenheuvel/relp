@@ -49,7 +49,7 @@ impl<F: PartialEq + Clone> Solution<F> {
             return false;
         }
 
-        if !(self.solution_values.len() == other.solution_values.len()) {
+        if self.solution_values.len() != other.solution_values.len() {
             return false;
         }
 

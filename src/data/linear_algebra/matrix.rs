@@ -397,7 +397,7 @@ impl<F: SparseElement<C>, C: SparseComparator, MO: MatrixOrder> SparseMatrix<F, 
         debug_assert!(data.iter().all(|v| v.is_sorted_by_key(|&(i, _)| i)));
         debug_assert!(data.iter()
             .map(|c| c.iter().map(|&(i, _)| i).max())
-            .all(|m| m.map_or(true, |max_minor_index| max_minor_index < minor_dimension_size)));
+            .all(|m| m.is_none_or(|max_minor_index| max_minor_index < minor_dimension_size)));
         debug_assert!(data.iter().all(|minor| minor.iter().all(|(_, v)| v.borrow().is_not_zero())));
 
         SparseMatrix {
@@ -465,7 +465,7 @@ where
         debug_assert_eq!(other.minor_dimension_size, self.minor_dimension_size);
 
         SparseMatrix::from_major_ordered_tuples(
-            self.data.into_iter().chain(other.data.into_iter()).collect(),
+            self.data.into_iter().chain(other.data).collect(),
             self.major_dimension_size + other.major_dimension_size,
             self.minor_dimension_size,
         )

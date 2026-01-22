@@ -311,7 +311,7 @@ where
         let (b_left, b_right) = self.b.inner_mut().split_at_mut(pivot_row_index);
         let (b_middle, b_right) = b_right.split_first_mut().unwrap();
 
-        for (edit_row_index, column_value) in SparseSliceIterator::new(&column) {
+        for (edit_row_index, column_value) in SparseSliceIterator::new(column) {
             match edit_row_index.cmp(&pivot_row_index) {
                 Ordering::Less => {
                     b_left[edit_row_index] -= column_value * &*b_middle;

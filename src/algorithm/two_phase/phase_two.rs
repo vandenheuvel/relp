@@ -35,7 +35,7 @@ where
 
     loop {
         debug_assert!({
-            debug_assert_in_basic_feasible_solution_state(&tableau);
+            debug_assert_in_basic_feasible_solution_state(tableau);
             true
         });
 
@@ -48,7 +48,7 @@ where
                             pivot_column_index, pivot_row_index,
                             column_with_info, cost,
                         );
-                        rule.after_basis_update(basis_change_computation_info,&tableau);
+                        rule.after_basis_update(basis_change_computation_info,tableau);
                     }
                     None => break OptimizationResult::Unbounded,
                 }

@@ -9,7 +9,6 @@ use std::ops::{Add, AddAssign, Mul, Neg, Sub};
 
 use cumsum::cumsum_array;
 use index_utils::remove_indices;
-use itertools::repeat_n;
 use num_traits::Zero;
 use relp_num::{OrderedField, OrderedFieldRef};
 use relp_num::NonZero;
@@ -259,7 +258,7 @@ where
     /// # Errors
     ///
     /// In case the linear program gets solved during this presolve operation, a solution.
-    pub fn derive_matrix_data(&self, constraint_type_counts: [usize; 4]) -> MatrixData<OF> {
+    pub fn derive_matrix_data(&self, constraint_type_counts: [usize; 4]) -> MatrixData<'_, OF> {
         debug_assert!({
             let boundaries = cumsum_array(&constraint_type_counts);
             self.constraint_types.iter().enumerate()
@@ -326,9 +325,9 @@ where
         self.transform_variables();
         self.make_b_non_negative();
         self.make_minimization_problem();
-        let constraint_type_counts = self.reorder_constraints_by_type();
+        
 
-        constraint_type_counts
+        self.reorder_constraints_by_type()
     }
 
     /// Recursively analyse constraints and variable bounds and eliminating or tightning these.
@@ -721,11 +720,10 @@ where
         let mut new_solutions = vec![None; self.original_variables.len()];
         let mut changed = Vec::new();
         for (j, (_, variable)) in self.original_variables.iter().enumerate() {
-            if let OriginalVariable::Removed(FunctionOfOthers { .. }) = variable {
-                if self.compute_solution_value(j, &mut new_solutions).is_some() {
+            if let OriginalVariable::Removed(FunctionOfOthers { .. }) = variable
+                && self.compute_solution_value(j, &mut new_solutions).is_some() {
                     changed.push(j);
                 }
-            }
         }
 
         // Save all values
@@ -815,12 +813,11 @@ where
 
         for (j, variable) in self.variables.iter().enumerate() {
             reduced_solution.shift_value::<OF>(j, -&variable.shift);
-            if variable.flipped {
-                if reduced_solution.get(j).is_some() {
+            if variable.flipped
+                && reduced_solution.get(j).is_some() {
                     let flipped = -reduced_solution.get(j).unwrap();
                     reduced_solution.set(j, flipped);
                 }
-            }
         }
     }
 
@@ -863,7 +860,7 @@ where
 
         Solution::new(
             cost,
-            self.original_variables.into_iter().zip(new_solutions.into_iter())
+            self.original_variables.into_iter().zip(new_solutions)
                 .map(|((name, _), value)| (name, value.unwrap()))
                 .collect(),
         )
@@ -1045,7 +1042,7 @@ where
     /// Get any feasible value, if there is one.
     fn get_feasible_value(&self) -> Option<OF> {
         if self.has_feasible_value() {
-            self.upper_bound.as_ref().or_else(|| self.lower_bound.as_ref()).cloned().or_else(|| Some(OF::zero()))
+            self.upper_bound.as_ref().or(self.lower_bound.as_ref()).cloned().or_else(|| Some(OF::zero()))
         } else { None }
     }
 

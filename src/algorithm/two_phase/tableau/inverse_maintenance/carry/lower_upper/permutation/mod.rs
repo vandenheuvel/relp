@@ -2,7 +2,6 @@
 ///
 /// Logic for permuting and more specifically rotating column and row indices.
 pub use full::Full as FullPermutation;
-pub use identity::Identity as IdentityPermutation;
 pub use rotate_to_back::RotateToBack as RotateToBackPermutation;
 pub use swap::Swap as SwapPermutation;
 

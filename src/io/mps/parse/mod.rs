@@ -635,13 +635,12 @@ fn save_to_group_collector<T: ListedInGroup, const CAN_HAVE_DUPLICATES: bool>(
         values.sort_unstable_by_key(|&(i, _)| i);
         // TODO(CORRECTNESS): The level of defensiveness should be more consistent: why check for
         //  duplicates here?
-        if !CAN_HAVE_DUPLICATES {
-            if let Some(&[(row_id, _), _]) = values.windows(2)
+        if !CAN_HAVE_DUPLICATES
+            && let Some(&[(row_id, _), _]) = values.windows(2)
                 .find(|w| w[0].0 == w[1].0) {
                 return Err(Inconsistency::new(format!(
                     "Duplicate row id \"{}\" for group \"{}\"", row_id, group_name)));
             }
-        }
 
         collector.push(T::new(group_name, values));
     }

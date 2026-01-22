@@ -7,7 +7,6 @@ use std::iter::Iterator;
 use relp_num::{Field, OrderedField, OrderedFieldRef};
 use relp_num::NonZeroSign;
 
-pub use scale::Scalable as Prescalable;
 
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, RangedConstraintRelation};
@@ -126,13 +125,12 @@ where
     /// `Err` type.
     pub(super) fn presolve_step(&mut self) -> Result<Change, LinearProgramType<OF>> {
         // Rules that are guaranteed to make the problem smaller
-        if let Some(variable) = self.queues.substitution.pop() {
-            if self.counters.is_variable_still_active(variable) {
+        if let Some(variable) = self.queues.substitution.pop()
+            && self.counters.is_variable_still_active(variable) {
                 return self.presolve_fixed_variable(variable)
                     // always removes a variable
                     .map(|()| Change::Meaningful);
             }
-        }
         while let Some(constraint) = self.queues.bound.pop() {
             if self.counters.is_constraint_still_active(constraint) {
                 return self.presolve_bound_constraint(constraint)
@@ -184,8 +182,8 @@ where
     ) {
         debug_assert!(self.updates.removed_variables.iter().all(|&(j, _)| variable != j));
         debug_assert!(match direction {
-            BoundDirection::Lower => change.as_ref().map_or(true, |v| v.is_positive()),
-            BoundDirection::Upper => change.as_ref().map_or(true, |v| v.is_negative()),
+            BoundDirection::Lower => change.as_ref().is_none_or(|v| v.is_positive()),
+            BoundDirection::Upper => change.as_ref().is_none_or(|v| v.is_negative()),
         });
 
         if self.updates.is_variable_fixed(variable).is_some() && self.counters.is_variable_still_active(variable) {

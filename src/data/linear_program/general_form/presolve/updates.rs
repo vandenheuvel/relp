@@ -556,5 +556,5 @@ where
             upper_bound.ok_or(LinearProgramType::Unbounded)
         },
         (_, Ordering::Equal) => panic!("Should not be called if there is no cost"),
-    }.map(OF::clone)
+    }.cloned()
 }

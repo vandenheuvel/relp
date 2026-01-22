@@ -376,11 +376,10 @@ fn compute_ranges<F: PartialEq>(
             let values = rhss.iter().flat_map(|rhs| rhs.values.iter())
                 .filter_map(|(i, v)| if *i == duplicate { Some(v) } else { None })
                 .collect::<Vec<_>>();
-            if let Some(first) = values.first() {
-                if values.iter().any(|v| v != first) {
+            if let Some(first) = values.first()
+                && values.iter().any(|v| v != first) {
                     return Err(Inconsistency::new("Multiple rhs values for a constraint with a range"));
                 }
-            }
         }
     }
 

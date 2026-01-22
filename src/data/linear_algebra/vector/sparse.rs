@@ -55,7 +55,7 @@ impl<F, C> Sparse<F, C>
 where
     F: ColumnNumber,
 {
-    pub fn iter(&self) -> SparseSliceIterator<F> {
+    pub fn iter(&self) -> SparseSliceIterator<'_, F> {
         SparseSliceIterator::new(&self.data)
     }
 }
@@ -157,11 +157,11 @@ where
         self.len -= indices.len();
     }
 
-    fn iter(&self) -> Iter<Self::Inner> {
+    fn iter(&self) -> Iter<'_, Self::Inner> {
         self.data.iter()
     }
 
-    fn iter_mut(&mut self) -> IterMut<Self::Inner> {
+    fn iter_mut(&mut self) -> IterMut<'_, Self::Inner> {
         self.data.iter_mut()
     }
 
@@ -276,7 +276,7 @@ where
             if j < other.data.len() && i == other.data[j].0 {
                 let new_value = value + &other.data[j].1 * multiple;
                 if new_value.is_not_zero() {
-                    new_tuples.push((i, new_value.into()));
+                    new_tuples.push((i, new_value));
                 }
                 j += 1;
             } else {

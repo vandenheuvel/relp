@@ -91,8 +91,8 @@ where
             &mut most_meaningful_change,
         )?;
 
-        if apply_variable_part {
-            if let Some(right_hand_side) = self.can_variable_rule_be_applied(constraint, direction) {
+        if apply_variable_part
+            && let Some(right_hand_side) = self.can_variable_rule_be_applied(constraint, direction) {
                 self.variable_part(
                     constraint,
                     right_hand_side,
@@ -101,7 +101,6 @@ where
                     &mut most_meaningful_change,
                 );
             }
-        }
 
         if remove_constraint {
             self.remove_constraint_values(constraint)?;

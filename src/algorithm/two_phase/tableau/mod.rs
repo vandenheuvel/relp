@@ -289,7 +289,7 @@ where
 
         // (chosen index, minimum ratio, corresponding leaving_column (for Bland's algorithm))
         let mut min_values: Option<(usize, IM::F, usize)> = None;
-        for (row, xij) in SparseSliceIterator::new(&column) {
+        for (row, xij) in SparseSliceIterator::new(column) {
             if xij > &IM::F::zero() {
                 let ratio = self.inverse_maintainer.get_constraint_value(row) / xij;
                 // Bland's anti cycling algorithm

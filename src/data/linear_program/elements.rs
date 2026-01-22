@@ -188,14 +188,11 @@ pub enum LinearProgramType<F> {
 /// Direction of optimization.
 #[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum Objective {
     Maximize,
+    #[default]
     Minimize,
-}
-impl Default for Objective {
-    fn default() -> Self {
-        Objective::Minimize
-    }
 }
 
 #[cfg(test)]

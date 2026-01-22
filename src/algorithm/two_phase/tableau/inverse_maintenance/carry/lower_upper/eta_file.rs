@@ -30,8 +30,8 @@ where
     /// * `len`: Dimension of the matrix.
     pub fn new(values: Vec<(usize, F)>, pivot: usize, len: usize) -> Self {
         debug_assert!(values.windows(2).all(|w| w[0].0 < w[1].0));
-        debug_assert!(values.first().map_or(true, |&(i, _)| i > pivot));
-        debug_assert!(values.last().map_or(true, |&(i, _)| i < len));
+        debug_assert!(values.first().is_none_or(|&(i, _)| i > pivot));
+        debug_assert!(values.last().is_none_or(|&(i, _)| i < len));
         debug_assert!(pivot < len);
 
         Self {
@@ -48,7 +48,7 @@ where
     /// * `vector`: Sparse vector of size `self.len`.
     pub fn apply_left(&self, vector: &mut Vec<(usize, F)>) {
         debug_assert!(vector.windows(2).all(|w| w[0].0 < w[1].0));
-        debug_assert!(vector.last().map_or(true, |&(i, _)| i < self.len));
+        debug_assert!(vector.last().is_none_or(|&(i, _)| i < self.len));
 
         let pivot_index = vector.binary_search_by_key(&self.pivot, |&(i, _)| i);
         if let Ok(pivot_index) = pivot_index {
@@ -71,7 +71,7 @@ where
     /// * `vector`: Sparse vector of size `self.len`.
     pub fn apply_right(&self, vector: &mut Vec<(usize, F)>) {
         debug_assert!(vector.windows(2).all(|w| w[0].0 < w[1].0));
-        debug_assert!(vector.last().map_or(true, |&(i, _)| i < self.len));
+        debug_assert!(vector.last().is_none_or(|&(i, _)| i < self.len));
 
         // We don't modify `vector` below this index
         let pivot_index = vector.binary_search_by_key(&self.pivot, |&(i, _)| i);

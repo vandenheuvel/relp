@@ -220,7 +220,7 @@ where
         remove_indices(&mut self.rows, indices);
         // Remove the columns
         for element in &mut self.rows {
-            element.remove_indices(&indices);
+            element.remove_indices(indices);
         }
 
         self.rows.iter().all(|row| row.len() == self.rows.len());

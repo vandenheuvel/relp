@@ -149,12 +149,12 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     }
 
     /// Iterate over the values of this vector.
-    fn iter(&self) -> Iter<Self::Inner> {
+    fn iter(&self) -> Iter<'_, Self::Inner> {
         self.data.iter()
     }
 
     /// Iterate over the values of this vector mutably.
-    fn iter_mut(&mut self) -> IterMut<Self::Inner> {
+    fn iter_mut(&mut self) -> IterMut<'_, Self::Inner> {
         self.data.iter_mut()
     }
 

@@ -619,13 +619,13 @@ where
                 } else { None };
 
                 let mut get_bound = |bound: Option<&R>| {
-                    bound.map(|value| {
+                    bound.and_then(|value| {
                         if value.is_not_zero() {
                             let NonZeroFactorization { factors, .. } = value.factorize();
                             add(&factors);
                             Some(factors)
                         } else { None }
-                    }).flatten()
+                    })
                 };
                 let lower_bound = get_bound(variable.lower_bound.as_ref());
                 let upper_bound = get_bound(variable.upper_bound.as_ref());
