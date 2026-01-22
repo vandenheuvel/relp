@@ -3,7 +3,6 @@
 //! Linear programs are solved using the Simplex Method as described in the book Combinatorial
 //! Optimization by Christos H. Papadimitriou and Kenneth Steiglitz.
 #![warn(missing_docs)]
-
 #![allow(incomplete_features)]
 #![feature(specialization)]
 #![feature(type_alias_impl_trait)]

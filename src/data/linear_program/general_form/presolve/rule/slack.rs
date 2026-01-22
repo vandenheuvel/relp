@@ -2,14 +2,14 @@
 //!
 //! Triggered when there is only a single constraint in a variable and it does not appear in the
 //! objective function.
-use relp_num::{OrderedField, OrderedFieldRef};
 use relp_num::NonZeroSign;
+use relp_num::{OrderedField, OrderedFieldRef};
 
 use crate::data::linear_algebra::traits::SparseElement;
-use crate::data::linear_program::elements::{BoundDirection, LinearProgramType};
 use crate::data::linear_program::elements::RangedConstraintRelation;
-use crate::data::linear_program::general_form::presolve::Index;
+use crate::data::linear_program::elements::{BoundDirection, LinearProgramType};
 use crate::data::linear_program::general_form::RemovedVariable;
+use crate::data::linear_program::general_form::presolve::Index;
 
 impl<'a, OF> Index<'a, OF>
 where
@@ -63,20 +63,23 @@ where
     ///
     /// * `variable_index`: Index of variable that should be removed if it is a slack with suitable
     /// bounds.
-    pub (in crate::data::linear_program::general_form::presolve) fn presolve_slack(
+    pub(in crate::data::linear_program::general_form::presolve) fn presolve_slack(
         &mut self,
         variable: usize,
     ) -> Result<(), LinearProgramType<OF>> {
-        use RangedConstraintRelation::{Less, Equal, Greater, Range};
-        use NonZeroSign::{Positive, Negative};
+        use NonZeroSign::{Negative, Positive};
+        use RangedConstraintRelation::{Equal, Greater, Less, Range};
         debug_assert_eq!(self.counters.variable[variable], 1);
         debug_assert_eq!(self.counters.iter_active_column(variable).count(), 1);
         debug_assert_eq!(self.general_form.variables[variable].cost, OF::zero());
         debug_assert!(self.updates.is_variable_fixed(variable).is_none());
 
-        let (constraint, coefficient) = self.counters.iter_active_column(variable)
+        let (constraint, coefficient) = self
+            .counters
+            .iter_active_column(variable)
             // Only coefficient in the problem
-            .next().unwrap();
+            .next()
+            .unwrap();
         // TODO(ARCHITECTURE): This clone is necessary because the borrow can't be split enough.
         let coefficient = coefficient.clone();
         let constraint_type = self.updates.constraint_type(constraint);
@@ -93,18 +96,24 @@ where
         // negative)
         let (new_constraint_type, bound) = match (constraint_type, bounds, coefficient_sign) {
             // Remove both row and column
-            (Greater, (Some(_), None), Positive) | (Less, (None, Some(_)), Positive) |
-            (Less, (Some(_), None), Negative) | (Greater, (None, Some(_)), Negative) |
-            (_, (None, None), _) => {
+            (Greater, (Some(_), None), Positive)
+            | (Less, (None, Some(_)), Positive)
+            | (Less, (Some(_), None), Negative)
+            | (Greater, (None, Some(_)), Negative)
+            | (_, (None, None), _) => {
                 // Remove also the row, 2 * (1 + 1 + 3) = 10 cases
 
                 // The order of the calls below is a bit critical because of the strict assumptions
                 // they make about the state of counters, updates etc.
 
-                let solution = self.compute_removed_variable_solution(constraint, variable, &coefficient);
+                let solution =
+                    self.compute_removed_variable_solution(constraint, variable, &coefficient);
 
-                let variables_to_scan = self.counters.iter_active_row(constraint)
-                    .map(|(j, _)| j).collect::<Vec<_>>();
+                let variables_to_scan = self
+                    .counters
+                    .iter_active_row(constraint)
+                    .map(|(j, _)| j)
+                    .collect::<Vec<_>>();
                 for other_variable in variables_to_scan {
                     self.counters.constraint[constraint] -= 1;
                     self.counters.variable[other_variable] -= 1;
@@ -117,44 +126,60 @@ where
                 self.remove_constraint(constraint);
 
                 return Ok(());
-            },
+            }
             // All cases below remove the column only
             (Equal, (Some(lower), Some(upper)), Positive) => {
                 // <a, x> =c(u-l)= b - cl
                 // `upper` and `lower` are not equal, because then the variable would have been
                 // substituted already as a fixed variable.
-                (RangedConstraintRelation::Range(&coefficient * (upper - &lower)), lower)
-            },
+                (
+                    RangedConstraintRelation::Range(&coefficient * (upper - &lower)),
+                    lower,
+                )
+            }
             (Equal, (Some(lower), Some(upper)), Negative) => {
                 // <a, x> =c(l-u)= b - cu
                 // `upper` and `lower` are not equal, because then the variable would have been
                 // substituted already as a fixed variable.
-                (RangedConstraintRelation::Range(&coefficient * (lower - &upper)), upper)
+                (
+                    RangedConstraintRelation::Range(&coefficient * (lower - &upper)),
+                    upper,
+                )
             }
-            (Less | Equal | Range(_), (Some(bound), None), Positive) | (Less, (Some(bound), Some(_)), Positive) => {
+            (Less | Equal | Range(_), (Some(bound), None), Positive)
+            | (Less, (Some(bound), Some(_)), Positive) => {
                 // <a, x> <= b - cl
                 (RangedConstraintRelation::Less, bound)
-            },
-            (Equal | Greater | Range(_), (None, Some(bound)), Positive) | (Greater, (Some(_), Some(bound)), Positive) => {
+            }
+            (Equal | Greater | Range(_), (None, Some(bound)), Positive)
+            | (Greater, (Some(_), Some(bound)), Positive) => {
                 // <a, x> >= b - cu
                 (RangedConstraintRelation::Greater, bound)
-            },
-            (Equal | Greater | Range(_), (Some(bound), None), Negative) | (Greater, (Some(bound), Some(_)), Negative) => {
+            }
+            (Equal | Greater | Range(_), (Some(bound), None), Negative)
+            | (Greater, (Some(bound), Some(_)), Negative) => {
                 // <a, x> >= b - cl
                 (RangedConstraintRelation::Greater, bound)
-            },
-            (Less | Equal | Range(_), (None, Some(bound)), Negative) | (Less, (Some(_), Some(bound)), Negative) => {
+            }
+            (Less | Equal | Range(_), (None, Some(bound)), Negative)
+            | (Less, (Some(_), Some(bound)), Negative) => {
                 // <a, x> <= b - cu
                 (RangedConstraintRelation::Less, bound)
-            },
+            }
             (Range(range), (Some(lower), Some(upper)), Positive) => {
                 // <a, x> =r + c(u-l)= b - cl
-                (RangedConstraintRelation::Range(range + &coefficient * (upper - &lower)), lower)
-            },
+                (
+                    RangedConstraintRelation::Range(range + &coefficient * (upper - &lower)),
+                    lower,
+                )
+            }
             (Range(range), (Some(lower), Some(upper)), Negative) => {
                 // <a, x> =r + c(l-u)= b - cu
-                (RangedConstraintRelation::Range(range + &coefficient * (lower - &upper)), upper)
-            },
+                (
+                    RangedConstraintRelation::Range(range + &coefficient * (lower - &upper)),
+                    upper,
+                )
+            }
         };
 
         let change = -&coefficient * &bound;
@@ -173,7 +198,9 @@ where
         self.queue_constraint_by_counter(constraint).map(|_| ())?;
 
         self.updates.change_b(constraint, change);
-        self.updates.constraints.insert(constraint, new_constraint_type);
+        self.updates
+            .constraints
+            .insert(constraint, new_constraint_type);
 
         Ok(())
     }
@@ -184,17 +211,27 @@ where
         bounds: (bool, bool),
         coefficient_sign: NonZeroSign,
     ) {
-        use NonZeroSign::{Positive, Negative};
-        if matches!((bounds, coefficient_sign), ((true, _), Positive) | ((_, true), Negative)) {
+        use NonZeroSign::{Negative, Positive};
+        if matches!(
+            (bounds, coefficient_sign),
+            ((true, _), Positive) | ((_, true), Negative)
+        ) {
             self.counters.activity[constraint].0 -= 1;
             if self.counters.activity[constraint].0 <= 1 {
-                self.queues.activity.push((constraint, BoundDirection::Lower));
+                self.queues
+                    .activity
+                    .push((constraint, BoundDirection::Lower));
             }
         }
-        if matches!((bounds, coefficient_sign), ((_, true), Positive) | ((true, _), Negative)) {
+        if matches!(
+            (bounds, coefficient_sign),
+            ((_, true), Positive) | ((true, _), Negative)
+        ) {
             self.counters.activity[constraint].1 -= 1;
             if self.counters.activity[constraint].1 <= 1 {
-                self.queues.activity.push((constraint, BoundDirection::Upper));
+                self.queues
+                    .activity
+                    .push((constraint, BoundDirection::Upper));
             }
         }
     }
@@ -206,12 +243,20 @@ where
         coefficient: &OF,
     ) -> RemovedVariable<OF> {
         let constant = self.updates.b(constraint) / coefficient;
-        let coefficients = self.counters.iter_active_row(constraint)
+        let coefficients = self
+            .counters
+            .iter_active_row(constraint)
             .filter(|&(j, _)| j != variable)
             .map(|(j, other_coefficient)| {
-                (self.general_form.from_active_to_original[j], other_coefficient / coefficient)
+                (
+                    self.general_form.from_active_to_original[j],
+                    other_coefficient / coefficient,
+                )
             })
             .collect();
-        RemovedVariable::FunctionOfOthers { constant, coefficients, }
+        RemovedVariable::FunctionOfOthers {
+            constant,
+            coefficients,
+        }
     }
 }

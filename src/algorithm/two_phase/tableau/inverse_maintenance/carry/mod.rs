@@ -4,19 +4,23 @@
 //! the ability to use a different basis inverse representation.
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use std::fmt::{Debug, Display, Formatter};
 use std::fmt;
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::Neg;
 
 use index_utils::remove_indices;
 use relp_num::{NonZero, Signed};
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnIterator, ColumnNumber, SparseColumn, SparseSliceIterator};
-use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
-use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
+use crate::algorithm::two_phase::matrix_provider::column::{
+    Column, ColumnIterator, ColumnNumber, SparseColumn, SparseSliceIterator,
+};
+use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
 use crate::algorithm::two_phase::tableau::BasisChangeComputationInfo;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintainer, ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{
+    ColumnComputationInfo, InverseMaintainer, ops,
+};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::Element;
@@ -86,10 +90,9 @@ pub trait BasisInverse: Display {
     ///
     /// Note that the implementor can choose to internally permute the columns in order to improve
     /// sparsity.
-    fn invert<C: Column>(columns: impl ExactSizeIterator<Item=C>) -> Self
+    fn invert<C: Column>(columns: impl ExactSizeIterator<Item = C>) -> Self
     where
-        Self::F: ops::Column<C::F>,
-    ;
+        Self::F: ops::Column<C::F>;
 
     /// Update the basis by replacing a basis column.
     ///
@@ -123,19 +126,18 @@ pub trait BasisInverse: Display {
         column: I,
     ) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<I::F>,
-    ;
+        Self::F: ops::Column<I::F>;
 
     /// Multiply a row vector with the basis inverse matrix from the right.
     ///
     /// This is the same as multiplying with the transpose of the basis inverse matrix from the left
     /// when you consider the input vector a column vector: B^-T v = (v^T B^-1)^T.
     fn right_multiply_by_basis_inverse<'a, I: ColumnIterator<'a>>(
-        &self, row: I,
+        &self,
+        row: I,
     ) -> SparseVector<Self::F, Self::F>
     where
-        Self::F: ops::Column<I::F>
-    ;
+        Self::F: ops::Column<I::F>;
 
     /// Generate a single element in the tableau with respect to the current basis.
     ///
@@ -151,8 +153,7 @@ pub trait BasisInverse: Display {
         original_column: I,
     ) -> Option<Self::F>
     where
-        Self::F: ops::Column<I::F>,
-    ;
+        Self::F: ops::Column<I::F>;
 
     /// Whether this basis inverse should be recomputed.
     ///
@@ -182,7 +183,7 @@ pub trait RemoveBasisPart: BasisInverse {
 impl<F, BI> Carry<F, BI>
 where
     F: ops::Field + ops::FieldHR,
-    BI: BasisInverse<F=F>,
+    BI: BasisInverse<F = F>,
 {
     /// Create a `Carry` for a tableau with a known basis inverse.
     ///
@@ -292,15 +293,12 @@ where
     /// # Note
     ///
     /// This method requires a normalized pivot element.
-    fn update_b(
-        &mut self,
-        pivot_row_index: usize,
-        column: &SparseVector<F, F>,
-    ) {
+    fn update_b(&mut self, pivot_row_index: usize, column: &SparseVector<F, F>) {
         debug_assert!(pivot_row_index < self.m());
         debug_assert_eq!(Vector::len(column), self.m());
 
-        let pivot_value = column.get(pivot_row_index)
+        let pivot_value = column
+            .get(pivot_row_index)
             .expect("Pivot value can't be zero.");
 
         // First normalize the pivot index
@@ -315,8 +313,8 @@ where
             match edit_row_index.cmp(&pivot_row_index) {
                 Ordering::Less => {
                     b_left[edit_row_index] -= column_value * &*b_middle;
-                },
-                Ordering::Equal => {},
+                }
+                Ordering::Equal => {}
                 Ordering::Greater => {
                     b_right[edit_row_index - (pivot_row_index + 1)] -= column_value * &*b_middle;
                 }
@@ -366,14 +364,12 @@ where
 impl<F, BI> InverseMaintainer for Carry<F, BI>
 where
     F: ops::Field + ops::FieldHR + Signed,
-    BI: BasisInverse<F=F>,
+    BI: BasisInverse<F = F>,
 {
     type F = F;
     type ColumnComputationInfo = BI::ColumnComputationInfo;
 
-    fn create_for_fully_artificial<Rhs: Element>(
-        b: DenseVector<Rhs>
-    ) -> Self
+    fn create_for_fully_artificial<Rhs: Element>(b: DenseVector<Rhs>) -> Self
     where
         Self::F: ops::Rhs<Rhs>,
     {
@@ -404,11 +400,14 @@ where
         Self::F: ops::Rhs<Rhs>,
     {
         let m = b.len();
-        debug_assert_eq!(artificial_rows.len() + free_basis_values.len(), m);  // Correct sizes
-        let merged = artificial_rows.iter().copied()
-            .chain(free_basis_values.iter().map(|&(i, _)| i)).collect::<HashSet<_>>();
-        debug_assert!(merged.iter().all(|&i| i < m));  // Correct range
-        debug_assert_eq!(merged.len(), m);  // Uniqueness
+        debug_assert_eq!(artificial_rows.len() + free_basis_values.len(), m); // Correct sizes
+        let merged = artificial_rows
+            .iter()
+            .copied()
+            .chain(free_basis_values.iter().map(|&(i, _)| i))
+            .collect::<HashSet<_>>();
+        debug_assert!(merged.iter().all(|&i| i < m)); // Correct range
+        debug_assert_eq!(merged.len(), m); // Uniqueness
 
         // Initial value of zero is the value that the objective value has when a feasible solution
         // is reached.
@@ -422,14 +421,16 @@ where
         // Only the artificial columns "had a cost to them" before they were added to the basis.
         // Putting elements in the basis also influences the minus_pi field.
         let mut counter = 0;
-        let minus_pi_values = (0..m).map(|row| {
-            if counter < artificial_rows.len() && artificial_rows[counter] == row {
-                counter += 1;
-                -Self::F::one()
-            } else {
-                Self::F::zero()
-            }
-        }).collect();
+        let minus_pi_values = (0..m)
+            .map(|row| {
+                if counter < artificial_rows.len() && artificial_rows[counter] == row {
+                    counter += 1;
+                    -Self::F::one()
+                } else {
+                    Self::F::zero()
+                }
+            })
+            .collect();
 
         Self {
             minus_objective: -objective,
@@ -443,24 +444,27 @@ where
 
     fn from_basis<'a, MP: MatrixProvider>(basis: &[usize], provider: &'a MP) -> Self
     where
-        Self::F:
-            ops::Column<<MP::Column as Column>::F> +
-            ops::Rhs<MP::Rhs> +
-            ops::Cost<MP::Cost<'a>> +
-            ops::Column<MP::Rhs> +
-        ,
+        Self::F: ops::Column<<MP::Column as Column>::F>
+            + ops::Rhs<MP::Rhs>
+            + ops::Cost<MP::Cost<'a>>
+            + ops::Column<MP::Rhs>,
         MP::Rhs: 'static,
     {
         let basis_inverse = BI::invert(basis.iter().map(|&j| provider.column(j)));
 
-        let b_data = provider.right_hand_side()
-            .into_iter().enumerate()
+        let b_data = provider
+            .right_hand_side()
+            .into_iter()
+            .enumerate()
             .filter(|(_, v)| v.is_not_zero())
             .collect::<Vec<_>>();
         let b_column = SparseColumn::new(b_data);
         let mut b_values = vec![F::zero(); provider.nr_rows()];
-        for (i, v) in basis_inverse.left_multiply_by_basis_inverse(b_column.iter())
-            .into_column().into_iter() {
+        for (i, v) in basis_inverse
+            .left_multiply_by_basis_inverse(b_column.iter())
+            .into_column()
+            .into_iter()
+        {
             b_values[i] = v;
         }
         let b = DenseVector::new(b_values, provider.nr_rows());
@@ -482,17 +486,18 @@ where
         provider: &'a MP,
     ) -> Self
     where
-        Self::F:
-            ops::Column<<MP::Column as Column>::F> +
-            ops::Rhs<MP::Rhs> +
-            ops::Cost<MP::Cost<'a>> +
-            ops::Column<MP::Rhs> +
-        ,
+        Self::F: ops::Column<<MP::Column as Column>::F>
+            + ops::Rhs<MP::Rhs>
+            + ops::Cost<MP::Cost<'a>>
+            + ops::Column<MP::Rhs>,
         MP::Rhs: 'static + ColumnNumber,
     {
         let mut elements = Vec::from(basis_columns);
         elements.sort_by_key(|&(row, _)| row);
-        let columns = elements.into_iter().map(|(_, column)| column).collect::<Vec<_>>();
+        let columns = elements
+            .into_iter()
+            .map(|(_, column)| column)
+            .collect::<Vec<_>>();
         Self::from_basis(&columns, provider)
     }
 
@@ -521,7 +526,13 @@ where
             &artificial.b,
         );
 
-        Self::new(minus_objective, minus_pi, artificial.b, artificial.basis_indices, artificial.basis_inverse)
+        Self::new(
+            minus_objective,
+            minus_pi,
+            artificial.b,
+            artificial.basis_indices,
+            artificial.basis_inverse,
+        )
     }
 
     default fn from_artificial_remove_rows<'provider, MP: Filtered>(
@@ -530,16 +541,25 @@ where
         nr_artificial: usize,
     ) -> Self
     where
-        Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>,
+        Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F>
+            + ops::Cost<MP::Cost<'provider>>,
     {
-        debug_assert_eq!(artificial.basis_indices.len(), rows_removed.nr_rows() + rows_removed.filtered_rows().len());
+        debug_assert_eq!(
+            artificial.basis_indices.len(),
+            rows_removed.nr_rows() + rows_removed.filtered_rows().len()
+        );
 
         remove_indices(&mut artificial.basis_indices, rows_removed.filtered_rows());
         for basis_column in &mut artificial.basis_indices {
             *basis_column -= nr_artificial;
         }
 
-        let basis_inverse = BI::invert(artificial.basis_indices.iter().map(|&j| rows_removed.column(j)));
+        let basis_inverse = BI::invert(
+            artificial
+                .basis_indices
+                .iter()
+                .map(|&j| rows_removed.column(j)),
+        );
 
         let minus_pi = Carry::create_minus_pi_from_artificial(
             &basis_inverse,
@@ -555,7 +575,13 @@ where
             &artificial.b,
         );
 
-        Self::new(minus_obj, minus_pi, artificial.b, artificial.basis_indices, basis_inverse)
+        Self::new(
+            minus_obj,
+            minus_pi,
+            artificial.b,
+            artificial.basis_indices,
+            basis_inverse,
+        )
     }
 
     fn change_basis<K: Kind>(
@@ -582,12 +608,12 @@ where
         self.basis_indices[pivot_row_index] = pivot_column_index;
 
         let column_before_change = if self.basis_inverse.should_refactor() {
-            self.basis_inverse = BI::invert(
-                self.basis_indices.iter().map(|&j| kind.original_column(j)),
-            );
+            self.basis_inverse =
+                BI::invert(self.basis_indices.iter().map(|&j| kind.original_column(j)));
             column_computation_info.into_column()
         } else {
-            self.basis_inverse.change_basis(pivot_row_index, column_computation_info)
+            self.basis_inverse
+                .change_basis(pivot_row_index, column_computation_info)
         };
 
         let basis_inverse_row = self.basis_inverse.basis_inverse_row(pivot_row_index);
@@ -610,31 +636,28 @@ where
         self.minus_pi.sparse_inner_product(original_column.iter())
     }
 
-    fn generate_column<C: Column>(
-        &self,
-        original_column: C,
-    ) -> Self::ColumnComputationInfo
+    fn generate_column<C: Column>(&self, original_column: C) -> Self::ColumnComputationInfo
     where
         Self::F: ops::Column<C::F>,
     {
-        self.basis_inverse.left_multiply_by_basis_inverse(original_column.iter())
+        self.basis_inverse
+            .left_multiply_by_basis_inverse(original_column.iter())
     }
 
-    fn generate_element<C: Column>(
-        &self,
-        i: usize,
-        original_column: C,
-    ) -> Option<Self::F>
+    fn generate_element<C: Column>(&self, i: usize, original_column: C) -> Option<Self::F>
     where
         Self::F: ops::Column<C::F>,
     {
         debug_assert!(i < self.m());
 
-        self.basis_inverse.generate_element(i, original_column.iter())
+        self.basis_inverse
+            .generate_element(i, original_column.iter())
     }
 
     fn current_bfs(&self) -> Vec<SparseTuple<Self::F>> {
-        let mut tuples = self.b.iter()
+        let mut tuples = self
+            .b
+            .iter()
             .enumerate()
             .map(|(i, v)| (self.basis_column_index_for_row(i), v))
             .filter(|(_, v)| v.is_not_zero())
@@ -668,7 +691,7 @@ where
 impl<F, BI> InverseMaintainer for Carry<F, BI>
 where
     F: ops::Field + ops::FieldHR + Signed,
-    BI: BasisInverse<F=F> + RemoveBasisPart,
+    BI: BasisInverse<F = F> + RemoveBasisPart,
 {
     fn from_artificial_remove_rows<'provider, MP: Filtered>(
         mut artificial: Self,
@@ -676,9 +699,13 @@ where
         nr_artificial: usize,
     ) -> Self
     where
-        Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>,
+        Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F>
+            + ops::Cost<MP::Cost<'provider>>,
     {
-        debug_assert_eq!(artificial.basis_indices.len(), rows_removed.nr_rows() + rows_removed.filtered_rows().len());
+        debug_assert_eq!(
+            artificial.basis_indices.len(),
+            rows_removed.nr_rows() + rows_removed.filtered_rows().len()
+        );
 
         remove_indices(&mut artificial.basis_indices, rows_removed.filtered_rows());
         debug_assert_eq!(artificial.basis_indices.len(), rows_removed.nr_rows());
@@ -686,7 +713,9 @@ where
             *basis_column -= nr_artificial;
         }
 
-        artificial.basis_inverse.remove_basis_part(rows_removed.filtered_rows());
+        artificial
+            .basis_inverse
+            .remove_basis_part(rows_removed.filtered_rows());
 
         let minus_pi = Carry::create_minus_pi_from_artificial(
             &artificial.basis_inverse,
@@ -715,7 +744,7 @@ where
 impl<F, BI> Display for Carry<F, BI>
 where
     F: ops::Field + ops::FieldHR,
-    BI: BasisInverse<F=F>,
+    BI: BasisInverse<F = F>,
 {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // writeln!(f, "Carry:\n============")?;

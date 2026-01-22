@@ -20,7 +20,7 @@ impl From<InequalityRelation> for ConstraintRelation {
     fn from(relation: InequalityRelation) -> Self {
         match relation {
             InequalityRelation::Less => Self::Less,
-            InequalityRelation::Greater => Self::Greater
+            InequalityRelation::Greater => Self::Greater,
         }
     }
 }
@@ -151,8 +151,12 @@ impl Mul<NonZeroSign> for BoundDirection {
 
     fn mul(self, other: NonZeroSign) -> Self::Output {
         match (self, other) {
-            (Self::Upper, NonZeroSign::Positive) | (Self::Lower, NonZeroSign::Negative) => Self::Upper,
-            (Self::Lower, NonZeroSign::Positive) | (Self::Upper, NonZeroSign::Negative) => Self::Lower,
+            (Self::Upper, NonZeroSign::Positive) | (Self::Lower, NonZeroSign::Negative) => {
+                Self::Upper
+            }
+            (Self::Lower, NonZeroSign::Positive) | (Self::Upper, NonZeroSign::Negative) => {
+                Self::Lower
+            }
         }
     }
 }
@@ -187,8 +191,7 @@ pub enum LinearProgramType<F> {
 
 /// Direction of optimization.
 #[allow(missing_docs)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Objective {
     Maximize,
     #[default]
@@ -203,12 +206,30 @@ mod test {
 
     #[test]
     fn test_mul() {
-        assert_eq!(BoundDirection::Lower * NonZeroSign::Positive, BoundDirection::Lower);
-        assert_eq!(BoundDirection::Upper * NonZeroSign::Positive, BoundDirection::Upper);
-        assert_eq!(!BoundDirection::Lower * NonZeroSign::Positive, BoundDirection::Upper);
+        assert_eq!(
+            BoundDirection::Lower * NonZeroSign::Positive,
+            BoundDirection::Lower
+        );
+        assert_eq!(
+            BoundDirection::Upper * NonZeroSign::Positive,
+            BoundDirection::Upper
+        );
+        assert_eq!(
+            !BoundDirection::Lower * NonZeroSign::Positive,
+            BoundDirection::Upper
+        );
 
-        assert_eq!(BoundDirection::Lower * Sign::Positive.into(), BoundDirection::Lower);
-        assert_eq!(BoundDirection::Upper * Sign::Positive.into(), BoundDirection::Upper);
-        assert_eq!(!BoundDirection::Lower * Sign::Positive.into(), BoundDirection::Upper);
+        assert_eq!(
+            BoundDirection::Lower * Sign::Positive.into(),
+            BoundDirection::Lower
+        );
+        assert_eq!(
+            BoundDirection::Upper * Sign::Positive.into(),
+            BoundDirection::Upper
+        );
+        assert_eq!(
+            !BoundDirection::Lower * Sign::Positive.into(),
+            BoundDirection::Upper
+        );
     }
 }

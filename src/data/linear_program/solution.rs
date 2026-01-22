@@ -53,8 +53,16 @@ impl<F: PartialEq + Clone> Solution<F> {
             return false;
         }
 
-        let this_map = self.solution_values.iter().cloned().collect::<HashMap<_, _>>();
-        let other_map = other.solution_values.iter().cloned().collect::<HashMap<_, _>>();
+        let this_map = self
+            .solution_values
+            .iter()
+            .cloned()
+            .collect::<HashMap<_, _>>();
+        let other_map = other
+            .solution_values
+            .iter()
+            .cloned()
+            .collect::<HashMap<_, _>>();
 
         if !{
             this_map.len() == other_map.len() && this_map.keys().all(|k| other_map.contains_key(k))

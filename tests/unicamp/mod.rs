@@ -6,15 +6,15 @@ use std::ops::{Add, AddAssign, Sub};
 use std::path::{Path, PathBuf};
 
 use num_traits::{One, Zero};
-use relp_num::{OrderedField, OrderedFieldRef, Signed};
 use relp_num::Rational64;
+use relp_num::{OrderedField, OrderedFieldRef, Signed};
 
-use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::ops as im_ops;
 use relp::algorithm::two_phase::tableau::kind::artificial::Cost;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::data::linear_algebra::traits::Element;
 use relp::data::linear_program::elements::LinearProgramType;
 use relp::data::linear_program::solution::Solution;
@@ -47,10 +47,12 @@ fn get_test_file_path(name: &str) -> PathBuf {
 fn solve<
     IMT: im_ops::Field + im_ops::FieldHR + im_ops::Column<GFT> + AddAssign<GFT> + PartialEq<GFT> + Ord,
     GFT: 'static + From<Rational64> + Zero + One + Ord + Element + OrderedField,
->(file_name: &str) -> Solution<IMT>
+>(
+    file_name: &str,
+) -> Solution<IMT>
 where
     for<'r> &'r GFT: OrderedFieldRef<GFT>,
-    for<'r> &'r IMT: Add<&'r GFT, Output=IMT> + Sub<&'r IMT, Output=IMT>,
+    for<'r> &'r IMT: Add<&'r GFT, Output = IMT> + Sub<&'r IMT, Output = IMT>,
     for<'r> IMT: im_ops::Cost<Option<&'r GFT>> + im_ops::Cost<Cost> + Signed,
 {
     let path = get_test_file_path(file_name);
@@ -60,15 +62,17 @@ where
     match general.presolve() {
         Ok(data) => data,
         Err(LinearProgramType::FiniteOptimum(Solution {
-                                                 objective_value, solution_values,
-                                             })) => {
+            objective_value,
+            solution_values,
+        })) => {
             return Solution {
                 objective_value: objective_value.into(),
-                solution_values: solution_values.into_iter()
+                solution_values: solution_values
+                    .into_iter()
                     .map(|(name, value)| (name, value.into()))
                     .collect(),
-            }
-        },
+            };
+        }
         _ => panic!(),
     }
     let constraint_type_counts = general.standardize();
@@ -79,7 +83,7 @@ where
         OptimizationResult::FiniteOptimum(vector) => {
             let reconstructed = data.reconstruct_solution(vector);
             general.compute_full_solution_with_reduced_solution::<IMT>(reconstructed)
-        },
+        }
         _ => panic!(),
     }
 }

@@ -9,8 +9,8 @@ use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_program::elements::BoundDirection;
 
 pub mod column;
-pub mod matrix_data;
 pub mod filter;
+pub mod matrix_data;
 pub mod ops;
 pub mod variable;
 
@@ -45,7 +45,9 @@ pub trait MatrixProvider {
     ///
     /// This type will often be of the form `Option<_>` so to not have to store any zero values, the
     /// inner type would never be zero in that case.
-    type Cost<'a> where Self: 'a;
+    type Cost<'a>
+    where
+        Self: 'a;
 
     /// Right hand side type.
     type Rhs: ops::Rhs;
@@ -129,6 +131,5 @@ pub trait MatrixProvider {
     /// A solution that might be smaller than the number of variables in this problem.
     fn reconstruct_solution<G>(&self, column_values: SparseVector<G, G>) -> SparseVector<G, G>
     where
-        G: SparseElement<G> + SparseComparator,
-    ;
+        G: SparseElement<G> + SparseComparator;
 }

@@ -31,10 +31,7 @@ impl RotateToBack {
     pub fn new(index: usize, len: usize) -> Self {
         debug_assert!(index < len);
 
-        Self {
-            index,
-            len,
-        }
+        Self { index, len }
     }
 }
 

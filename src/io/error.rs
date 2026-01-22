@@ -92,7 +92,9 @@ impl Error for Parse {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         if let Some(Source::Other(error)) = &self.source {
             Some(error.as_ref())
-        } else { None }
+        } else {
+            None
+        }
     }
 
     /// Describe this error.
@@ -116,7 +118,10 @@ impl Parse {
     ///
     /// * A `ParseError` instance without a cause.
     pub fn new(description: impl Into<String>) -> Self {
-        Self { description: description.into(), source: None, }
+        Self {
+            description: description.into(),
+            source: None,
+        }
     }
 
     /// Create a new `ParseError` instance with a `FileLocation` as a cause.
@@ -129,10 +134,7 @@ impl Parse {
     /// # Return value
     ///
     /// A new `ParseError` instance with a `FileLocation` cause.
-    pub fn with_location(
-        description: impl Into<String>,
-        file_location: FileLocation,
-    ) -> Self {
+    pub fn with_location(description: impl Into<String>, file_location: FileLocation) -> Self {
         let (line_number, line) = file_location;
         Self {
             description: description.into(),
@@ -171,7 +173,7 @@ impl Parse {
             match source {
                 Source::FileLocation(line_number, line) => {
                     vec![format!("Caused at line {}: \t{}", line_number, line)]
-                },
+                }
                 Source::Parse(error) => error.trace(),
                 Source::Other(error) => vec![error.to_string()],
             }
@@ -220,7 +222,9 @@ impl Inconsistency {
     ///
     /// A `LinearProgramError`.
     pub fn new(description: impl Into<String>) -> Inconsistency {
-        Inconsistency { description: description.into(), }
+        Inconsistency {
+            description: description.into(),
+        }
     }
 }
 

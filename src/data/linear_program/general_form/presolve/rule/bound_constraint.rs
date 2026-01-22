@@ -1,11 +1,13 @@
 //! # Remove a constraint that is a bound on a variable.
 //!
 //! Triggered when there is only a single variable in a constraint.
-use relp_num::{OrderedField, OrderedFieldRef};
 use relp_num::NonZeroSign;
+use relp_num::{OrderedField, OrderedFieldRef};
 
 use crate::data::linear_algebra::traits::SparseElement;
-use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, RangedConstraintRelation};
+use crate::data::linear_program::elements::{
+    BoundDirection, LinearProgramType, RangedConstraintRelation,
+};
 use crate::data::linear_program::general_form::presolve::Index;
 use crate::data::linear_program::general_form::presolve::updates::BoundChange;
 
@@ -25,12 +27,12 @@ where
     /// # Return value
     ///
     /// `Result::Err` if the linear program was determined infeasible.
-    pub (in crate::data::linear_program::general_form::presolve) fn presolve_bound_constraint(
+    pub(in crate::data::linear_program::general_form::presolve) fn presolve_bound_constraint(
         &mut self,
         constraint: usize,
     ) -> Result<(), LinearProgramType<OF>> {
-        use RangedConstraintRelation::{Equal, Range, Less, Greater};
-        use NonZeroSign::{Positive, Negative};
+        use NonZeroSign::{Negative, Positive};
+        use RangedConstraintRelation::{Equal, Greater, Less, Range};
         debug_assert_eq!(self.counters.constraint[constraint], 1);
         debug_assert_eq!(self.counters.iter_active_row(constraint).count(), 1);
 
@@ -39,17 +41,20 @@ where
 
         let bound_value = self.updates.b(constraint) / coefficient;
         let mut changes = Vec::with_capacity(2);
-        match (self.updates.constraint_type(constraint), coefficient.non_zero_signum()) {
+        match (
+            self.updates.constraint_type(constraint),
+            coefficient.non_zero_signum(),
+        ) {
             (Greater, Positive) | (Less, Negative) => {
                 changes.push((BoundDirection::Lower, bound_value));
-            },
+            }
             (Less, Positive) | (Greater, Negative) => {
                 changes.push((BoundDirection::Upper, bound_value));
-            },
+            }
             (Equal, _) => {
                 changes.push((BoundDirection::Lower, bound_value.clone()));
                 changes.push((BoundDirection::Upper, bound_value));
-            },
+            }
             (Range(range), _) => {
                 let bound1 = (self.updates.b(constraint) - range) / coefficient;
                 let bound2 = bound_value;
@@ -64,7 +69,7 @@ where
                         changes.push((BoundDirection::Upper, bound1));
                     }
                 }
-            },
+            }
         }
 
         self.counters.variable[variable] -= 1;
@@ -75,7 +80,9 @@ where
             match self.updates.update_bound(variable, direction, bound_value) {
                 BoundChange::None => {}
                 BoundChange::NewBound => self.after_bound_change(variable, direction, None),
-                BoundChange::BoundShift(shift) => self.after_bound_change(variable, direction, Some(shift)),
+                BoundChange::BoundShift(shift) => {
+                    self.after_bound_change(variable, direction, Some(shift))
+                }
             }
         }
 

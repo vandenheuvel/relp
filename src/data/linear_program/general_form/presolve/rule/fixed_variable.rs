@@ -6,8 +6,8 @@ use relp_num::{OrderedField, OrderedFieldRef};
 
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::elements::LinearProgramType;
-use crate::data::linear_program::general_form::presolve::Index;
 use crate::data::linear_program::general_form::RemovedVariable;
+use crate::data::linear_program::general_form::presolve::Index;
 
 impl<'a, OF> Index<'a, OF>
 where
@@ -23,7 +23,13 @@ where
         &mut self,
         variable: usize,
     ) -> Result<(), LinearProgramType<OF>> {
-        debug_assert!(!self.updates.removed_variables.iter().any(|&(j, _)| j == variable));
+        debug_assert!(
+            !self
+                .updates
+                .removed_variables
+                .iter()
+                .any(|&(j, _)| j == variable)
+        );
         debug_assert!(self.updates.is_variable_fixed(variable).is_some());
 
         let value = self.updates.is_variable_fixed(variable).unwrap().clone();
@@ -35,7 +41,9 @@ where
 
         // Can't combine these loops because of the reference in `coefficient` clashing with the
         // counter update.
-        let rows_to_substitute = self.counters.iter_active_column(variable)
+        let rows_to_substitute = self
+            .counters
+            .iter_active_column(variable)
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
         for constraint in rows_to_substitute {

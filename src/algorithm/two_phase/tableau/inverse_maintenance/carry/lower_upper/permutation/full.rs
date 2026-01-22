@@ -1,10 +1,10 @@
+use std::collections::HashSet;
+use std::ops::Index;
 /// # Full permutation
 ///
 /// Explicitly store both the permutation and its inverse. Used for the column and row permutation
 /// produced by the pivoting during the decomposition.
 use std::{fmt, mem};
-use std::collections::HashSet;
-use std::ops::Index;
 
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::Permutation;
 
@@ -27,17 +27,15 @@ impl Full {
         debug_assert_eq!(forward.iter().collect::<HashSet<_>>().len(), forward.len());
         debug_assert!(*forward.iter().max().unwrap() < forward.len());
 
-        let mut backward = forward.iter()
+        let mut backward = forward
+            .iter()
             .enumerate()
             .map(|(i, j)| (*j, i))
             .collect::<Vec<_>>();
         backward.sort_unstable_by_key(|&(j, _)| j);
         let backward = backward.into_iter().map(|(_, i)| i).collect();
 
-        Self {
-            forward,
-            backward,
-        }
+        Self { forward, backward }
     }
 
     /// Create a new instance that maps an index onto itself.
@@ -47,7 +45,7 @@ impl Full {
     /// * `n`: Number of elements in the permutation. Sometimes, this variable is saved as a field
     /// for debug assertions only, while sometimes, it is also necessary to determine the
     /// permutation.
-    pub fn identity(n: usize) -> Self{
+    pub fn identity(n: usize) -> Self {
         Self {
             forward: (0..n).collect(),
             backward: (0..n).collect(),

@@ -8,17 +8,4 @@ use num_traits::{One, Zero};
 use relp_num::Abs;
 
 pub trait Field =
-    Zero +
-    One +
-
-    Neg<Output=Self> +
-    Sub<Output=Self> +
-    Abs +
-
-    Eq +
-    Ord +
-
-    Debug +
-    Display +
-    Clone +
-;
+    Zero + One + Neg<Output = Self> + Sub<Output = Self> + Abs + Eq + Ord + Debug + Display + Clone;

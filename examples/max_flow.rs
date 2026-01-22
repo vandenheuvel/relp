@@ -8,21 +8,23 @@ use std::ops::{Add, Mul, Range};
 
 use index_utils::remove_sparse_indices;
 use num_traits::Zero;
-use relp_num::{Rational64, RationalBig};
 use relp_num::NonZero;
 use relp_num::One;
+use relp_num::{Rational64, RationalBig};
 
-use relp::algorithm::{OptimizationResult, SolveRelaxation};
-use relp::algorithm::two_phase::matrix_provider::column::{Column as ColumnTrait, SparseSliceIterator};
-use relp::algorithm::two_phase::matrix_provider::column::identity::Identity;
-use relp::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use relp::algorithm::two_phase::matrix_provider::column::identity::Identity;
+use relp::algorithm::two_phase::matrix_provider::column::{
+    Column as ColumnTrait, SparseSliceIterator,
+};
+use relp::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
 use relp::algorithm::two_phase::phase_one::PartialInitialBasis;
-use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use relp::data::linear_algebra::matrix::{ColumnMajor, SparseMatrix};
-use relp::data::linear_algebra::matrix::MatrixOrder;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::data::linear_algebra::SparseTuple;
+use relp::data::linear_algebra::matrix::MatrixOrder;
+use relp::data::linear_algebra::matrix::{ColumnMajor, SparseMatrix};
 use relp::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use relp::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use relp::data::linear_program::elements::BoundDirection;
@@ -51,11 +53,7 @@ impl<F> Primal<F>
 where
     F: SparseElement<F> + SparseComparator,
 {
-    pub fn new(
-        adjacency_matrix: SparseMatrix<F, F, ColumnMajor>,
-        s: usize,
-        t: usize,
-    ) -> Self {
+    pub fn new(adjacency_matrix: SparseMatrix<F, F, ColumnMajor>, s: usize, t: usize) -> Self {
         let nr_vertices = adjacency_matrix.nr_columns();
         debug_assert!(s < nr_vertices && t < nr_vertices);
 
@@ -91,7 +89,7 @@ struct Column {
 
 impl ColumnTrait for Column {
     type F = ArcDirection;
-    type Iter<'a> = impl Iterator<Item=SparseTuple<&'a Self::F>> + Clone;
+    type Iter<'a> = impl Iterator<Item = SparseTuple<&'a Self::F>> + Clone;
 
     fn iter(&self) -> Self::Iter<'_> {
         SparseSliceIterator::new(&self.constraint_values)
@@ -114,7 +112,7 @@ impl Identity for Column {
     fn identity(i: usize, _len: usize) -> Self {
         Self {
             constraint_values: Vec::with_capacity(0),
-            slack: (i, ArcDirection::Incoming)
+            slack: (i, ArcDirection::Incoming),
         }
     }
 }
@@ -131,7 +129,7 @@ impl IntoFilteredColumn for Column {
 
 impl IntoIterator for Column {
     type Item = SparseTuple<ArcDirection>;
-    type IntoIter = impl Iterator<Item=Self::Item>;
+    type IntoIter = impl Iterator<Item = Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.constraint_values.into_iter().chain(once(self.slack))
@@ -143,7 +141,10 @@ where
     F: SparseElement<F> + Zero + Eq + NonZero,
 {
     type Column = Column;
-    type Cost<'a> = Cost where Self: 'a;
+    type Cost<'a>
+        = Cost
+    where
+        Self: 'a;
     type Rhs = F;
 
     fn column(&self, j: usize) -> Self::Column {
@@ -157,7 +158,10 @@ where
         } else {
             Column {
                 constraint_values: Vec::with_capacity(0),
-                slack: (self.nr_constraints() + j - self.nr_edges(), ArcDirection::Incoming)
+                slack: (
+                    self.nr_constraints() + j - self.nr_edges(),
+                    ArcDirection::Incoming,
+                ),
             }
         }
     }
@@ -183,11 +187,13 @@ where
 
         match bound_type {
             BoundDirection::Lower => None,
-            BoundDirection::Upper => if j < self.nr_edges() {
-                Some(self.nr_constraints() + j)
-            } else {
-                None
-            },
+            BoundDirection::Upper => {
+                if j < self.nr_edges() {
+                    Some(self.nr_constraints() + j)
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -214,7 +220,9 @@ where
     F: SparseElement<F> + Zero + Eq + NonZero,
 {
     fn pivot_element_indices(&self) -> Vec<(usize, usize)> {
-        (0..self.nr_edges()).map(|j| (j + self.nr_constraints(), self.nr_edges() + j)).collect()
+        (0..self.nr_edges())
+            .map(|j| (j + self.nr_constraints(), self.nr_edges() + j))
+            .collect()
     }
 
     fn nr_initial_elements(&self) -> usize {
@@ -228,9 +236,7 @@ impl Add<Cost> for RationalBig {
     fn add(self, rhs: Cost) -> Self::Output {
         match rhs {
             Cost::Zero => self,
-            Cost::MinusOne => {
-                self - One
-            }
+            Cost::MinusOne => self - One,
         }
     }
 }
@@ -262,14 +268,17 @@ fn main() {
     type S = RationalBig;
 
     // Example from Papadimitriou's Combinatorial Optimization.
-    let data = ColumnMajor::from_test_data::<T, T, _>(&vec![
-        // Directed; from is top, to is on the right
-        //   s  a  b  t
-        vec![0, 0, 0, 0], // s
-        vec![2, 0, 0, 0], // a
-        vec![1, 1, 0, 0], // b
-        vec![0, 1, 2, 0], // t
-    ], 4);
+    let data = ColumnMajor::from_test_data::<T, T, _>(
+        &vec![
+            // Directed; from is top, to is on the right
+            //   s  a  b  t
+            vec![0, 0, 0, 0], // s
+            vec![2, 0, 0, 0], // a
+            vec![1, 1, 0, 0], // b
+            vec![0, 1, 2, 0], // t
+        ],
+        4,
+    );
     let problem = Primal::new(data, 0, 3);
 
     SolveRelaxation::solve_relaxation::<Carry<S, BasisInverseRows<S>>>(&problem);
@@ -277,7 +286,10 @@ fn main() {
     assert_eq!(
         problem.solve_relaxation::<Carry<S, BasisInverseRows<S>>>(),
         OptimizationResult::FiniteOptimum(
-            [2, 1, 1, 1, 2, 0, 0, 0, 0, 0].iter().map(|&v| RationalBig::from(v)).collect()
+            [2, 1, 1, 1, 2, 0, 0, 0, 0, 0]
+                .iter()
+                .map(|&v| RationalBig::from(v))
+                .collect()
         ),
     );
 }

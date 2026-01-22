@@ -3,14 +3,14 @@
 //! Reading of `.mps` files, or files of the Mathematical Programming System format.
 //!
 //! See <http://lpsolve.sourceforge.net/5.5/mps-format.htm> for a specification.
-use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::fmt::{Display, Formatter};
 
 use relp_num::Rational64;
 
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
-use crate::data::linear_program::elements::{ConstraintRelation, Objective};
 use crate::data::linear_program::elements::VariableType;
+use crate::data::linear_program::elements::{ConstraintRelation, Objective};
 use crate::io::error::Import;
 
 #[allow(clippy::type_complexity)]
@@ -38,9 +38,7 @@ pub use parse::{parse_fixed, parse_free};
 ///
 /// An Import error, wrapping either a parse error indicating that the file was syntactically
 /// incorrect, or an Inconsistency error indicating that the file is "logically" incorrect.
-pub fn parse(
-    program: &impl AsRef<str>,
-) -> Result<MPS<Rational64>, Import> {
+pub fn parse(program: &impl AsRef<str>) -> Result<MPS<Rational64>, Import> {
     parse_free(program)
 }
 

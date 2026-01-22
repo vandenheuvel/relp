@@ -1,16 +1,16 @@
 //! # Shortest path problem
 use std::fmt::{Display, Formatter, Result as FormatResult};
 
-use relp_num::{Rational64, RationalBig};
 use relp_num::Binary;
 use relp_num::Field;
 use relp_num::NonZero;
+use relp_num::{Rational64, RationalBig};
 
-use relp::algorithm::{OptimizationResult, SolveRelaxation};
-use relp::algorithm::two_phase::matrix_provider::column::Column;
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use relp::algorithm::two_phase::matrix_provider::column::Column;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
 use relp::data::linear_algebra::vector::{DenseVector, SparseVector};
 use relp::data::linear_program::elements::BoundDirection;
@@ -34,18 +34,12 @@ impl<F> Primal<F>
 where
     F: Field + NonZero,
 {
-    pub fn new(
-        adjacency_matrix: SparseMatrix<F, F, ColumnMajor>,
-        s: usize,
-        t: usize,
-    ) -> Self {
+    pub fn new(adjacency_matrix: SparseMatrix<F, F, ColumnMajor>, s: usize, t: usize) -> Self {
         let nr_vertices = adjacency_matrix.nr_columns();
         debug_assert!(s < nr_vertices && t < nr_vertices);
 
         // Remove one redundant row; the one with the negative constant, such that b is nonnegative
-        let (arc_incidence_matrix, cost) = IncidenceMatrix::new(
-            adjacency_matrix, vec![s],
-        );
+        let (arc_incidence_matrix, cost) = IncidenceMatrix::new(adjacency_matrix, vec![s]);
 
         Self {
             arc_incidence_matrix,
@@ -123,7 +117,12 @@ where
 {
     fn fmt(&self, f: &mut Formatter) -> FormatResult {
         writeln!(f, "Shortest Path Network")?;
-        writeln!(f, "Vertices: {}\tEdges: {}", self.nr_vertices(), self.nr_edges())?;
+        writeln!(
+            f,
+            "Vertices: {}\tEdges: {}",
+            self.nr_vertices(),
+            self.nr_edges()
+        )?;
         writeln!(f, "Source: {}\tSink: {}", self.s, self.t)?;
 
         let width = 10;
@@ -139,7 +138,12 @@ where
         for row in 0..self.nr_rows() {
             write!(f, "{0: <width$}", row, width = counter_width)?;
             for column in 0..self.nr_columns() {
-                write!(f, "{0:>width$.5}", self.column(column).index_to_string(row), width = width)?;
+                write!(
+                    f,
+                    "{0:>width$.5}",
+                    self.column(column).index_to_string(row),
+                    width = width
+                )?;
             }
             writeln!(f)?;
         }
@@ -153,17 +157,25 @@ fn main() {
     type S = RationalBig;
 
     // Example from Papadimitriou's Combinatorial Optimization.
-    let data = ColumnMajor::from_test_data::<T, T, _>(&vec![
-        // Directed; from is top, to is on the right
-        //   s  a  b  t
-        vec![0, 0, 0, 0], // s
-        vec![1, 0, 0, 0], // a
-        vec![2, 2, 0, 0], // b
-        vec![0, 3, 1, 0], // t
-    ], 4);
+    let data = ColumnMajor::from_test_data::<T, T, _>(
+        &vec![
+            // Directed; from is top, to is on the right
+            //   s  a  b  t
+            vec![0, 0, 0, 0], // s
+            vec![1, 0, 0, 0], // a
+            vec![2, 2, 0, 0], // b
+            vec![0, 3, 1, 0], // t
+        ],
+        4,
+    );
     let problem = Primal::new(data, 0, 3);
     assert_eq!(
         problem.solve_relaxation::<Carry<S, BasisInverseRows<S>>>(),
-        OptimizationResult::FiniteOptimum([0_u8, 1, 0, 0, 1].iter().map(|&v| RationalBig::from(v)).collect()),
+        OptimizationResult::FiniteOptimum(
+            [0_u8, 1, 0, 0, 1]
+                .iter()
+                .map(|&v| RationalBig::from(v))
+                .collect()
+        ),
     );
 }

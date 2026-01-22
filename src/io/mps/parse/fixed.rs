@@ -5,12 +5,12 @@ use crate::io::error::Parse as ParseError;
 use crate::io::error::ParseResult;
 use crate::io::mps::MPS;
 use crate::io::mps::number::parse::Parse;
-use crate::io::mps::parse::{ColumnLineContent, ColumnRetriever};
 use crate::io::mps::parse::free::Free;
+use crate::io::mps::parse::{ColumnLineContent, ColumnRetriever};
 use crate::io::mps::token::COLUMN_SECTION_MARKER;
 
 /// Parse an MPS program, in string form, to a MPS with struct assumptions on file layout.
-/// 
+///
 /// Read a linear program with the "fixed columns" parsing strategy.
 ///
 /// # Arguments
@@ -56,7 +56,9 @@ impl<'a> ColumnRetriever<'a> for Fixed {
         }
     }
 
-    fn is_column_marker_line(line: &'a str) -> ParseResult<ColumnLineContent<'a, Self::RestOfLine>> {
+    fn is_column_marker_line(
+        line: &'a str,
+    ) -> ParseResult<ColumnLineContent<'a, Self::RestOfLine>> {
         if line.len() >= FIELDS[4].end {
             if &line[FIELDS[3].clone()] == COLUMN_SECTION_MARKER {
                 if line.len() >= FIELDS[5].end {
@@ -65,11 +67,14 @@ impl<'a> ColumnRetriever<'a> for Fixed {
                     Err(ParseError::new("Line is too short to be a marker line."))
                 }
             } else {
-                Ok(ColumnLineContent::Data([
-                    line[FIELDS[2].clone()].trim_end(),
-                    line[FIELDS[3].clone()].trim_end(),
-                    line[FIELDS[4].clone()].trim_start(),
-                ], &line[FIELDS[4].end..]))
+                Ok(ColumnLineContent::Data(
+                    [
+                        line[FIELDS[2].clone()].trim_end(),
+                        line[FIELDS[3].clone()].trim_end(),
+                        line[FIELDS[4].clone()].trim_start(),
+                    ],
+                    &line[FIELDS[4].end..],
+                ))
             }
         } else {
             Err(ParseError::new("Line is too short."))
@@ -78,11 +83,14 @@ impl<'a> ColumnRetriever<'a> for Fixed {
 
     fn two_through_four(line: &'a str) -> ParseResult<([&'a str; 3], Self::RestOfLine)> {
         if line.len() >= FIELDS[4].end {
-            Ok(([
-                line[FIELDS[2].clone()].trim_end(),
-                line[FIELDS[3].clone()].trim_end(),
-                line[FIELDS[4].clone()].trim_start(),
-            ], &line[FIELDS[4].end..]))
+            Ok((
+                [
+                    line[FIELDS[2].clone()].trim_end(),
+                    line[FIELDS[3].clone()].trim_end(),
+                    line[FIELDS[4].clone()].trim_start(),
+                ],
+                &line[FIELDS[4].end..],
+            ))
         } else {
             Err(ParseError::new("Line is too short."))
         }
@@ -91,18 +99,25 @@ impl<'a> ColumnRetriever<'a> for Fixed {
     fn five_and_six(line_after_first_four: Self::RestOfLine) -> ParseResult<Option<[&'a str; 2]>> {
         let relative_field_six_end = FIELDS[6].end - FIELDS[4].end;
         let result = if line_after_first_four.len() >= relative_field_six_end {
-            let (five_start, five_end) = (FIELDS[5].start - FIELDS[4].end, FIELDS[5].end - FIELDS[4].end);
-            let (six_start, six_end) = (FIELDS[6].start - FIELDS[4].end, FIELDS[6].end - FIELDS[4].end);
+            let (five_start, five_end) = (
+                FIELDS[5].start - FIELDS[4].end,
+                FIELDS[5].end - FIELDS[4].end,
+            );
+            let (six_start, six_end) = (
+                FIELDS[6].start - FIELDS[4].end,
+                FIELDS[6].end - FIELDS[4].end,
+            );
 
             let five = line_after_first_four[five_start..five_end].trim_end();
             let six = line_after_first_four[six_start..six_end].trim_start();
             if !five.is_empty() && !six.is_empty() {
-                Some([
-                    five,
-                    six,
-                ])
-            } else { None }
-        } else { None };
+                Some([five, six])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         Ok(result)
     }
@@ -128,18 +143,12 @@ impl<'a> ColumnRetriever<'a> for Fixed {
             let value_text = rest_of_line[start_of_column..end_of_column].trim_start();
             Ok([value_text])
         } else {
-            Err(ParseError::new("Line doesn't contain another value, it's too short."))
+            Err(ParseError::new(
+                "Line doesn't contain another value, it's too short.",
+            ))
         }
     }
 }
 
 /// Character ranges for the different fields of the column.
-const FIELDS: [Range<usize>; 7] = [
-    0..1,
-    1..3,
-    4..12,
-    14..22,
-    24..36,
-    39..47,
-    49..61,
-];
+const FIELDS: [Range<usize>; 7] = [0..1, 1..3, 4..12, 14..22, 24..36, 39..47, 49..61];

@@ -4,13 +4,13 @@
 //! solution is found quicker. Less variables need to be driven out of the basis.
 use std::collections::HashSet;
 
-use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
-use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Column, Cost};
-use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
+use crate::algorithm::two_phase::tableau::kind::Kind;
+use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Column, Cost};
 
 /// The `TableauType` in case the `Tableau` contains artificial variables.
 #[derive(Eq, PartialEq, Debug)]
@@ -104,10 +104,7 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, Partially<'provider, MP>>
 where
-    IM: InverseMaintainer<F:
-        im_ops::Column<<MP::Column as Column>::F> +
-        im_ops::Rhs<MP::Rhs> +
-    >,
+    IM: InverseMaintainer<F: im_ops::Column<<MP::Column as Column>::F> + im_ops::Rhs<MP::Rhs>>,
     MP: MatrixProvider,
 {
     /// Create a `Tableau` augmented with artificial variables.
@@ -124,7 +121,7 @@ where
     /// The tableau.
     pub(crate) fn new(provider: &'provider MP) -> Self
     where
-        MP: PartialInitialBasis
+        MP: PartialInitialBasis,
     {
         let m = provider.nr_rows();
 
@@ -154,35 +151,37 @@ where
         // a uninterrupted range, which is why this block is needed.
         debug_assert!(artificial.is_sorted() && real.is_sorted_by_key(|&(row, _column)| row));
         let mut artificial_counter = 0;
-        let basis_indices = (0..m).map(|i| {
-            let artificial_column = artificial_counter;
-            let real_column = || nr_artificial + real[i - artificial_counter].1;
+        let basis_indices = (0..m)
+            .map(|i| {
+                let artificial_column = artificial_counter;
+                let real_column = || nr_artificial + real[i - artificial_counter].1;
 
-            let can_take_from_artificial = artificial_counter < nr_artificial;
-            let can_take_from_real = i - artificial_counter < nr_real;
+                let can_take_from_artificial = artificial_counter < nr_artificial;
+                let can_take_from_real = i - artificial_counter < nr_real;
 
-            match (can_take_from_artificial, can_take_from_real) {
-                (true, true) => {
-                    // Which index row is lower?
-                    if artificial[artificial_column] < real[i - artificial_counter].0 {
+                match (can_take_from_artificial, can_take_from_real) {
+                    (true, true) => {
+                        // Which index row is lower?
+                        if artificial[artificial_column] < real[i - artificial_counter].0 {
+                            artificial_counter += 1;
+                            artificial_column
+                        } else {
+                            real_column()
+                        }
+                    }
+                    (true, false) => {
                         artificial_counter += 1;
                         artificial_column
-                    } else {
-                        real_column()
                     }
-                },
-                (true, false) => {
-                    artificial_counter += 1;
-                    artificial_column
-                },
-                (false, true) => {
-                    real_column()
-                },
-                (false, false) => {
-                    unreachable!("If both `ac == nr_a` and `i - ac == nr_r`, loop should have ended")
-                },
-            }
-        }).collect::<Vec<_>>();
+                    (false, true) => real_column(),
+                    (false, false) => {
+                        unreachable!(
+                            "If both `ac == nr_a` and `i - ac == nr_r`, loop should have ended"
+                        )
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
         let basis_columns = basis_indices.iter().copied().collect();
 
         let inverse_maintainer = IM::create_for_partially_artificial(
@@ -223,7 +222,11 @@ where
         basis_columns: HashSet<usize>,
         column_to_row_artificials: Vec<usize>,
     ) -> Self {
-        debug_assert!(column_to_row_artificials.iter().all(|i| basis_columns.contains(i)));
+        debug_assert!(
+            column_to_row_artificials
+                .iter()
+                .all(|i| basis_columns.contains(i))
+        );
 
         Tableau {
             inverse_maintainer,

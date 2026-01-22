@@ -1,24 +1,20 @@
-use relp_num::{R16, R8, Rational16, Rational8, RationalBig, RB};
+use relp_num::{R8, R16, RB, Rational8, Rational16, RationalBig};
 
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
 use crate::data::linear_algebra::traits::SparseComparator;
 use crate::data::linear_algebra::vector::DenseVector;
 use crate::data::linear_algebra::vector::test::TestVector;
 use crate::data::linear_program::elements::{Objective, RangedConstraintRelation, VariableType};
-use crate::data::linear_program::general_form::{GeneralForm, Scalable, Scaling, Variable};
 use crate::data::linear_program::general_form::presolve::scale::rational::GeneralFormFactorization;
+use crate::data::linear_program::general_form::{GeneralForm, Scalable, Scaling, Variable};
 
 /// All unique prime numbers, any scaling would at best keep things the same.
 #[test]
 fn test_scale_nothing() {
     let mut general_form: GeneralForm<Rational8> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, u8>(&[
-            vec![1, 2],
-        ], 2),
-        vec![
-            RangedConstraintRelation::Equal,
-        ],
+        ColumnMajor::from_test_data::<_, _, u8>(&[vec![1, 2]], 2),
+        vec![RangedConstraintRelation::Equal],
         DenseVector::from_test_data::<u8>(vec![3]),
         vec![
             Variable {
@@ -55,12 +51,8 @@ fn test_scale_nothing() {
 fn test_scale_cost() {
     let mut general_form: GeneralForm<Rational16> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, u16>(&[
-            vec![1, 2],
-        ], 2),
-        vec![
-            RangedConstraintRelation::Equal,
-        ],
+        ColumnMajor::from_test_data::<_, _, u16>(&[vec![1, 2]], 2),
+        vec![RangedConstraintRelation::Equal],
         DenseVector::from_test_data::<u16>(vec![3]),
         vec![
             Variable {
@@ -97,12 +89,8 @@ fn test_scale_cost() {
 fn test_scale_constraint() {
     let mut general_form: GeneralForm<Rational16> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, u16>(&[
-            vec![2 * 1, 2],
-        ], 2),
-        vec![
-            RangedConstraintRelation::Equal,
-        ],
+        ColumnMajor::from_test_data::<_, _, u16>(&[vec![2 * 1, 2]], 2),
+        vec![RangedConstraintRelation::Equal],
         DenseVector::from_test_data::<u16>(vec![2 * 3]),
         vec![
             Variable {
@@ -139,12 +127,8 @@ fn test_scale_constraint() {
 fn test_scale_variable() {
     let mut general_form: GeneralForm<Rational16> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, u16>(&[
-            vec![1 * 19, 2],
-        ], 2),
-        vec![
-            RangedConstraintRelation::Equal,
-        ],
+        ColumnMajor::from_test_data::<_, _, u16>(&[vec![1 * 19, 2]], 2),
+        vec![RangedConstraintRelation::Equal],
         DenseVector::from_test_data::<u16>(vec![3]),
         vec![
             Variable {
@@ -181,12 +165,8 @@ fn test_scale_variable() {
 fn test_scale_variable_bound_vs_constraint() {
     let mut general_form: GeneralForm<Rational16> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, u16>(&[
-            vec![1 * 19, 2],
-        ], 2),
-        vec![
-            RangedConstraintRelation::Equal,
-        ],
+        ColumnMajor::from_test_data::<_, _, u16>(&[vec![1 * 19, 2]], 2),
+        vec![RangedConstraintRelation::Equal],
         DenseVector::from_test_data::<u16>(vec![3]),
         vec![
             Variable {
@@ -222,12 +202,10 @@ fn test_scale_variable_bound_vs_constraint() {
 fn test_scale() {
     let mut general_form: GeneralForm<Rational8> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, u8>(&[
-            vec![11, 2],
-            vec![4, 6],
-            vec![7, 14],
-            vec![0, 11],
-        ], 2),
+        ColumnMajor::from_test_data::<_, _, u8>(
+            &[vec![11, 2], vec![4, 6], vec![7, 14], vec![0, 11]],
+            2,
+        ),
         vec![
             RangedConstraintRelation::Equal,
             RangedConstraintRelation::Less,
@@ -262,12 +240,25 @@ fn test_scale() {
 
     let expected = GeneralFormFactorization {
         factors: vec![2, 3, 7, 11],
-        b: vec![Some(vec![(3, 1)]), None, Some(vec![(3, 1), (7, 1)]), Some(vec![(11, 1)])],
+        b: vec![
+            Some(vec![(3, 1)]),
+            None,
+            Some(vec![(3, 1), (7, 1)]),
+            Some(vec![(11, 1)]),
+        ],
         c: vec![Some(vec![(2, 2)]), Some(vec![(11, 1)])],
-        bounds: vec![(None, Some(vec![(2, 1), (3, 1)])), (Some(vec![]), Some(vec![(2, 1)]))],
+        bounds: vec![
+            (None, Some(vec![(2, 1), (3, 1)])),
+            (Some(vec![]), Some(vec![(2, 1)])),
+        ],
         constraints: vec![
             vec![(0, vec![(11, 1)]), (1, vec![(2, 2)]), (2, vec![(7, 1)])],
-            vec![(0, vec![(2, 1)]), (1, vec![(2, 1), (3, 1)]), (2, vec![(2, 1), (7, 1)]), (3, vec![(11, 1)])],
+            vec![
+                (0, vec![(2, 1)]),
+                (1, vec![(2, 1), (3, 1)]),
+                (2, vec![(2, 1), (7, 1)]),
+                (3, vec![(11, 1)]),
+            ],
         ],
     };
     assert_eq!(factorization, expected);
@@ -277,12 +268,25 @@ fn test_scale() {
     assert_eq!(factor, expected_factor);
     let expected_factorization = GeneralFormFactorization {
         factors: vec![2, 3, 7],
-        b: vec![Some(vec![(3, 1)]), None, Some(vec![(3, 1), (7, 1)]), Some(vec![])],
+        b: vec![
+            Some(vec![(3, 1)]),
+            None,
+            Some(vec![(3, 1), (7, 1)]),
+            Some(vec![]),
+        ],
         c: vec![Some(vec![(2, 2)]), Some(vec![])],
-        bounds: vec![(None, Some(vec![(2, 1), (3, 1)])), (Some(vec![]), Some(vec![(2, 1)]))],
+        bounds: vec![
+            (None, Some(vec![(2, 1), (3, 1)])),
+            (Some(vec![]), Some(vec![(2, 1)])),
+        ],
         constraints: vec![
             vec![(0, vec![]), (1, vec![(2, 2)]), (2, vec![(7, 1)])],
-            vec![(0, vec![(2, 1)]), (1, vec![(2, 1), (3, 1)]), (2, vec![(2, 1), (7, 1)]), (3, vec![])],
+            vec![
+                (0, vec![(2, 1)]),
+                (1, vec![(2, 1), (3, 1)]),
+                (2, vec![(2, 1), (7, 1)]),
+                (3, vec![]),
+            ],
         ],
     };
     assert_eq!(factorization, expected_factorization);
@@ -296,12 +300,10 @@ fn test_scale() {
     assert_eq!(scaling, expected_scaling);
     let expected_general_form = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, u8>(&[
-            vec![11, 2],
-            vec![2, 3],
-            vec![1, 2],
-            vec![0, 1],
-        ], 2),
+        ColumnMajor::from_test_data::<_, _, u8>(
+            &[vec![11, 2], vec![2, 3], vec![1, 2], vec![0, 1]],
+            2,
+        ),
         vec![
             RangedConstraintRelation::Equal,
             RangedConstraintRelation::Less,
@@ -345,7 +347,12 @@ fn test_solve_single_without_b() {
         bounds: vec![(None, None), (None, None)],
         constraints: vec![
             vec![(0, vec![]), (1, vec![(2, 2)]), (2, vec![(7, 1)])],
-            vec![(0, vec![(2, 1)]), (1, vec![(2, 1), (3, 1)]), (2, vec![(2, 1), (7, 1)]), (3, vec![(11, 1)])],
+            vec![
+                (0, vec![(2, 1)]),
+                (1, vec![(2, 1), (3, 1)]),
+                (2, vec![(2, 1), (7, 1)]),
+                (3, vec![(11, 1)]),
+            ],
         ],
     };
 
@@ -363,10 +370,7 @@ fn test_solve_single_without_b() {
 fn test_range() {
     let mut general_form: GeneralForm<Rational8> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, i8>(&[
-            vec![7, -7],
-            vec![1, 1],
-        ], 2),
+        ColumnMajor::from_test_data::<_, _, i8>(&[vec![7, -7], vec![1, 1]], 2),
         vec![
             RangedConstraintRelation::Range(R8!(2 * 7)),
             RangedConstraintRelation::Less,
@@ -397,10 +401,7 @@ fn test_range() {
     let scaling = general_form.scale();
     let expected: GeneralForm<Rational8> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, i8>(&[
-            vec![1, -1],
-            vec![1, 1],
-        ], 2),
+        ColumnMajor::from_test_data::<_, _, i8>(&[vec![1, -1], vec![1, 1]], 2),
         vec![
             RangedConstraintRelation::Range(R8!(2)),
             RangedConstraintRelation::Less,
@@ -437,10 +438,7 @@ fn test_range() {
 fn test_big() {
     let mut general_form: GeneralForm<RationalBig> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, i8>(&[
-            vec![7, -7],
-            vec![1, 1],
-        ], 2),
+        ColumnMajor::from_test_data::<_, _, i8>(&[vec![7, -7], vec![1, 1]], 2),
         vec![
             RangedConstraintRelation::Range(RB!(2 * 7)),
             RangedConstraintRelation::Less,

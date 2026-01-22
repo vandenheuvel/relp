@@ -2,13 +2,13 @@
 //!
 //! When no initial pivots can be derived, this module is used. It is slightly quicker than the
 //! partially artificial tableau kind.
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
-use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Cost};
-use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::Tableau;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
+use crate::algorithm::two_phase::tableau::kind::Kind;
+use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Cost};
 
 /// All variables are artificial.
 pub struct Fully<'a, MP: MatrixProvider> {

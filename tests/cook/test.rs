@@ -1,13 +1,13 @@
 use std::convert::TryInto;
 
-use relp_num::{Rational64, RationalBig};
 use relp_num::Abs;
 use relp_num::RB;
+use relp_num::{Rational64, RationalBig};
 
-use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::data::linear_program::general_form::GeneralForm;
 use relp::io::import;
 

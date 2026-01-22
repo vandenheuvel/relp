@@ -10,21 +10,26 @@ use std::ops::{Add, AddAssign, Mul, Neg, Sub};
 use cumsum::cumsum_array;
 use index_utils::remove_indices;
 use num_traits::Zero;
-use relp_num::{OrderedField, OrderedFieldRef};
 use relp_num::NonZero;
+use relp_num::{OrderedField, OrderedFieldRef};
 
 pub use presolve::scale::{Scalable, Scaling};
 
 use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
-use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
-use crate::data::linear_algebra::matrix::SparseMatrix;
 use crate::data::linear_algebra::SparseTupleVec;
-use crate::data::linear_algebra::traits::{SparseComparator, SparseElement as LinearAlgebraElement};
+use crate::data::linear_algebra::matrix::SparseMatrix;
+use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
+use crate::data::linear_algebra::traits::{
+    SparseComparator, SparseElement as LinearAlgebraElement,
+};
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
-use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, Objective, RangedConstraintRelation, RangedConstraintRelationKind, VariableType};
-use crate::data::linear_program::general_form::presolve::{Change, Index as PresolveIndex};
-use crate::data::linear_program::general_form::presolve::updates::Changes;
+use crate::data::linear_program::elements::{
+    BoundDirection, LinearProgramType, Objective, RangedConstraintRelation,
+    RangedConstraintRelationKind, VariableType,
+};
 use crate::data::linear_program::general_form::RemovedVariable::{FunctionOfOthers, Solved};
+use crate::data::linear_program::general_form::presolve::updates::Changes;
+use crate::data::linear_program::general_form::presolve::{Change, Index as PresolveIndex};
 use crate::data::linear_program::solution::Solution;
 
 mod presolve;
@@ -134,13 +139,17 @@ pub enum RemovedVariable<F> {
 ///
 /// This method might be expensive, use it in debugging only. It can be viewed as a piece of
 /// documentation on the requirements of a `GeneralForm` struct.
-fn is_consistent<F: LinearAlgebraElement<F> + SparseComparator>(general_form: &GeneralForm<F>) -> bool {
+fn is_consistent<F: LinearAlgebraElement<F> + SparseComparator>(
+    general_form: &GeneralForm<F>,
+) -> bool {
     // Reference values
     let nr_active_constraints = general_form.nr_active_constraints();
     let nr_active_variables = general_form.nr_active_variables();
-    let nr_free_variables = general_form.original_variables.iter().filter(|(_, variable)| {
-        matches!(variable, OriginalVariable::ActiveFree(_, _))
-    }).count();
+    let nr_free_variables = general_form
+        .original_variables
+        .iter()
+        .filter(|(_, variable)| matches!(variable, OriginalVariable::ActiveFree(_, _)))
+        .count();
 
     let b = general_form.b.len() == nr_active_constraints;
     let constraints = general_form.constraint_types.len() == nr_active_constraints;
@@ -151,25 +160,28 @@ fn is_consistent<F: LinearAlgebraElement<F> + SparseComparator>(general_form: &G
     let original_variables = {
         let nr_original_variables = general_form.original_variables.len();
         let size = nr_original_variables >= nr_active_variables - nr_free_variables;
-        let kept_increasing = general_form.original_variables.iter()
+        let kept_increasing = general_form
+            .original_variables
+            .iter()
             .filter_map(|(_, variable)| match variable {
                 OriginalVariable::Active(index) => Some(*index),
                 OriginalVariable::ActiveFree(positive, _) => Some(*positive),
                 _ => None,
-            }).is_sorted();
+            })
+            .is_sorted();
         let no_cycles = {
-           // let nodes = repeat_n(Element::Node { weight: (), }, nr_original_variables);
-           // let edges = general_form.original_variables
-           //     .iter().enumerate()
-           //     .filter_map(|(target, (_, variable))| match variable {
-           //         OriginalVariable::Removed(FunctionOfOthers{ constant: _, coefficients: els, }) => Some((els, target)),
-           //         _ => None,
-           //     })
-           //     .flat_map(|(els, target)| {
-           //         els.iter().map(move |&(j, _)| Element::<(), ()>::Edge { source: j, target, weight: (), })
-           //     });
-           //
-           // !matches!(Dag::<(), (), usize>::from_elements(nodes.chain(edges)), Err(WouldCycle(_)))
+            // let nodes = repeat_n(Element::Node { weight: (), }, nr_original_variables);
+            // let edges = general_form.original_variables
+            //     .iter().enumerate()
+            //     .filter_map(|(target, (_, variable))| match variable {
+            //         OriginalVariable::Removed(FunctionOfOthers{ constant: _, coefficients: els, }) => Some((els, target)),
+            //         _ => None,
+            //     })
+            //     .flat_map(|(els, target)| {
+            //         els.iter().map(move |&(j, _)| Element::<(), ()>::Edge { source: j, target, weight: (), })
+            //     });
+            //
+            // !matches!(Dag::<(), (), usize>::from_elements(nodes.chain(edges)), Err(WouldCycle(_)))
             true
         };
 
@@ -177,18 +189,20 @@ fn is_consistent<F: LinearAlgebraElement<F> + SparseComparator>(general_form: &G
     };
     let from_active_to_original = {
         let size = general_form.from_active_to_original.len() == nr_active_variables;
-        let sorted_non_free = general_form.from_active_to_original[..(nr_active_variables - nr_free_variables)].is_sorted();
-        let sorted_free = general_form.from_active_to_original[(nr_active_variables - nr_free_variables)..].is_sorted();
+        let sorted_non_free = general_form.from_active_to_original
+            [..(nr_active_variables - nr_free_variables)]
+            .is_sorted();
+        let sorted_free = general_form.from_active_to_original
+            [(nr_active_variables - nr_free_variables)..]
+            .is_sorted();
         let max = if nr_active_variables > 0 {
-            general_form.from_active_to_original[nr_active_variables - 1] < general_form.nr_original_variables()
-        } else { true };
+            general_form.from_active_to_original[nr_active_variables - 1]
+                < general_form.nr_original_variables()
+        } else {
+            true
+        };
 
-        [
-            size,
-            sorted_non_free,
-            sorted_free,
-            max,
-        ].iter().all(|v| *v)
+        [size, sorted_non_free, sorted_free, max].iter().all(|v| *v)
     };
 
     [
@@ -199,9 +213,10 @@ fn is_consistent<F: LinearAlgebraElement<F> + SparseComparator>(general_form: &G
         columns,
         original_variables,
         from_active_to_original,
-    ].iter().all(|v| *v)
+    ]
+    .iter()
+    .all(|v| *v)
 }
-
 
 impl<F: LinearAlgebraElement<F> + SparseComparator> GeneralForm<F> {
     /// Create a new linear program in general form.
@@ -225,8 +240,11 @@ impl<F: LinearAlgebraElement<F> + SparseComparator> GeneralForm<F> {
             b,
             fixed_cost,
             variables,
-            original_variables: variable_names.into_iter().enumerate()
-                .map(|(j, name)| (name, OriginalVariable::Active(j))).collect(),
+            original_variables: variable_names
+                .into_iter()
+                .enumerate()
+                .map(|(j, name)| (name, OriginalVariable::Active(j)))
+                .collect(),
             from_active_to_original: (0..nr_active_variables).collect(),
         };
 
@@ -261,32 +279,40 @@ where
     pub fn derive_matrix_data(&self, constraint_type_counts: [usize; 4]) -> MatrixData<'_, OF> {
         debug_assert!({
             let boundaries = cumsum_array(&constraint_type_counts);
-            self.constraint_types.iter().enumerate()
+            self.constraint_types
+                .iter()
+                .enumerate()
                 .all(|(i, constraint_type)| {
                     use RangedConstraintRelation::*;
-                         if i < boundaries[0] { matches!(constraint_type,    Equal) }
-                    else if i < boundaries[1] { matches!(constraint_type, Range(_)) }
-                    else if i < boundaries[2] { matches!(constraint_type,     Less) }
-                    else if i < boundaries[3] { matches!(constraint_type,  Greater) }
-                    else {
+                    if i < boundaries[0] {
+                        matches!(constraint_type, Equal)
+                    } else if i < boundaries[1] {
+                        matches!(constraint_type, Range(_))
+                    } else if i < boundaries[2] {
+                        matches!(constraint_type, Less)
+                    } else if i < boundaries[3] {
+                        matches!(constraint_type, Greater)
+                    } else {
                         panic!();
                     }
                 })
         });
 
-        let [
-            nr_equality,
-            nr_range,
-            nr_upper,
-            nr_lower,
-        ] = constraint_type_counts;
-        debug_assert_eq!(nr_equality + nr_range + nr_upper + nr_lower, self.nr_constraints());
+        let [nr_equality, nr_range, nr_upper, nr_lower] = constraint_type_counts;
+        debug_assert_eq!(
+            nr_equality + nr_range + nr_upper + nr_lower,
+            self.nr_constraints()
+        );
 
-        let ranges = self.constraint_types[nr_equality..(nr_equality + nr_range)].iter()
+        let ranges = self.constraint_types[nr_equality..(nr_equality + nr_range)]
+            .iter()
             .map(|constraint_type| match constraint_type {
                 RangedConstraintRelation::Range(r) => r,
-                _ => unreachable!("Constraint types were just sorted, and there should only be ranges here."),
-            }).collect();
+                _ => unreachable!(
+                    "Constraint types were just sorted, and there should only be ranges here."
+                ),
+            })
+            .collect();
 
         MatrixData::new(
             &self.constraints,
@@ -325,7 +351,6 @@ where
         self.transform_variables();
         self.make_b_non_negative();
         self.make_minimization_problem();
-        
 
         self.reorder_constraints_by_type()
     }
@@ -358,19 +383,14 @@ where
         } = self.compute_presolve_changes()?;
 
         let variable_indices_only = removed_variables.iter().map(|&(j, _)| j).collect();
-        self.update_values_that_remain(
-            b,
-            constraints,
-            fixed_cost,
-            bounds,
-            removed_variables,
-        );
+        self.update_values_that_remain(b, constraints, fixed_cost, bounds, removed_variables);
         self.remove_rows_and_columns(constraints_marked_removed, variable_indices_only);
         debug_assert!(is_consistent(self));
 
         self.compute_solution_where_possible();
-        self.get_solution()
-            .map_or(Ok(()), |solution| Err(LinearProgramType::FiniteOptimum(solution)))
+        self.get_solution().map_or(Ok(()), |solution| {
+            Err(LinearProgramType::FiniteOptimum(solution))
+        })
     }
 
     /// Run the presolve operation using a `PresolveIndex` and return all the proposed reductions.
@@ -382,24 +402,24 @@ where
     /// # Errors
     ///
     /// In case the linear program gets solved during this presolve operation, a solution.
-    fn compute_presolve_changes(
-        &self
-    ) -> Result<Changes<OF>, LinearProgramType<OF>> {
+    fn compute_presolve_changes(&self) -> Result<Changes<OF>, LinearProgramType<OF>> {
         let mut index = PresolveIndex::new(self)?;
 
         let mut iterations_without_meaningful_change = 0;
-        while !index.are_queues_empty() && iterations_without_meaningful_change < {
-            // It can happen that a linear program is such that it can be recursively "tightened" by
-            // presolving, arbitrarily precise, with the process never terminating. As this happens,
-            // the numbers in the problem will have increasingly large representations.
-            //
-            // To make sure that doesn't happen, this heuristic rule decides when to stop.
-            // TODO(ENHANCEMENT): When should we stop presolving?
-            index.updates.nr_variables_remaining() + index.updates.nr_constraints_remaining()
-        } {
+        while !index.are_queues_empty()
+            && iterations_without_meaningful_change < {
+                // It can happen that a linear program is such that it can be recursively "tightened" by
+                // presolving, arbitrarily precise, with the process never terminating. As this happens,
+                // the numbers in the problem will have increasingly large representations.
+                //
+                // To make sure that doesn't happen, this heuristic rule decides when to stop.
+                // TODO(ENHANCEMENT): When should we stop presolving?
+                index.updates.nr_variables_remaining() + index.updates.nr_constraints_remaining()
+            }
+        {
             match index.presolve_step()? {
                 Change::Meaningful => iterations_without_meaningful_change = 0,
-                Change::None => {},
+                Change::None => {}
                 Change::NotMeaningful => iterations_without_meaningful_change += 1,
             }
         }
@@ -487,7 +507,8 @@ where
             }
         }
 
-        self.constraints.remove_rows_although_this_matrix_is_column_major(&constraints);
+        self.constraints
+            .remove_rows_although_this_matrix_is_column_major(&constraints);
         remove_indices(&mut self.constraint_types, &constraints);
         self.b.remove_indices(&constraints);
 
@@ -557,21 +578,30 @@ where
                 let variable = &self.variables[j];
                 variable.lower_bound.is_none() && variable.upper_bound.is_none()
             })
-            .map(|j| (j, self.constraints.iter_column(j).map(|(i, v)| (*i, -v)).collect()))
+            .map(|j| {
+                (
+                    j,
+                    self.constraints
+                        .iter_column(j)
+                        .map(|(i, v)| (*i, -v))
+                        .collect(),
+                )
+            })
             .unzip::<_, _, Vec<_>, _>();
 
         // Concatenate the existing constraints with the newly derived columns.
         let as_matrix = ColumnMajor::new(columns, self.nr_constraints(), indices_duplicated.len());
         self.constraints = mem::replace(
-                &mut self.constraints,
-                ColumnMajor::new(Vec::with_capacity(0), 0, 0),
-            )
-            .concatenate_horizontally(as_matrix);
+            &mut self.constraints,
+            ColumnMajor::new(Vec::with_capacity(0), 0, 0),
+        )
+        .concatenate_horizontally(as_matrix);
 
         // Create the new active variables and make sure the old variable is non negative.
         for index in indices_duplicated {
             let original_index = self.from_active_to_original[index];
-            self.original_variables[original_index].1 = OriginalVariable::ActiveFree(index, self.from_active_to_original.len());
+            self.original_variables[original_index].1 =
+                OriginalVariable::ActiveFree(index, self.from_active_to_original.len());
             self.from_active_to_original.push(original_index);
             self.variables.push(Variable {
                 variable_type: self.variables[index].variable_type,
@@ -589,7 +619,10 @@ where
     ///
     /// This is a step towards representing a `GeneralForm` problem in standard form.
     fn make_b_non_negative(&mut self) {
-        let rows_to_negate = self.b.iter().enumerate()
+        let rows_to_negate = self
+            .b
+            .iter()
+            .enumerate()
             .filter(|&(_, v)| v < &OF::zero())
             .map(|(i, _)| i)
             .collect();
@@ -600,18 +633,18 @@ where
                 RangedConstraintRelation::Less => {
                     self.constraint_types[row] = RangedConstraintRelation::Greater;
                     self.b[row] *= -OF::one();
-                },
+                }
                 RangedConstraintRelation::Equal => {
                     self.b[row] *= -OF::one();
-                },
+                }
                 RangedConstraintRelation::Greater => {
                     self.constraint_types[row] = RangedConstraintRelation::Less;
                     self.b[row] *= -OF::one();
-                },
+                }
                 RangedConstraintRelation::Range(range) => {
                     let minus_old_lower_bound = range - &self.b[row];
                     self.b[row] = minus_old_lower_bound;
-                },
+                }
             };
         }
 
@@ -649,16 +682,32 @@ where
     /// The number of equality, range, upper and lower bounds.
     fn reorder_constraints_by_type(&mut self) -> [usize; 4] {
         let (mut e_counter, mut r_counter, mut l_counter, mut g_counter) = (0, 0, 0, 0);
-        let map = self.constraint_types.iter().map(|constraint_type| {
-            match constraint_type {
-                RangedConstraintRelation::Equal => { e_counter += 1; e_counter - 1 },
-                RangedConstraintRelation::Range(_) => { r_counter += 1; r_counter - 1 }
-                RangedConstraintRelation::Less => { l_counter += 1; l_counter - 1 },
-                RangedConstraintRelation::Greater => { g_counter += 1; g_counter - 1 },
-            }
-        }).collect::<Vec<usize>>();
+        let map = self
+            .constraint_types
+            .iter()
+            .map(|constraint_type| match constraint_type {
+                RangedConstraintRelation::Equal => {
+                    e_counter += 1;
+                    e_counter - 1
+                }
+                RangedConstraintRelation::Range(_) => {
+                    r_counter += 1;
+                    r_counter - 1
+                }
+                RangedConstraintRelation::Less => {
+                    l_counter += 1;
+                    l_counter - 1
+                }
+                RangedConstraintRelation::Greater => {
+                    g_counter += 1;
+                    g_counter - 1
+                }
+            })
+            .collect::<Vec<usize>>();
 
-        let old_constraint_types = self.constraint_types.iter()
+        let old_constraint_types = self
+            .constraint_types
+            .iter()
             .map(From::from)
             .collect::<Vec<RangedConstraintRelationKind>>();
         self.constraint_types.sort_by(|a, b| {
@@ -686,12 +735,12 @@ where
             }
         });
 
-        let get_destination = |source| {
-            match old_constraint_types[source] {
-                RangedConstraintRelationKind::Equal => map[source],
-                RangedConstraintRelationKind::Range => e_counter + map[source],
-                RangedConstraintRelationKind::Less => e_counter + r_counter + map[source],
-                RangedConstraintRelationKind::Greater => e_counter + r_counter + l_counter + map[source],
+        let get_destination = |source| match old_constraint_types[source] {
+            RangedConstraintRelationKind::Equal => map[source],
+            RangedConstraintRelationKind::Range => e_counter + map[source],
+            RangedConstraintRelationKind::Less => e_counter + r_counter + map[source],
+            RangedConstraintRelationKind::Greater => {
+                e_counter + r_counter + l_counter + map[source]
             }
         };
 
@@ -700,7 +749,10 @@ where
             // TODO(ARCHITECTURE): Avoid this mem::replace
             new_b[get_destination(i)] = Some(mem::replace(&mut self.b[i], OF::zero()));
         }
-        self.b = DenseVector::new(new_b.into_iter().collect::<Option<Vec<_>>>().unwrap(), self.b.len());
+        self.b = DenseVector::new(
+            new_b.into_iter().collect::<Option<Vec<_>>>().unwrap(),
+            self.b.len(),
+        );
 
         for column in &mut self.constraints.data {
             for (i, _) in column.iter_mut() {
@@ -721,9 +773,10 @@ where
         let mut changed = Vec::new();
         for (j, (_, variable)) in self.original_variables.iter().enumerate() {
             if let OriginalVariable::Removed(FunctionOfOthers { .. }) = variable
-                && self.compute_solution_value(j, &mut new_solutions).is_some() {
-                    changed.push(j);
-                }
+                && self.compute_solution_value(j, &mut new_solutions).is_some()
+            {
+                changed.push(j);
+            }
         }
 
         // Save all values
@@ -759,11 +812,17 @@ where
             OriginalVariable::Active(_) => None,
             OriginalVariable::ActiveFree(_, _) => None,
             OriginalVariable::Removed(Solved(value)) => Some(value),
-            OriginalVariable::Removed(FunctionOfOthers { constant, coefficients }) => {
+            OriginalVariable::Removed(FunctionOfOthers {
+                constant,
+                coefficients,
+            }) => {
                 if new_solutions[variable].is_none() {
-                    new_solutions[variable] = coefficients.iter().map(|(j, coefficient)| {
-                        self.compute_solution_value(*j, new_solutions).map(|v| coefficient * v)
-                    })
+                    new_solutions[variable] = coefficients
+                        .iter()
+                        .map(|(j, coefficient)| {
+                            self.compute_solution_value(*j, new_solutions)
+                                .map(|v| coefficient * v)
+                        })
                         .sum::<Option<OF>>()
                         .map(|inner_product| constant - inner_product);
                 }
@@ -782,16 +841,19 @@ where
     ///
     /// If one of the variables is still undetermined, `None`.
     pub fn get_solution(&self) -> Option<Solution<OF>> {
-        let maybe_variable_values = self.original_variables.iter().map(|(name, variable)| {
-            if let OriginalVariable::Removed(Solved(value)) = variable {
-                Some((name.clone(), value.clone()))
-            } else {
-                None
-            }
-        }).collect::<Option<Vec<_>>>();
-        maybe_variable_values.map(|variable_values| {
-            Solution::new(self.fixed_cost.clone(), variable_values)
-        })
+        let maybe_variable_values = self
+            .original_variables
+            .iter()
+            .map(|(name, variable)| {
+                if let OriginalVariable::Removed(Solved(value)) = variable {
+                    Some((name.clone(), value.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Option<Vec<_>>>();
+        maybe_variable_values
+            .map(|variable_values| Solution::new(self.fixed_cost.clone(), variable_values))
     }
 
     /// Transform a solution back.
@@ -806,18 +868,17 @@ where
     pub fn reshift_solution<G>(&self, reduced_solution: &mut SparseVector<G, G>)
     where
         G: LinearAlgebraElement<G> + SparseComparator + PartialEq<OF> + AddAssign<OF> + From<OF>,
-        for<'r> &'r OF: Neg<Output=OF>,
-        for<'r> &'r G: Neg<Output=G>,
+        for<'r> &'r OF: Neg<Output = OF>,
+        for<'r> &'r G: Neg<Output = G>,
     {
         debug_assert_eq!(reduced_solution.len(), self.variables.len());
 
         for (j, variable) in self.variables.iter().enumerate() {
             reduced_solution.shift_value::<OF>(j, -&variable.shift);
-            if variable.flipped
-                && reduced_solution.get(j).is_some() {
-                    let flipped = -reduced_solution.get(j).unwrap();
-                    reduced_solution.set(j, flipped);
-                }
+            if variable.flipped && reduced_solution.get(j).is_some() {
+                let flipped = -reduced_solution.get(j).unwrap();
+                reduced_solution.set(j, flipped);
+            }
         }
     }
 
@@ -840,15 +901,29 @@ where
     ) -> Solution<G>
     where
         // TODO: Find a suitable trait alias to avoid this many trait bounds.
-        G: Sum + Neg<Output=G> + AddAssign<OF> + PartialEq<OF> + LinearAlgebraElement<G> + From<OF> + Eq + Ord + Zero + NonZero,
-        for<'r> G: Add<&'r OF, Output=G>,
-        for<'r> &'r G: Neg<Output=G> + Mul<&'r OF, Output=G> + Add<&'r OF, Output=G> + Sub<&'r G, Output=G>,
+        G: Sum
+            + Neg<Output = G>
+            + AddAssign<OF>
+            + PartialEq<OF>
+            + LinearAlgebraElement<G>
+            + From<OF>
+            + Eq
+            + Ord
+            + Zero
+            + NonZero,
+        for<'r> G: Add<&'r OF, Output = G>,
+        for<'r> &'r G: Neg<Output = G>
+            + Mul<&'r OF, Output = G>
+            + Add<&'r OF, Output = G>
+            + Sub<&'r G, Output = G>,
     {
         debug_assert_eq!(reduced_solution.len(), self.variables.len());
 
-        let cost = reduced_solution.iter()
+        let cost = reduced_solution
+            .iter()
             .map(|(j, v)| v * &self.variables[j].cost)
-            .sum::<G>() + &self.fixed_cost;
+            .sum::<G>()
+            + &self.fixed_cost;
         self.reshift_solution(&mut reduced_solution);
 
         // To avoid recomputations, we store all computed intermediate values in this collection.
@@ -860,7 +935,9 @@ where
 
         Solution::new(
             cost,
-            self.original_variables.into_iter().zip(new_solutions)
+            self.original_variables
+                .into_iter()
+                .zip(new_solutions)
                 .map(|((name, _), value)| (name, value.unwrap()))
                 .collect(),
         )
@@ -890,9 +967,12 @@ where
         reduced_solution: &SparseVector<G, G>,
     ) -> &'a G
     where
-        G: LinearAlgebraElement<G> + Zero + From<OF> + Sum + Neg<Output=G> + NonZero,
-        for<'r> G: Add<&'r OF, Output=G>,
-        for<'r> &'r G: Neg<Output=G> + Mul<&'r OF, Output=G> + Add<&'r OF, Output=G> + Sub<&'r G, Output=G>,
+        G: LinearAlgebraElement<G> + Zero + From<OF> + Sum + Neg<Output = G> + NonZero,
+        for<'r> G: Add<&'r OF, Output = G>,
+        for<'r> &'r G: Neg<Output = G>
+            + Mul<&'r OF, Output = G>
+            + Add<&'r OF, Output = G>
+            + Sub<&'r G, Output = G>,
     {
         debug_assert!(variable < new_solutions.len());
         debug_assert_eq!(new_solutions.len(), self.original_variables.len());
@@ -908,20 +988,32 @@ where
                 None => G::zero(),
             },
             OriginalVariable::ActiveFree(j_positive, j_negative) => {
-                match (reduced_solution.get(*j_positive), reduced_solution.get(*j_negative)) {
+                match (
+                    reduced_solution.get(*j_positive),
+                    reduced_solution.get(*j_negative),
+                ) {
                     (None, None) => G::zero(),
                     (Some(positive), None) => positive.clone(),
                     (None, Some(negative)) => -negative,
                     (Some(positive), Some(negative)) => positive - negative,
                 }
-            },
+            }
             OriginalVariable::Removed(Solved(v)) => v.clone().into(),
-            OriginalVariable::Removed(FunctionOfOthers { constant, coefficients }) => {
-                -coefficients.iter()
+            OriginalVariable::Removed(FunctionOfOthers {
+                constant,
+                coefficients,
+            }) => {
+                -coefficients
+                    .iter()
                     .map(|(j, coefficient)| {
-                        self.compute_solution_value_with_bfs::<G>(*j, new_solutions, reduced_solution) * coefficient
+                        self.compute_solution_value_with_bfs::<G>(
+                            *j,
+                            new_solutions,
+                            reduced_solution,
+                        ) * coefficient
                     })
-                    .sum::<G>() + constant
+                    .sum::<G>()
+                    + constant
             }
         };
 
@@ -935,8 +1027,8 @@ where
     OF: LinearAlgebraElement<OF> + SparseComparator,
 {
     /// Number of constraints that have not been eliminated after a presolving operation.
-    /// 
-    /// During a presolving operation, the number of variables that is both active and not yet 
+    ///
+    /// During a presolving operation, the number of variables that is both active and not yet
     /// marked for elimination in the `PresolveIndex` can only be derived using that data structure.
     fn nr_active_constraints(&self) -> usize {
         self.constraints.nr_rows()
@@ -950,15 +1042,15 @@ where
     pub fn nr_constraints(&self) -> usize {
         self.nr_active_constraints()
     }
-    
+
     /// Number of variables that have not been eliminated after a presolving operation.
-    /// 
-    /// During a presolving operation, the number of variables that is both active and not yet 
+    ///
+    /// During a presolving operation, the number of variables that is both active and not yet
     /// marked for elimination in the `PresolveIndex` can only be derived using that data structure.
     fn nr_active_variables(&self) -> usize {
         self.constraints.nr_columns()
     }
-    
+
     /// Number of variables at the time this object was first created.
     fn nr_original_variables(&self) -> usize {
         self.original_variables.len()
@@ -1042,8 +1134,14 @@ where
     /// Get any feasible value, if there is one.
     fn get_feasible_value(&self) -> Option<OF> {
         if self.has_feasible_value() {
-            self.upper_bound.as_ref().or(self.lower_bound.as_ref()).cloned().or_else(|| Some(OF::zero()))
-        } else { None }
+            self.upper_bound
+                .as_ref()
+                .or(self.lower_bound.as_ref())
+                .cloned()
+                .or_else(|| Some(OF::zero()))
+        } else {
+            None
+        }
     }
 
     /// Change the lower bound if the given bound is higher.
@@ -1122,7 +1220,9 @@ mod test {
     use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
     use crate::data::linear_algebra::vector::DenseVector;
     use crate::data::linear_algebra::vector::test::TestVector;
-    use crate::data::linear_program::elements::{Objective, RangedConstraintRelation, VariableType};
+    use crate::data::linear_program::elements::{
+        Objective, RangedConstraintRelation, VariableType,
+    };
     use crate::data::linear_program::general_form::{GeneralForm, OriginalVariable, Variable};
 
     /// Shifting a variable.
@@ -1132,34 +1232,31 @@ mod test {
 
         let bound_value = R32!(5, 2);
 
-        let data = vec![
-            vec![1, 0],
-            vec![2, 1],
-        ];
+        let data = vec![vec![1, 0], vec![2, 1]];
         let constraints = ColumnMajor::from_test_data::<T, T, _>(&data, 2);
-        let b = DenseVector::from_test_data(vec![
-            2,
-            8,
-        ]);
+        let b = DenseVector::from_test_data(vec![2, 8]);
         let constraint_types = vec![
             RangedConstraintRelation::Greater,
             RangedConstraintRelation::Less,
         ];
-        let variables = vec![Variable {
-            variable_type: VariableType::Continuous,
-            cost: R32!(1),
-            lower_bound: None,
-            upper_bound: None,
-            shift: R32!(0),
-            flipped: false
-        }, Variable {
-            variable_type: VariableType::Continuous,
-            cost: R32!(3),
-            lower_bound: Some(bound_value),
-            upper_bound: None,
-            shift: R32!(0),
-            flipped: false
-        }];
+        let variables = vec![
+            Variable {
+                variable_type: VariableType::Continuous,
+                cost: R32!(1),
+                lower_bound: None,
+                upper_bound: None,
+                shift: R32!(0),
+                flipped: false,
+            },
+            Variable {
+                variable_type: VariableType::Continuous,
+                cost: R32!(3),
+                lower_bound: Some(bound_value),
+                upper_bound: None,
+                shift: R32!(0),
+                flipped: false,
+            },
+        ];
         let variable_names = vec!["XONE".to_string(), "XTWO".to_string()];
         let mut general_form = GeneralForm::new(
             Objective::Minimize,
@@ -1175,10 +1272,7 @@ mod test {
         let expected = GeneralForm {
             objective: Objective::Minimize,
             fixed_cost: R32!(1) + R32!(3) * bound_value,
-            constraints: ColumnMajor::from_test_data(&[
-                vec![1, 0, -1],
-                vec![2, 1, -2],
-            ], 3),
+            constraints: ColumnMajor::from_test_data(&[vec![1, 0, -1], vec![2, 1, -2]], 3),
             constraint_types: vec![
                 RangedConstraintRelation::Greater,
                 RangedConstraintRelation::Less,
@@ -1229,16 +1323,14 @@ mod test {
 
         let rows = ColumnMajor::from_test_data::<T, T, _>(&[vec![2]], 1);
         let b = DenseVector::from_test_data(vec![-1]);
-        let variables = vec![
-            Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(1),
-                lower_bound: None,
-                upper_bound: None,
-                shift: R32!(0),
-                flipped: false
-            },
-        ];
+        let variables = vec![Variable {
+            variable_type: VariableType::Continuous,
+            cost: R32!(1),
+            lower_bound: None,
+            upper_bound: None,
+            shift: R32!(0),
+            flipped: false,
+        }];
         let variable_names = vec!["XONE".to_string()];
         let constraints = vec![RangedConstraintRelation::Equal];
         let mut result = GeneralForm::new(
@@ -1261,7 +1353,7 @@ mod test {
             lower_bound: None,
             upper_bound: None,
             shift: R32!(0),
-            flipped: false
+            flipped: false,
         }];
         let variable_names = vec!["XONE".to_string()];
         let expected = GeneralForm::new(

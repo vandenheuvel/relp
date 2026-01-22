@@ -39,26 +39,20 @@ pub struct IdentityColumn {
 
 impl IdentityColumn {
     pub fn new(index: usize) -> Self {
-        Self {
-            index,
-        }
+        Self { index }
     }
 }
 
 impl Column for IdentityColumn {
     type F = One;
-    type Iter<'a> = impl ColumnIterator<'a, F=Self::F>;
+    type Iter<'a> = impl ColumnIterator<'a, F = Self::F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         iter::once((self.index, &ONE))
     }
 
     fn index_to_string(&self, i: usize) -> String {
-        if i == self.index {
-            "1"
-        } else {
-            "0"
-        }.to_string()
+        if i == self.index { "1" } else { "0" }.to_string()
     }
 }
 

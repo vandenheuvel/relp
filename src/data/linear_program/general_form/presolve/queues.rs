@@ -102,10 +102,17 @@ impl Queues {
         for<'r> &'r OF: OrderedFieldRef<OF>,
     {
         Self {
-            bound: counters.constraint.iter().enumerate()
+            bound: counters
+                .constraint
+                .iter()
+                .enumerate()
                 .filter(|&(_, &count)| count == 1)
-                .map(|(i, _)| i).collect(),
-            activity: counters.activity.iter().enumerate()
+                .map(|(i, _)| i)
+                .collect(),
+            activity: counters
+                .activity
+                .iter()
+                .enumerate()
                 .flat_map(|(i, &(lower_count, upper_count))| {
                     let mut sides = Vec::with_capacity(2);
                     if counters.constraint[i] > 1 {
@@ -117,13 +124,21 @@ impl Queues {
                         }
                     }
                     sides
-                }).collect(),
+                })
+                .collect(),
 
-            slack: counters.variable.iter().enumerate()
+            slack: counters
+                .variable
+                .iter()
+                .enumerate()
                 .filter(|&(_, &count)| count == 1)
                 .filter(|&(j, _)| general_form.variables[j].cost.is_zero())
-                .map(|(j, _)| j).collect(),
-            substitution: general_form.variables.iter().enumerate()
+                .map(|(j, _)| j)
+                .collect(),
+            substitution: general_form
+                .variables
+                .iter()
+                .enumerate()
                 // Columns with no values get substituted right away, as they removal doesn't lead
                 // to any further actions. The only values that should be put in the queue are those
                 // that lead to other actions, that is, have a nonzero counter.

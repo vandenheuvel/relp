@@ -12,8 +12,8 @@ use index_utils::{remove_indices, remove_sparse_indices};
 use relp_num::Field;
 use relp_num::NonZero;
 
-use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
+use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 
 /// Indices start at `0`.
 /// TODO(OPTIMIZATION): What data structure is best suited to back this struct? How are allocations
@@ -42,8 +42,7 @@ pub trait MatrixOrder: Sized {
     ) -> SparseMatrix<F, C, Self>
     where
         F: SparseElement<C>,
-        C: SparseComparator,
-    ;
+        C: SparseComparator;
 
     /// Utility method that creates a sparse matrix of this ordering for tests.
     ///
@@ -55,8 +54,7 @@ pub trait MatrixOrder: Sized {
     ) -> SparseMatrix<F, C, Self>
     where
         F: SparseElement<C>,
-        C: SparseComparator,
-    ;
+        C: SparseComparator;
 
     /// Identity matrix of specified field type with this ordering.
     #[must_use]
@@ -268,7 +266,7 @@ where
             for (i, value) in column {
                 if rows_to_change.contains(i) {
                     *value *= -F::one();
-                } 
+                }
             }
         }
     }
@@ -395,10 +393,15 @@ impl<F: SparseElement<C>, C: SparseComparator, MO: MatrixOrder> SparseMatrix<F, 
     ) -> Self {
         debug_assert_eq!(data.len(), major_dimension_size);
         debug_assert!(data.iter().all(|v| v.is_sorted_by_key(|&(i, _)| i)));
-        debug_assert!(data.iter()
-            .map(|c| c.iter().map(|&(i, _)| i).max())
-            .all(|m| m.is_none_or(|max_minor_index| max_minor_index < minor_dimension_size)));
-        debug_assert!(data.iter().all(|minor| minor.iter().all(|(_, v)| v.borrow().is_not_zero())));
+        debug_assert!(
+            data.iter()
+                .map(|c| c.iter().map(|&(i, _)| i).max())
+                .all(|m| m.is_none_or(|max_minor_index| max_minor_index < minor_dimension_size))
+        );
+        debug_assert!(
+            data.iter()
+                .all(|minor| minor.iter().all(|(_, v)| v.borrow().is_not_zero()))
+        );
 
         SparseMatrix {
             data,
@@ -424,7 +427,10 @@ where
     ) -> Self {
         debug_assert!(data.iter().all(|major| major.is_sorted_by_key(|&(i, _)| i)));
         let new_major_dimension_size = current_minor_dimension_size;
-        debug_assert!(data.iter().all(|major| major.iter().all(|&(i, _)| i < current_minor_dimension_size)));
+        debug_assert!(
+            data.iter()
+                .all(|major| major.iter().all(|&(i, _)| i < current_minor_dimension_size))
+        );
         let new_minor_dimension_size = data.len();
 
         let mut major_ordered = vec![Vec::new(); new_major_dimension_size];
@@ -547,14 +553,11 @@ where
         debug_assert_ne!(len, 0);
 
         SparseMatrix::from_major_ordered_tuples(
-            (0..len)
-                .map(|i| vec![(i, F::one())])
-                .collect(),
+            (0..len).map(|i| vec![(i, F::one())]).collect(),
             len,
             len,
         )
     }
-
 }
 
 #[cfg(test)]
@@ -574,10 +577,7 @@ pub mod test {
         F: Field + SparseElement<C>,
         C: SparseComparator,
     {
-        ColumnMajor::from_test_data(&vec![
-            vec![1, 2, 0],
-            vec![0, 5, 6],
-        ], 3)
+        ColumnMajor::from_test_data(&vec![vec![1, 2, 0], vec![0, 5, 6]], 3)
     }
 
     #[test]
@@ -592,10 +592,7 @@ pub mod test {
     fn column_tuples() {
         let m = get_test_matrix::<T, T>();
 
-        assert_eq!(
-            m.iter_column(2).nth(0).unwrap(),
-            &(1, R32!(6)),
-        );
+        assert_eq!(m.iter_column(2).nth(0).unwrap(), &(1, R32!(6)),);
         assert_eq!(
             m.iter_column(1).map(|&(_, value)| value).sum::<T>(),
             T::from_i32(2 + 5).unwrap(),
@@ -605,11 +602,7 @@ pub mod test {
     #[test]
     fn remove_row() {
         for remove_row in 0..3 {
-            let mut data = vec![
-                vec![1, 2, 3, 4],
-                vec![5, 6, 7, 8],
-                vec![9, 10, 11, 12],
-            ];
+            let mut data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
             let mut m = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
             data.remove(remove_row);
             let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
@@ -625,28 +618,20 @@ pub mod test {
 
     #[test]
     fn concatenate_horizontally() {
-        let m1 = ColumnMajor::from_test_data::<T, T, _>(&vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ], 4);
-        let m2 = ColumnMajor::from_test_data::<T, T, _>(&vec![
-            vec![1, 3, 4],
-            vec![5, 7, 8],
-            vec![9, 11, 12],
-        ], 3);
+        let m1 = ColumnMajor::from_test_data::<T, T, _>(
+            &vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]],
+            4,
+        );
+        let m2 = ColumnMajor::from_test_data::<T, T, _>(
+            &vec![vec![1, 3, 4], vec![5, 7, 8], vec![9, 11, 12]],
+            3,
+        );
         let result = m1.concatenate_horizontally(m2);
         assert_eq!(result.nr_columns(), 4 + 3);
         assert_eq!(result.nr_rows(), 3);
 
-        let m1 = ColumnMajor::from_test_data::<T, T, _>(&vec![
-            vec![1, 2],
-            vec![9, 10],
-        ], 2);
-        let m2 = ColumnMajor::from_test_data::<T, T, _>(&vec![
-            vec![5, 7],
-            vec![9, 11],
-        ], 2);
+        let m1 = ColumnMajor::from_test_data::<T, T, _>(&vec![vec![1, 2], vec![9, 10]], 2);
+        let m2 = ColumnMajor::from_test_data::<T, T, _>(&vec![vec![5, 7], vec![9, 11]], 2);
         let result = m1.concatenate_horizontally(m2);
         assert_eq!(result.nr_columns(), 2 + 2);
         assert_eq!(result.nr_rows(), 2);
@@ -655,17 +640,9 @@ pub mod test {
     #[test]
     fn remove_columns() {
         // Remove a middle column
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
         let mut m = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
-        let data = vec![
-            vec![1, 3, 4],
-            vec![5, 7, 8],
-            vec![9, 11, 12],
-        ];
+        let data = vec![vec![1, 3, 4], vec![5, 7, 8], vec![9, 11, 12]];
         let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 3);
         let to_remove = vec![1];
         m.remove_columns(&to_remove);
@@ -673,17 +650,9 @@ pub mod test {
         assert_eq!(result, expected);
 
         // Remove the first column
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
         let mut m = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
-        let data = vec![
-            vec![2, 3, 4],
-            vec![6, 7, 8],
-            vec![10, 11, 12],
-        ];
+        let data = vec![vec![2, 3, 4], vec![6, 7, 8], vec![10, 11, 12]];
         let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 3);
         let to_remove = vec![0];
         m.remove_columns(&to_remove);
@@ -691,17 +660,9 @@ pub mod test {
         assert_eq!(result, expected);
 
         // Remove the last column
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
         let mut m = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
-        let data = vec![
-            vec![1, 2, 3],
-            vec![5, 6, 7],
-            vec![9, 10, 11],
-        ];
+        let data = vec![vec![1, 2, 3], vec![5, 6, 7], vec![9, 10, 11]];
         let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 3);
         let to_remove = vec![3];
         m.remove_major_indices(&to_remove);
@@ -709,17 +670,9 @@ pub mod test {
         assert_eq!(result, expected);
 
         // Remove two
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
         let mut m = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
-        let data = vec![
-            vec![1, 4],
-            vec![5, 8],
-            vec![9, 12],
-        ];
+        let data = vec![vec![1, 4], vec![5, 8], vec![9, 12]];
         let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 2);
         let to_remove = vec![1, 2];
         m.remove_major_indices(&to_remove);
@@ -730,16 +683,9 @@ pub mod test {
     #[test]
     fn remove_rows() {
         // Remove a middle row
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
         let mut m = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![9, 10, 11, 12]];
         let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
         let to_remove = vec![1];
         m.remove_minor_indices(&to_remove);
@@ -747,16 +693,9 @@ pub mod test {
         assert_eq!(result, expected);
 
         // Remove the last row
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
         let mut m = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8]];
         let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
         let to_remove = vec![2];
         m.remove_minor_indices(&to_remove);
@@ -764,16 +703,9 @@ pub mod test {
         assert_eq!(result, expected);
 
         // Remove the first row
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
         let mut m = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
-        let data = vec![
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
         let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
         let to_remove = vec![0];
         m.remove_minor_indices(&to_remove);
@@ -781,15 +713,9 @@ pub mod test {
         assert_eq!(result, expected);
 
         // Remove two
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
         let mut m = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
-        let data = vec![
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![9, 10, 11, 12]];
         let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
         let to_remove = vec![0, 1];
         m.remove_minor_indices(&to_remove);
@@ -799,17 +725,9 @@ pub mod test {
 
     #[test]
     fn change_row_signs() {
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![5, 6, 7, 8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]];
         let mut m = ColumnMajor::from_test_data(&data, 4);
-        let data = vec![
-            vec![1, 2, 3, 4],
-            vec![-5, -6, -7, -8],
-            vec![9, 10, 11, 12],
-        ];
+        let data = vec![vec![1, 2, 3, 4], vec![-5, -6, -7, -8], vec![9, 10, 11, 12]];
         let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
         m.change_row_signs(&vec![1].into_iter().collect());
         assert_eq!(m, expected);
