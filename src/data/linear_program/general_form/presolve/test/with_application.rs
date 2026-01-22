@@ -26,18 +26,13 @@ type T = Rational32;
 fn presolve() {
     let data = vec![
         // Column 3 should be removed because empty
-        vec![2, 0, 0, 0, 0, 0], // Should be removed because simple bound
+        vec![2, 0, 0, 0, 0, 0],      // Should be removed because simple bound
         vec![3, 5, 0, 0, 0, 0], // Should be removed because simple bound after removal of the row above
         vec![7, 11, 13, 0, 0, 0], // Should be removed because of fixed variable after the removal of above two
         vec![17, 19, 23, 0, 29, 31], // Removal by variable bounds
     ];
     let constraints = ColumnMajor::from_test_data::<T, T, _>(&data, 6);
-    let b = DenseVector::from_test_data(vec![
-        101,
-        103,
-        107,
-        109,
-    ]);
+    let b = DenseVector::from_test_data(vec![101, 103, 107, 109]);
     let constraint_types = vec![
         RangedConstraintRelation::Equal,
         RangedConstraintRelation::Less,
@@ -51,42 +46,47 @@ fn presolve() {
             lower_bound: None,
             upper_bound: None,
             shift: R32!(0),
-            flipped: false
-        }, Variable {
+            flipped: false,
+        },
+        Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(223),
             lower_bound: Some((R32!(103) - R32!(101) / R32!(2) * R32!(3)) / R32!(5)),
             upper_bound: None,
             shift: R32!(0),
-            flipped: false
-        }, Variable {
+            flipped: false,
+        },
+        Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(227),
             lower_bound: None,
             upper_bound: None,
             shift: R32!(0),
-            flipped: false
-        }, Variable {
+            flipped: false,
+        },
+        Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(-229),
             lower_bound: None,
             upper_bound: Some(R32!(131)),
             shift: R32!(0),
-            flipped: false
-        }, Variable {
+            flipped: false,
+        },
+        Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(233),
             lower_bound: Some(R32!(-30736, 65 * 29)),
             upper_bound: Some(R32!(123)),
             shift: R32!(0),
-            flipped: false
-        }, Variable {
+            flipped: false,
+        },
+        Variable {
             variable_type: VariableType::Continuous,
             cost: R32!(0),
             lower_bound: Some(R32!(5)),
             upper_bound: None,
             shift: R32!(0),
-            flipped: false
+            flipped: false,
         },
     ];
     let variable_names = vec![
@@ -117,8 +117,14 @@ fn presolve() {
                 + R32!(233 * -30736, 1885),
             vec![
                 ("XONE".to_string(), R32!(101, 2)),
-                ("XTWO".to_string(), (R32!(103) - R32!(101) / R32!(2) * R32!(3)) / R32!(5)),
-                ("XTHREE".to_string(), (R32!(-3601, 5) + R32!(29 * 30736, 1885)) / R32!(23)),
+                (
+                    "XTWO".to_string(),
+                    (R32!(103) - R32!(101) / R32!(2) * R32!(3)) / R32!(5)
+                ),
+                (
+                    "XTHREE".to_string(),
+                    (R32!(-3601, 5) + R32!(29 * 30736, 1885)) / R32!(23)
+                ),
                 ("XFOUR".to_string(), R32!(131)),
                 ("XFIVE".to_string(), R32!(-30736, 65 * 29)),
                 ("XSIX".to_string(), R32!(5)),

@@ -36,7 +36,9 @@ pub trait Column: ColumnIntoIterator<Self::F> + Debug {
     /// Type of struct to iterate over this column.
     ///
     /// It should be somewhat cheaply cloneable and as such not be too large.
-    type Iter<'a>: ColumnIterator<'a, F=Self::F> where Self: 'a;
+    type Iter<'a>: ColumnIterator<'a, F = Self::F>
+    where
+        Self: 'a;
 
     /// Derive the iterator object.
     ///
@@ -57,46 +59,37 @@ pub trait Column: ColumnIntoIterator<Self::F> + Debug {
 /// It exists to "hide" generic parameters on methods throughout the code base and should not be
 /// implemented directly; instead, implement the normal `Iterator` and `Clone` traits. There is a
 /// blanket impl for this trait.
-pub trait ColumnIterator<'a>: Iterator<Item=SparseTuple<&'a Self::F>> + Clone {
+pub trait ColumnIterator<'a>: Iterator<Item = SparseTuple<&'a Self::F>> + Clone {
     type F: 'a + ColumnNumber;
 }
-impl<'a, F: 'a + ColumnNumber, T: Iterator<Item=SparseTuple<&'a F>> + Clone> ColumnIterator<'a> for T {
+impl<'a, F: 'a + ColumnNumber, T: Iterator<Item = SparseTuple<&'a F>> + Clone> ColumnIterator<'a>
+    for T
+{
     type F = F;
 }
 
-pub trait ColumnIntoIterator<F> = IntoIterator<Item=SparseTuple<F>>;
+pub trait ColumnIntoIterator<F> = IntoIterator<Item = SparseTuple<F>>;
 
 /// Basic operations that should be possible with the type of the values of the column.
 ///
 /// This trait was introduced to avoid some verbose trait bounds throughout the codebase.
-pub trait ColumnNumber =
-    NonZero +
-
-    Eq +
-    PartialEq +
-
-    Display +
-    Clone +
-    Debug +
-;
+pub trait ColumnNumber = NonZero + Eq + PartialEq + Display + Clone + Debug;
 
 /// Wrapping a sparse vector of tuples.
 #[derive(Debug, Clone)]
 pub struct SparseColumn<F> {
-    inner: Vec<SparseTuple<F>>
+    inner: Vec<SparseTuple<F>>,
 }
 
 impl<F> SparseColumn<F> {
     pub fn new(data: Vec<SparseTuple<F>>) -> Self {
-        Self {
-            inner: data,
-        }
+        Self { inner: data }
     }
 }
 
 impl<F: 'static + ColumnNumber> Column for SparseColumn<F> {
     type F = F;
-    type Iter<'a> = impl ColumnIterator<'a, F=Self::F>;
+    type Iter<'a> = impl ColumnIterator<'a, F = Self::F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         SparseSliceIterator::new(&self.inner)
@@ -112,7 +105,7 @@ impl<F: 'static + ColumnNumber> Column for SparseColumn<F> {
 
 impl<F> IntoIterator for SparseColumn<F> {
     type Item = SparseTuple<F>;
-    type IntoIter = impl Iterator<Item=Self::Item>;
+    type IntoIter = impl Iterator<Item = Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inner.into_iter()
@@ -184,7 +177,7 @@ struct DenseColumn<F> {
 
 impl<F> IntoIterator for DenseColumn<F> {
     type Item = SparseTuple<F>;
-    type IntoIter = impl Iterator<Item=Self::Item>;
+    type IntoIter = impl Iterator<Item = Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inner.into_iter().enumerate()
@@ -195,15 +188,13 @@ impl<F: ColumnNumber> DenseColumn<F> {
     pub fn new(data: Vec<F>) -> Self {
         debug_assert!(data.iter().any(|v| v.is_not_zero()));
 
-        Self {
-            inner: data,
-        }
+        Self { inner: data }
     }
 }
 
 impl<F: 'static + ColumnNumber> Column for DenseColumn<F> {
     type F = F;
-    type Iter<'a> = impl ColumnIterator<'a, F=Self::F>;
+    type Iter<'a> = impl ColumnIterator<'a, F = Self::F>;
 
     fn iter(&self) -> Self::Iter<'_> {
         DenseSliceIterator::new(&self.inner)

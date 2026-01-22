@@ -8,14 +8,14 @@ use std::path::{Path, PathBuf};
 
 use relp_num::{Rational64, RationalBig};
 
-use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::data::linear_program::general_form::GeneralForm;
 use relp::data::linear_program::solution::Solution;
 use relp::io::error::Import;
 use relp::io::mps::parse_fixed;
-use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 
 /// # Generation and execution
 #[allow(missing_docs)]
@@ -49,9 +49,11 @@ fn solve(file_name: &str) -> Solution<S> {
 
     let mut program = String::new();
     File::open(&file_path)
-        .map_err(Import::IO).unwrap()
+        .map_err(Import::IO)
+        .unwrap()
         .read_to_string(&mut program)
-        .map_err(Import::IO).unwrap();
+        .map_err(Import::IO)
+        .unwrap();
     let mps = parse_fixed::<Rational64>(&program).unwrap();
 
     let mut general: GeneralForm<T> = mps.try_into().unwrap();
@@ -65,7 +67,7 @@ fn solve(file_name: &str) -> Solution<S> {
         OptimizationResult::FiniteOptimum(vector) => {
             let reconstructed = data.reconstruct_solution(vector);
             general.compute_full_solution_with_reduced_solution(reconstructed)
-        },
+        }
         _ => panic!(),
     }
 }

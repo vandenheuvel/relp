@@ -1,7 +1,6 @@
 //! # Sparse vector
 //!
 //! Wrapping a `Vec<(usize, _)>`, fixed size.
-use std::{fmt, mem};
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display};
@@ -10,13 +9,16 @@ use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, Deref, DivAssign, Mul, MulAssign, Neg};
 use std::slice::{Iter, IterMut};
 use std::vec::IntoIter;
+use std::{fmt, mem};
 
 use index_utils::{inner_product_slice_iter, remove_sparse_indices};
 use num_traits::{One, Zero};
 use relp_num::NonZero;
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber, SparseSliceIterator};
 use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
+use crate::algorithm::two_phase::matrix_provider::column::{
+    Column, ColumnNumber, SparseSliceIterator,
+};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
@@ -55,7 +57,7 @@ impl<F, C> Sparse<F, C>
 where
     F: ColumnNumber,
 {
-    pub fn iter(&self) -> SparseSliceIterator<F> {
+    pub fn iter(&self) -> SparseSliceIterator<'_, F> {
         SparseSliceIterator::new(&self.data)
     }
 }
@@ -104,7 +106,7 @@ where
 
     fn sparse_inner_product<'a, 'b, I: ColumnIterator<'b>, O>(&'a self, column: I) -> O
     where
-        &'a F: Mul<&'b I::F, Output=O>,
+        &'a F: Mul<&'b I::F, Output = O>,
         O: Zero + AddAssign,
     {
         inner_product_slice_iter(&self.data, column)
@@ -157,11 +159,11 @@ where
         self.len -= indices.len();
     }
 
-    fn iter(&self) -> Iter<Self::Inner> {
+    fn iter(&self) -> Iter<'_, Self::Inner> {
         self.data.iter()
     }
 
-    fn iter_mut(&mut self) -> IterMut<Self::Inner> {
+    fn iter_mut(&mut self) -> IterMut<'_, Self::Inner> {
         self.data.iter_mut()
     }
 
@@ -182,7 +184,7 @@ where
 }
 
 impl<F: NonZero + SparseElement<C>, C: SparseComparator> FromIterator<F> for Sparse<F, C> {
-    fn from_iter<I: IntoIterator<Item=F>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = F>>(iter: I) -> Self {
         let mut data = Vec::new();
         let mut counter = 0;
 
@@ -203,7 +205,10 @@ where
     C: SparseComparator,
 {
     type F = F;
-    type Iter<'a> = SparseSliceIterator<'a, F> where C: 'a;
+    type Iter<'a>
+        = SparseSliceIterator<'a, F>
+    where
+        C: 'a;
 
     fn iter(&self) -> Self::Iter<'_> {
         SparseSliceIterator::new(&self.data)
@@ -257,15 +262,15 @@ where
     /// storage backend from a `Vec` to a `HashMap`.
     pub fn add_multiple_of_row<'a, G>(&mut self, multiple: G, other: &'a Sparse<F, C>)
     where
-        F: Add<F, Output=F> + NonZero,
+        F: Add<F, Output = F> + NonZero,
         G: Copy,
-        &'a F: Mul<G, Output=F>,
+        &'a F: Mul<G, Output = F>,
     {
         debug_assert_eq!(other.len(), self.len());
 
         let mut new_tuples = Vec::new();
 
-        let mut j = 0;  // data index
+        let mut j = 0; // data index
         let old_data = mem::replace(&mut self.data, Vec::with_capacity(0));
         for (i, value) in old_data {
             while j < other.data.len() && other.data[j].0 < i {
@@ -276,7 +281,7 @@ where
             if j < other.data.len() && i == other.data[j].0 {
                 let new_value = value + &other.data[j].1 * multiple;
                 if new_value.is_not_zero() {
-                    new_tuples.push((i, new_value.into()));
+                    new_tuples.push((i, new_value));
                 }
                 j += 1;
             } else {
@@ -300,7 +305,7 @@ where
     pub fn shift_value<G>(&mut self, i: usize, value: G)
     where
         F: PartialEq<G> + AddAssign<G> + From<G>,
-        for<'r> &'r G: Neg<Output=G>,
+        for<'r> &'r G: Neg<Output = G>,
         G: NonZero,
     {
         debug_assert!(i < self.len);
@@ -313,7 +318,7 @@ where
                     } else {
                         self.data[index].1 += value;
                     }
-                },
+                }
                 Err(index) => self.data.insert(index, (i, From::from(value))),
             }
         }
@@ -334,7 +339,7 @@ where
     /// Divide each element of the vector by a value.
     pub fn element_wise_divide(&mut self, value: &F)
     where
-       for<'r> F: NonZero + DivAssign<&'r F>,
+        for<'r> F: NonZero + DivAssign<&'r F>,
     {
         debug_assert!(value.is_not_zero());
 
@@ -364,23 +369,24 @@ where
         F: Borrow<O>,
         F2: Borrow<O> + PartialEq + Display + Debug,
         O: Sum,
-        &'a O: Mul<&'a O, Output=O>,
+        &'a O: Mul<&'a O, Output = O>,
     {
         debug_assert_eq!(other.len(), self.len());
 
-        self.data.iter().map(|(i, value)| other[*i].borrow() * value.borrow()).sum()
+        self.data
+            .iter()
+            .map(|(i, value)| other[*i].borrow() * value.borrow())
+            .sum()
     }
 }
 
 impl<F, C> Sparse<F, C>
 where
-    for<'r> &'r F: Mul<&'r F, Output=F>,
+    for<'r> &'r F: Mul<&'r F, Output = F>,
     F: Sum,
 {
     pub fn squared_norm(&self) -> F {
-        self.data.iter()
-            .map(|(_, value)| value * value)
-            .sum()
+        self.data.iter().map(|(_, value)| value * value).sum()
     }
 }
 
@@ -405,25 +411,27 @@ mod test {
     #[test]
     fn test_inner_product_iter() {
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product(std::iter::empty::<(_, &i32)>()),
+            SparseVector::new(vec![(0, 1)], 2)
+                .sparse_inner_product(std::iter::empty::<(_, &i32)>()),
             0,
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product(SparseSliceIterator::new(&[(0, 1)])),
+            SparseVector::new(vec![(0, 1)], 2)
+                .sparse_inner_product(SparseSliceIterator::new(&[(0, 1)])),
             1,
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2).sparse_inner_product(SparseSliceIterator::new(&[(2, 1)])),
+            SparseVector::new(vec![(0, 1)], 2)
+                .sparse_inner_product(SparseSliceIterator::new(&[(2, 1)])),
             0,
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1), (3, 1), (12, 1), (13, 1)], 15)
-                .sparse_inner_product(
-                    SparseSliceIterator::new(&[(0, -1), (1, 1), (2, 1), (12, 1)]),
-                ),
+            SparseVector::new(vec![(0, 1), (3, 1), (12, 1), (13, 1)], 15).sparse_inner_product(
+                SparseSliceIterator::new(&[(0, -1), (1, 1), (2, 1), (12, 1)]),
+            ),
             0,
         );
     }

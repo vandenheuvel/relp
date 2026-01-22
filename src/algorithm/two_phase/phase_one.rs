@@ -4,16 +4,20 @@ use std::collections::HashSet;
 use num_traits::Zero;
 use relp_num::{NonZero, Signed};
 
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::strategy::pivot_rule::{PivotRule, SteepestDescentAlongObjective};
-use crate::algorithm::two_phase::tableau::{debug_assert_in_basic_feasible_solution_state, Tableau};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintainer, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{
+    ColumnComputationInfo, InverseMaintainer, ops as im_ops,
+};
 use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
 use crate::algorithm::two_phase::tableau::kind::artificial::Cost;
 use crate::algorithm::two_phase::tableau::kind::artificial::fully::Fully as FullyArtificial;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially as PartiallyArtificial;
+use crate::algorithm::two_phase::tableau::{
+    Tableau, debug_assert_in_basic_feasible_solution_state,
+};
 
 /// Computing a feasible solution: the first phase of the two phase method.
 ///
@@ -28,30 +32,28 @@ pub trait FeasibilityComputeTrait: MatrixProvider<Column: Identity> {
     /// A value representing the basic feasible solution, or an indicator that there is none.
     fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintainer<F:
-            im_ops::FieldHR +
-            im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
-            im_ops::Cost<Cost> +
-            im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
-        >,
-    ;
+        IM: InverseMaintainer<
+            F: im_ops::FieldHR
+                   + im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F>
+                   + im_ops::Cost<Cost>
+                   + im_ops::Rhs<<Self as MatrixProvider>::Rhs>,
+        >;
 }
 
 /// Most generic implementation: finding a basic feasible solution using the Simplex method.
 impl<MP> FeasibilityComputeTrait for MP
 where
-    MP: MatrixProvider<Column: Identity>
+    MP: MatrixProvider<Column: Identity>,
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintainer<F:
-            im_ops::FieldHR +
-            im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
-            im_ops::Cost<Cost> +
-            im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
+        IM: InverseMaintainer<
+            F: im_ops::FieldHR
+                   + im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F>
+                   + im_ops::Cost<Cost>
+                   + im_ops::Rhs<<Self as MatrixProvider>::Rhs>,
         >,
     {
-
         let artificial_tableau = Tableau::<_, FullyArtificial<_>>::new(self);
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
@@ -85,11 +87,11 @@ where
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintainer<F:
-            im_ops::FieldHR +
-            im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F> +
-            im_ops::Cost<Cost> +
-            im_ops::Rhs<<Self as MatrixProvider>::Rhs> +
+        IM: InverseMaintainer<
+            F: im_ops::FieldHR
+                   + im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F>
+                   + im_ops::Cost<Cost>
+                   + im_ops::Rhs<<Self as MatrixProvider>::Rhs>,
         >,
     {
         let artificial_tableau = Tableau::<_, PartiallyArtificial<_>>::new(self);
@@ -106,8 +108,7 @@ where
 ///
 /// TODO(ENHANCEMENT): Is a marker trait enough, or should there be a specialized method?
 /// TODO(ENHANCEMENT): What about the case where also an easy `InverseMaintainer` is available?
-pub trait FullInitialBasis: PartialInitialBasis {
-}
+pub trait FullInitialBasis: PartialInitialBasis {}
 
 /// Reduces the artificial cost of the basic feasible solution to zero, if possible. In doing so, a
 /// basic feasible solution to the standard form linear program is found.
@@ -120,11 +121,11 @@ pub trait FullInitialBasis: PartialInitialBasis {
 /// # Return value
 ///
 /// Whether the tableau might allow a basic feasible solution without artificial variables.
-pub(crate) fn primal<IM, K, MP, PR>(
-    mut tableau: Tableau<IM, K>,
-) -> RankedFeasibilityResult<IM>
+pub(crate) fn primal<IM, K, MP, PR>(mut tableau: Tableau<IM, K>) -> RankedFeasibilityResult<IM>
 where
-    IM: InverseMaintainer<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer<
+        F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+    >,
     K: Artificial,
     MP: MatrixProvider,
     PR: PivotRule<IM::F>,
@@ -143,37 +144,40 @@ where
                 match tableau.select_primal_pivot_row(column_with_info.column()) {
                     Some(pivot_row_index) => {
                         let basis_change_computation_info = tableau.bring_into_basis(
-                            pivot_column_index, pivot_row_index,
-                            column_with_info, cost,
+                            pivot_column_index,
+                            pivot_row_index,
+                            column_with_info,
+                            cost,
                         );
                         rule.after_basis_update(basis_change_computation_info, &tableau);
                     }
                     None => panic!("Artificial cost can not be unbounded."),
                 }
             }
-            None => break if tableau.objective_function_value().is_zero() {
-                let rank = if tableau.has_artificial_in_basis() {
-                    let rows_to_remove = remove_artificial_basis_variables(&mut tableau);
-                    if rows_to_remove.is_empty() {
-                        Rank::Full
+            None => {
+                break if tableau.objective_function_value().is_zero() {
+                    let rank = if tableau.has_artificial_in_basis() {
+                        let rows_to_remove = remove_artificial_basis_variables(&mut tableau);
+                        if rows_to_remove.is_empty() {
+                            Rank::Full
+                        } else {
+                            Rank::Deficient(rows_to_remove)
+                        }
                     } else {
+                        Rank::Full
+                    };
 
-                        Rank::Deficient(rows_to_remove)
+                    let (im, nr_a, basis) = tableau.into_basis();
+                    RankedFeasibilityResult::Feasible {
+                        rank,
+                        nr_artificial_variables: nr_a,
+                        inverse_maintainer: im,
+                        basis,
                     }
                 } else {
-                    Rank::Full
+                    RankedFeasibilityResult::Infeasible
                 };
-
-                let (im, nr_a, basis) = tableau.into_basis();
-                RankedFeasibilityResult::Feasible {
-                    rank,
-                    nr_artificial_variables: nr_a,
-                    inverse_maintainer: im,
-                    basis,
-                }
-            } else {
-                RankedFeasibilityResult::Infeasible
-            },
+            }
         }
     }
 }
@@ -229,9 +233,7 @@ pub enum Rank {
 /// instead of constraints. All bounds are linearly independent among each other, and with respect
 /// to all constraints. As such, they should never be among the redundant rows returned by this
 /// method.
-fn remove_artificial_basis_variables<IM, K>(
-    tableau: &mut Tableau<IM, K>,
-) -> Vec<usize>
+fn remove_artificial_basis_variables<IM, K>(tableau: &mut Tableau<IM, K>) -> Vec<usize>
 where
     IM: InverseMaintainer<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
     K: Artificial,
@@ -252,12 +254,17 @@ where
         let column_and_cost = if constraint_value.is_not_zero() {
             candidates
                 .filter(|(_, cost)| cost.is_zero())
-                .find(|&(j, _)| tableau.generate_element(pivot_row, j)
-                    .map_or(false, |element| IM::F::is_positive(&element)))
+                .find(|&(j, _)| {
+                    tableau
+                        .generate_element(pivot_row, j)
+                        .is_some_and(|element| IM::F::is_positive(&element))
+                })
         } else {
-            candidates
-                .find(|&(j, _)| tableau.generate_element(pivot_row, j)
-                    .map_or(false, |element| element.is_not_zero()))
+            candidates.find(|&(j, _)| {
+                tableau
+                    .generate_element(pivot_row, j)
+                    .is_some_and(|element| element.is_not_zero())
+            })
         };
 
         if let Some((pivot_column, cost)) = column_and_cost {
@@ -268,7 +275,6 @@ where
         } else {
             rows_to_remove.push(pivot_row);
         }
-
 
         debug_assert_in_basic_feasible_solution_state(tableau);
     }
@@ -282,12 +288,12 @@ mod test {
     use relp_num::{Rational64, RationalBig};
 
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
-    use crate::algorithm::two_phase::phase_one::{primal, Rank, RankedFeasibilityResult};
+    use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult, primal};
     use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-    use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
     use crate::algorithm::two_phase::tableau::Tableau;
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+    use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
     use crate::tests::problem_2::{create_matrix_data_data, matrix_data_form};
 
     #[test]
@@ -297,10 +303,14 @@ mod test {
 
         let (constraints, b, variables) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
-        let tableau = Tableau::<Carry<S, BasisInverseRows<S>>, Partially<_>>::new(&matrix_data_form);
+        let tableau =
+            Tableau::<Carry<S, BasisInverseRows<S>>, Partially<_>>::new(&matrix_data_form);
         assert!(matches!(
             primal::<_, _, MatrixData<T>, FirstProfitable>(tableau),
-            RankedFeasibilityResult::Feasible { rank: Rank::Full, .. }
+            RankedFeasibilityResult::Feasible {
+                rank: Rank::Full,
+                ..
+            }
         ));
     }
 }

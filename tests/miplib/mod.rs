@@ -11,13 +11,13 @@ use std::convert::TryInto;
 use std::path::{Path, PathBuf};
 
 use relp_num::Abs;
-use relp_num::RationalBig;
 use relp_num::RB;
+use relp_num::RationalBig;
 
-use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
-use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::io::import;
 
 /// # Generation and execution
@@ -44,7 +44,6 @@ fn get_test_file_path(name: &str) -> PathBuf {
     problem_file_directory().join(name).with_extension("mps")
 }
 
-
 /// Testing a problem, comparing only the objective value.
 fn test(file_name: &str, objective: f64, tolerance: f64) {
     type T = RationalBig;
@@ -66,7 +65,7 @@ fn test(file_name: &str, objective: f64, tolerance: f64) {
 
             // TODO(CORRECTNESS): Make this a relative error check.
             assert!((solution.objective_value - RB!(objective)).abs() < RB!(tolerance));
-        },
+        }
         _ => assert!(false),
     }
 }

@@ -6,10 +6,12 @@ use std::ops::Range;
 use num_traits::One;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
-use crate::algorithm::two_phase::tableau::{BasisChangeComputationInfo, Tableau};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintainer, ops as im_ops};
-use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{
+    ColumnComputationInfo, InverseMaintainer, ops as im_ops,
+};
 use crate::algorithm::two_phase::tableau::kind::Kind;
+use crate::algorithm::two_phase::tableau::kind::artificial::Artificial;
+use crate::algorithm::two_phase::tableau::{BasisChangeComputationInfo, Tableau};
 use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::vector::Vector;
 
@@ -24,10 +26,9 @@ pub trait PivotRule<F> {
     /// Create a new instance.
     fn new<IM, K>(tableau: &Tableau<IM, K>) -> Self
     where
-        IM: InverseMaintainer<F=F>,
+        IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
-    ;
+        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>;
 
     /// Column selection rule for the primal Simplex method.
     fn select_primal_pivot_column<IM, K>(
@@ -35,18 +36,16 @@ pub trait PivotRule<F> {
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintainer<F=F>,
+        IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
-    ;
+        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>;
 
     fn after_basis_update<IM, K>(
         &mut self,
         _info: BasisChangeComputationInfo<IM::F>,
         _tableau: &Tableau<IM, K>,
-    )
-    where
-        IM: InverseMaintainer<F=F>,
+    ) where
+        IM: InverseMaintainer<F = F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -79,7 +78,6 @@ where
     }
 }
 
-
 /// Simply pivot on the first column, which has a negative relative cost.
 ///
 /// The behavior is the same for both the primal and dual simplex method.
@@ -97,7 +95,7 @@ where
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintainer<F=F>,
+        IM: InverseMaintainer<F = F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -118,7 +116,9 @@ where
     F: im_ops::Field,
 {
     fn new<IM, K>(_tableau: &Tableau<IM, K>) -> Self {
-        Self { last_selected: None }
+        Self {
+            last_selected: None,
+        }
     }
 
     fn select_primal_pivot_column<IM, K>(
@@ -126,23 +126,23 @@ where
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintainer<F=F>,
+        IM: InverseMaintainer<F = F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
-        let find = |to_consider: Range<usize>| to_consider
-            .filter(|&column| !tableau.is_in_basis(column))
-            .map(|column| (column, tableau.relative_cost(column)))
-            .find(|(_, cost)| cost.is_negative());
+        let find = |to_consider: Range<usize>| {
+            to_consider
+                .filter(|&column| !tableau.is_in_basis(column))
+                .map(|column| (column, tableau.relative_cost(column)))
+                .find(|(_, cost)| cost.is_negative())
+        };
 
-        let potential = self.last_selected
-            .map_or_else(
-                || find(tableau.start_index()..tableau.nr_columns()),
-                |last| {
-                    find((last + 1)..tableau.nr_columns())
-                        .or_else(|| find(tableau.start_index()..last))
-                },
-            );
+        let potential = self.last_selected.map_or_else(
+            || find(tableau.start_index()..tableau.nr_columns()),
+            |last| {
+                find((last + 1)..tableau.nr_columns()).or_else(|| find(tableau.start_index()..last))
+            },
+        );
 
         self.last_selected = potential.as_ref().map(|&(i, _)| i);
         potential
@@ -165,7 +165,7 @@ where
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintainer<F=F>,
+        IM: InverseMaintainer<F = F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -173,13 +173,16 @@ where
         for (j, cost) in (tableau.start_index()..tableau.nr_columns())
             .filter(|&column| !tableau.is_in_basis(column))
             .map(|column| (column, tableau.relative_cost(column)))
-            .filter(|(_, cost)| cost.is_negative()) {
+            .filter(|(_, cost)| cost.is_negative())
+        {
             if let Some((existing_j, existing_cost)) = smallest.as_mut() {
                 if &cost < existing_cost {
                     *existing_j = j;
                     *existing_cost = cost;
                 }
-            } else { smallest = Some((j, cost)) }
+            } else {
+                smallest = Some((j, cost))
+            }
         }
 
         smallest
@@ -201,7 +204,7 @@ where
 {
     fn new<IM, K>(tableau: &Tableau<IM, K>) -> Self
     where
-        IM: InverseMaintainer<F=F>,
+        IM: InverseMaintainer<F = F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -223,7 +226,7 @@ where
         tableau: &Tableau<IM, K>,
     ) -> Option<SparseTuple<IM::F>>
     where
-        IM: InverseMaintainer<F=F>,
+        IM: InverseMaintainer<F = F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -244,9 +247,8 @@ where
         &mut self,
         info: BasisChangeComputationInfo<IM::F>,
         tableau: &Tableau<IM, K>,
-    )
-    where
-        IM: InverseMaintainer<F=F>,
+    ) where
+        IM: InverseMaintainer<F = F>,
         K: Kind,
         F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
     {
@@ -257,17 +259,25 @@ where
         let gamma_q = IM::F::one() + info.column_before_change.squared_norm();
 
         // Update all other gammas, leaving column gamma is still None and will be skipped
-        for (j, maybe_gamma) in self.gamma.iter_mut().enumerate().skip(tableau.start_index()) {
+        for (j, maybe_gamma) in self
+            .gamma
+            .iter_mut()
+            .enumerate()
+            .skip(tableau.start_index())
+        {
             if let Some(gamma) = maybe_gamma {
-
                 let original_column = tableau.original_column(j);
 
-                let alpha_j_bar: IM::F = info.basis_inverse_row.sparse_inner_product(original_column.iter());
+                let alpha_j_bar: IM::F = info
+                    .basis_inverse_row
+                    .sparse_inner_product(original_column.iter());
 
                 let alternative = if alpha_j_bar.is_not_zero() {
                     let alpha_j_bar_squared = &alpha_j_bar * &alpha_j_bar;
 
-                    let inner_product: F = info.work_vector.sparse_inner_product(original_column.iter());
+                    let inner_product: F = info
+                        .work_vector
+                        .sparse_inner_product(original_column.iter());
                     if inner_product.is_not_zero() {
                         let first = alpha_j_bar * inner_product;
                         for _ in 0..2 {
@@ -298,7 +308,9 @@ where
 
 fn initial_gamma<IM, K>(j: usize, tableau: &Tableau<IM, K>) -> IM::F
 where
-    IM: InverseMaintainer<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer<
+        F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+    >,
     K: Kind,
 {
     IM::F::one() + tableau.generate_column(j).into_column().squared_norm()
@@ -317,7 +329,10 @@ mod test {
         let matrix_data = problem_2::matrix_data_form(&constraints, &b, &variables);
         let artificial_tableau = problem_2::artificial_tableau_form(&matrix_data);
         let mut rule = <FirstProfitable as PivotRule<_>>::new(&artificial_tableau);
-        assert!(matches!(rule.select_primal_pivot_column(&artificial_tableau), Some((3, _))));
+        assert!(matches!(
+            rule.select_primal_pivot_column(&artificial_tableau),
+            Some((3, _))
+        ));
 
         let tableau = problem_2::tableau_form(&matrix_data);
         let mut rule = <FirstProfitable as PivotRule<_>>::new(&tableau);

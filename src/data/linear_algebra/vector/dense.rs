@@ -2,8 +2,8 @@
 //!
 //! Wrapping a `Vec` such that it has a fixed size and can interact with sparse vectors.
 use std::collections::HashSet;
-use std::fmt::{Debug, Display};
 use std::fmt;
+use std::fmt::{Debug, Display};
 use std::iter::FromIterator;
 use std::ops::{AddAssign, Deref, Index, IndexMut, Mul};
 use std::slice::{Iter, IterMut};
@@ -39,7 +39,9 @@ impl<F> Dense<F> {
     {
         debug_assert_ne!(len, 0);
 
-        Self { data: vec![value; len], }
+        Self {
+            data: vec![value; len],
+        }
     }
 
     /// Append multiple values to this vector.
@@ -95,12 +97,12 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     fn new(data: Vec<Self::Inner>, len: usize) -> Self {
         debug_assert_eq!(data.len(), len);
 
-        Self { data, }
+        Self { data }
     }
 
     fn sparse_inner_product<'a, 'b, I: ColumnIterator<'b>, O>(&'a self, column: I) -> O
     where
-        &'a F: Mul<&'b I::F, Output=O>,
+        &'a F: Mul<&'b I::F, Output = O>,
         O: Zero + AddAssign,
     {
         let mut total = O::zero();
@@ -149,12 +151,12 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
     }
 
     /// Iterate over the values of this vector.
-    fn iter(&self) -> Iter<Self::Inner> {
+    fn iter(&self) -> Iter<'_, Self::Inner> {
         self.data.iter()
     }
 
     /// Iterate over the values of this vector mutably.
-    fn iter_mut(&mut self) -> IterMut<Self::Inner> {
+    fn iter_mut(&mut self) -> IterMut<'_, Self::Inner> {
         self.data.iter_mut()
     }
 
@@ -175,9 +177,9 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
 }
 
 impl<T> FromIterator<T> for Dense<T> {
-    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         Self {
-            data: iter.into_iter().collect()
+            data: iter.into_iter().collect(),
         }
     }
 }

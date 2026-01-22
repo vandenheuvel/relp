@@ -26,7 +26,8 @@ pub(super) trait PivotRule {
     /// considered.
     fn choose_pivot<T>(
         &self,
-        nnz_row: &[usize], nnz_column: &[usize],
+        nnz_row: &[usize],
+        nnz_column: &[usize],
         rows: &[Vec<(usize, T)>],
         k: usize,
     ) -> (usize, usize);
@@ -44,7 +45,8 @@ impl PivotRule for Markowitz {
 
     fn choose_pivot<T>(
         &self,
-        row_counts: &[usize], column_counts: &[usize],
+        row_counts: &[usize],
+        column_counts: &[usize],
         rows: &[Vec<(usize, T)>],
         k: usize,
     ) -> (usize, usize) {
@@ -57,7 +59,8 @@ impl PivotRule for Markowitz {
         debug_assert!(rows.iter().all(|row| row.is_sorted_by_key(|&(j, _)| j)));
 
         // TODO(ENHANCEMENT): This is a very slow O(log(nnz(B)) * nnz(B)) search, see #15.
-        let mut pairs = rows.iter()
+        let mut pairs = rows
+            .iter()
             .enumerate()
             .skip(k)
             .flat_map(|(i, row)| {
@@ -65,7 +68,9 @@ impl PivotRule for Markowitz {
                     Ok(index) | Err(index) => index,
                 };
 
-                row[first_relevant_index..].iter().map(move |&(j, _)| (i, j))
+                row[first_relevant_index..]
+                    .iter()
+                    .map(move |&(j, _)| (i, j))
             })
             .collect::<Vec<_>>();
 

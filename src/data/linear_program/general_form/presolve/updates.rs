@@ -8,10 +8,12 @@ use std::collections::{HashMap, HashSet};
 use relp_num::{OrderedField, OrderedFieldRef};
 
 use crate::data::linear_algebra::traits::SparseElement;
-use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, Objective, RangedConstraintRelation};
-use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable};
+use crate::data::linear_program::elements::{
+    BoundDirection, LinearProgramType, Objective, RangedConstraintRelation,
+};
 use crate::data::linear_program::general_form::presolve::counters::Counters;
 use crate::data::linear_program::general_form::presolve::is_empty_constraint_feasible;
+use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable};
 
 /// Collection of changes that can be applied to the `GeneralForm` without changing its solution.
 ///
@@ -71,7 +73,7 @@ pub struct Updates<'a, F> {
 ///
 /// Used within the methods to determine what needs to happen after bound was (maybe) updated.
 #[derive(Eq, PartialEq)]
-pub (super) enum BoundChange<F> {
+pub(super) enum BoundChange<F> {
     /// No change was made.
     ///
     /// There must have already been a bound that is at least as tight.
@@ -108,7 +110,10 @@ where
         counters: &Counters<OF>,
     ) -> Result<Self, LinearProgramType<OF>> {
         let mut fixed_cost = OF::zero();
-        let removed_variables = counters.variable.iter().enumerate()
+        let removed_variables = counters
+            .variable
+            .iter()
+            .enumerate()
             .filter(|&(_, &count)| count == 0)
             .map(|(j, _)| {
                 let variable = &general_form.variables[j];
@@ -129,9 +134,13 @@ where
                 };
 
                 Ok((j, RemovedVariable::Solved(value)))
-            }).collect::<Result<_, _>>()?;
+            })
+            .collect::<Result<_, _>>()?;
 
-        let constraints_marked_removed = counters.constraint.iter().enumerate()
+        let constraints_marked_removed = counters
+            .constraint
+            .iter()
+            .enumerate()
             .filter(|&(_, &count)| count == 0)
             .map(|(constraint, _)| {
                 let right_hand_side = &general_form.b[constraint];
@@ -164,7 +173,9 @@ where
         // There is no reason to want to know the latest value for a constraint already removed.
         debug_assert!(!self.constraints_marked_removed.contains(&constraint));
 
-        self.b.get(&constraint).unwrap_or(&self.general_form.b[constraint])
+        self.b
+            .get(&constraint)
+            .unwrap_or(&self.general_form.b[constraint])
     }
     /// Change the constraint value by a certain amount.
     pub(super) fn change_b(&mut self, constraint: usize, change: OF) {
@@ -174,7 +185,8 @@ where
         if let Some(existing_value) = self.b.get_mut(&constraint) {
             *existing_value += change;
         } else {
-            self.b.insert(constraint, &self.general_form.b[constraint] + change);
+            self.b
+                .insert(constraint, &self.general_form.b[constraint] + change);
         }
     }
 
@@ -187,7 +199,8 @@ where
         // There is no reason to want to know the latest value for a constraint already removed.
         debug_assert!(!self.constraints_marked_removed.contains(&constraint));
 
-        self.constraints.get(&constraint)
+        self.constraints
+            .get(&constraint)
             .unwrap_or(&self.general_form.constraint_types[constraint])
     }
 
@@ -239,14 +252,16 @@ where
             !matches!((certain, activity), (Some(_), Some(_)))
         });
 
-        self.activity_bounds.get(&(variable, direction))
+        self.activity_bounds
+            .get(&(variable, direction))
             .or_else(|| self.bounds.get(&(variable, direction)))
             .or_else(|| {
                 let variable = &self.general_form.variables[variable];
                 match direction {
                     BoundDirection::Lower => &variable.lower_bound,
                     BoundDirection::Upper => &variable.upper_bound,
-                }.as_ref()
+                }
+                .as_ref()
             })
     }
 
@@ -274,26 +289,24 @@ where
 
         // The bounds in `self.bounds` are disjoint from the bounds in `self.activity_bounds`.
         let compare_with = match self.bounds.get(&(variable, direction)) {
-            None => {
-                match self.activity_bounds.remove(&(variable, direction)) {
-                    None => {
-                        let original = &self.general_form.variables[variable];
-                        let original = match direction {
-                            BoundDirection::Lower => &original.lower_bound,
-                            BoundDirection::Upper => &original.upper_bound,
-                        };
-                        match original {
-                            None => {
-                                self.bounds.insert((variable, direction), new);
-                                return BoundChange::NewBound
-                            },
-                            Some(original) => original,
+            None => match self.activity_bounds.remove(&(variable, direction)) {
+                None => {
+                    let original = &self.general_form.variables[variable];
+                    let original = match direction {
+                        BoundDirection::Lower => &original.lower_bound,
+                        BoundDirection::Upper => &original.upper_bound,
+                    };
+                    match original {
+                        None => {
+                            self.bounds.insert((variable, direction), new);
+                            return BoundChange::NewBound;
                         }
-                    },
-                    Some(existing_activity) => {
-                        self.bounds.insert((variable, direction), existing_activity);
-                        self.bounds.get(&(variable, direction)).unwrap()
+                        Some(original) => original,
                     }
+                }
+                Some(existing_activity) => {
+                    self.bounds.insert((variable, direction), existing_activity);
+                    self.bounds.get(&(variable, direction)).unwrap()
                 }
             },
             Some(existing) => existing,
@@ -341,23 +354,29 @@ where
                         None => {
                             self.activity_bounds.insert((variable, direction), new);
                             BoundChange::NewBound
-                        },
+                        }
                         Some(original) => bound_compare_and_update(
-                            variable, direction, new,
+                            variable,
+                            direction,
+                            new,
                             original,
                             &mut self.activity_bounds,
                         ),
                     }
-                },
+                }
                 Some(derived) => bound_compare_and_update(
-                    variable, direction, new,
+                    variable,
+                    direction,
+                    new,
                     &derived.clone(),
                     // If the bound will already be adopted for sure, change it here
                     &mut self.bounds,
                 ),
             },
             Some(activity_derived) => bound_compare_and_update(
-                variable, direction, new,
+                variable,
+                direction,
+                new,
                 &activity_derived.clone(),
                 &mut self.activity_bounds,
             ),
@@ -405,12 +424,16 @@ where
             self.bounds.remove(&(variable, BoundDirection::Lower));
             self.bounds.remove(&(variable, BoundDirection::Upper));
 
-            self.activity_bounds.remove(&(variable, BoundDirection::Lower));
-            self.activity_bounds.remove(&(variable, BoundDirection::Upper));
+            self.activity_bounds
+                .remove(&(variable, BoundDirection::Lower));
+            self.activity_bounds
+                .remove(&(variable, BoundDirection::Upper));
         }
 
         // Keep derived variable bounds only when they help eliminate free variables
-        let free_to_be_restricted = self.activity_bounds.iter()
+        let free_to_be_restricted = self
+            .activity_bounds
+            .iter()
             .map(|(&(variable, _), _)| variable)
             .filter(|&variable| {
                 // Was initially free?
@@ -427,12 +450,16 @@ where
         }
 
         // Remove changes that are not actually changes (might have been changed back and forth)
-        let b = self.b.into_iter()
+        let b = self
+            .b
+            .into_iter()
             .filter(|(i, new_b)| new_b != &self.general_form.b[*i])
             .collect();
 
         let existing_constraint_types = &self.general_form.constraint_types;
-        let constraints = self.constraints.into_iter()
+        let constraints = self
+            .constraints
+            .into_iter()
             .filter(|(constraint, constraint_type)| {
                 &existing_constraint_types[*constraint] != constraint_type
             })
@@ -459,7 +486,6 @@ where
         self.general_form.nr_active_constraints() - self.constraints_marked_removed.len()
     }
 }
-
 
 /// Fields in this struct are mostly the same as in the `Updates` struct.
 #[derive(Eq, PartialEq, Debug)]
@@ -551,10 +577,11 @@ where
     match (objective, cost_sign) {
         (Objective::Minimize, Ordering::Greater) | (Objective::Maximize, Ordering::Less) => {
             lower_bound.ok_or(LinearProgramType::Unbounded)
-        },
+        }
         (Objective::Maximize, Ordering::Greater) | (Objective::Minimize, Ordering::Less) => {
             upper_bound.ok_or(LinearProgramType::Unbounded)
-        },
+        }
         (_, Ordering::Equal) => panic!("Should not be called if there is no cost"),
-    }.map(OF::clone)
+    }
+    .cloned()
 }

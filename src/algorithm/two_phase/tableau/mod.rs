@@ -10,7 +10,9 @@ use num_traits::One;
 use num_traits::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, SparseSliceIterator};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, InverseMaintainer, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{
+    ColumnComputationInfo, InverseMaintainer, ops as im_ops,
+};
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::data::linear_algebra::vector::{SparseVector, Vector};
 
@@ -50,15 +52,22 @@ where
         pivot_column_index: usize,
         pivot_row_index: usize,
         column_computation_info: IM::ColumnComputationInfo,
-        cost: IM::F
+        cost: IM::F,
     ) -> BasisChangeComputationInfo<IM::F> {
         debug_assert!(pivot_column_index < self.kind.nr_columns());
         debug_assert!(pivot_row_index < self.nr_rows());
 
         let basis_change_computation_info = self.inverse_maintainer.change_basis(
-            pivot_row_index, pivot_column_index, column_computation_info, cost, &self.kind,
+            pivot_row_index,
+            pivot_column_index,
+            column_computation_info,
+            cost,
+            &self.kind,
         );
-        self.update_basis_indices(pivot_column_index, basis_change_computation_info.leaving_column_index);
+        self.update_basis_indices(
+            pivot_column_index,
+            basis_change_computation_info.leaving_column_index,
+        );
 
         basis_change_computation_info
     }
@@ -73,11 +82,7 @@ where
     /// * `pivot_row`: Row index of the pivot, in range `0` until `self.nr_rows()`.
     /// * `pivot_column`: Column index of the pivot, in range `0` until `self.nr_columns()`. Is not
     /// yet in the basis.
-    fn update_basis_indices(
-        &mut self,
-        pivot_column: usize,
-        leaving_column: usize,
-    ) {
+    fn update_basis_indices(&mut self, pivot_column: usize, leaving_column: usize) {
         debug_assert!(pivot_column < self.nr_columns());
         debug_assert!(leaving_column < self.nr_columns());
 
@@ -107,7 +112,9 @@ where
         debug_assert!(j < self.nr_columns());
 
         let initial = self.kind.initial_cost_value(j);
-        let difference = self.inverse_maintainer.cost_difference(&self.kind.original_column(j));
+        let difference = self
+            .inverse_maintainer
+            .cost_difference(&self.kind.original_column(j));
         difference + initial
     }
 
@@ -126,7 +133,8 @@ where
     pub fn generate_column(&self, j: usize) -> IM::ColumnComputationInfo {
         debug_assert!(j < self.nr_columns());
 
-        self.inverse_maintainer.generate_column(self.kind.original_column(j))
+        self.inverse_maintainer
+            .generate_column(self.kind.original_column(j))
     }
 
     /// Single element with respect to the current basis.
@@ -134,7 +142,8 @@ where
         debug_assert!(i < self.nr_rows());
         debug_assert!(j < self.nr_columns());
 
-        self.inverse_maintainer.generate_element(i, self.kind.original_column(j))
+        self.inverse_maintainer
+            .generate_element(i, self.kind.original_column(j))
     }
 
     pub fn original_column(&self, j: usize) -> K::Column {
@@ -235,7 +244,7 @@ pub struct BasisChangeComputationInfo<F> {
 
 impl<IM, K> Tableau<IM, K>
 where
-    K: Kind
+    K: Kind,
 {
     /// Number of rows in the tableau.
     ///
@@ -262,7 +271,9 @@ where
 
 impl<IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintainer<F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer<
+        F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+    >,
     K: Kind,
 {
     /// Determine the row to pivot on.
@@ -289,7 +300,7 @@ where
 
         // (chosen index, minimum ratio, corresponding leaving_column (for Bland's algorithm))
         let mut min_values: Option<(usize, IM::F, usize)> = None;
-        for (row, xij) in SparseSliceIterator::new(&column) {
+        for (row, xij) in SparseSliceIterator::new(column) {
             if xij > &IM::F::zero() {
                 let ratio = self.inverse_maintainer.get_constraint_value(row) / xij;
                 // Bland's anti cycling algorithm
@@ -332,28 +343,36 @@ where
         .for_each(|(i, j)| {
             let e_i = SparseVector::new(vec![(i, IM::F::one())], tableau.nr_rows());
             debug_assert_eq!(
-                tableau.generate_column(j).into_column(), e_i,
-                "Column {} is not equal to e_{}", j, i,
+                tableau.generate_column(j).into_column(),
+                e_i,
+                "Column {} is not equal to e_{}",
+                j,
+                i,
             );
         });
 
     // `minus_pi` get to relative zero cost for basis columns
     (0..tableau.nr_rows())
         .map(|i| tableau.inverse_maintainer.basis_column_index_for_row(i))
-        .for_each(|j| debug_assert_eq!(
-            tableau.relative_cost(j), IM::F::zero(),
-            "Relative cost of column {} is not zero", j,
-        ));
+        .for_each(|j| {
+            debug_assert_eq!(
+                tableau.relative_cost(j),
+                IM::F::zero(),
+                "Relative cost of column {} is not zero",
+                j,
+            )
+        });
 
     // `b` >= 0
-    (0..tableau.nr_rows())
-        .for_each(|i| {
-            let value = &tableau.inverse_maintainer.b()[i];
-            debug_assert!(
-                value >= &IM::F::zero(),
-                "rhs (b) is not always nonnegative: at index {} we have {} < 0", i, value,
-            );
-        });
+    (0..tableau.nr_rows()).for_each(|i| {
+        let value = &tableau.inverse_maintainer.b()[i];
+        debug_assert!(
+            value >= &IM::F::zero(),
+            "rhs (b) is not always nonnegative: at index {} we have {} < 0",
+            i,
+            value,
+        );
+    });
 }
 
 impl<IM, K> Display for Tableau<IM, K>
@@ -366,30 +385,43 @@ where
 
         writeln!(f, "=== Tableau ===")?;
         let objective = (-self.inverse_maintainer.get_objective_function_value()).to_string();
-        let cost = (0..self.nr_columns()).map(|j| {
-            self.relative_cost(j).to_string()
-        }).collect::<Vec<_>>();
-        let b = self.inverse_maintainer.b()
-            .iter().map(|v| v.to_string())
+        let cost = (0..self.nr_columns())
+            .map(|j| self.relative_cost(j).to_string())
             .collect::<Vec<_>>();
-        let columns = (0..self.nr_columns()).map(|j| {
-            let column = self.generate_column(j);
-            (0..self.nr_rows())
-                .map(|i| match column.column().get(i) {
-                    None => "".to_string(),
-                    Some(value) => value.to_string(),
-                })
-                .collect::<Vec<_>>()
-        }).collect::<Vec<_>>();
+        let b = self
+            .inverse_maintainer
+            .b()
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>();
+        let columns = (0..self.nr_columns())
+            .map(|j| {
+                let column = self.generate_column(j);
+                (0..self.nr_rows())
+                    .map(|i| match column.column().get(i) {
+                        None => "".to_string(),
+                        Some(value) => value.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
 
         let row_counter_width = "cost".len();
-        let column_width = columns.iter().enumerate().map(|(j, column)| {
-            [
-                column.iter().map(String::len).max().unwrap(),
-                j.to_string().len(),
-                cost[j].len(),
-            ].iter().max().copied().unwrap()
-        }).collect::<Vec<_>>();
+        let column_width = columns
+            .iter()
+            .enumerate()
+            .map(|(j, column)| {
+                [
+                    column.iter().map(String::len).max().unwrap(),
+                    j.to_string().len(),
+                    cost[j].len(),
+                ]
+                .iter()
+                .max()
+                .copied()
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
 
         let b_inner_width = max(b.iter().map(String::len).max().unwrap(), objective.len());
 
@@ -401,8 +433,11 @@ where
         }
         writeln!(f)?;
 
-        let total_width = (row_counter_width + 1) + 1 + (1 + b_inner_width + 1) + 1 +
-            column_width.iter().map(|l| 1 + l).sum::<usize>();
+        let total_width = (row_counter_width + 1)
+            + 1
+            + (1 + b_inner_width + 1)
+            + 1
+            + column_width.iter().map(|l| 1 + l).sum::<usize>();
         // Separator
         writeln!(f, "{}", "-".repeat(total_width))?;
 
@@ -444,19 +479,21 @@ where
 mod test {
     use std::collections::HashSet;
 
-    use relp_num::{Rational64, RationalBig};
     use relp_num::RB;
+    use relp_num::{Rational64, RationalBig};
 
     use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::strategy::pivot_rule::{FirstProfitable, PivotRule};
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-    use crate::algorithm::two_phase::tableau::inverse_maintenance::ColumnComputationInfo;
-    use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
     use crate::algorithm::two_phase::tableau::Tableau;
-    use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::ColumnComputationInfo;
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+    use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+    use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
     use crate::data::linear_algebra::vector::test::TestVector;
-    use crate::tests::problem_2::{artificial_tableau_form, create_matrix_data_data, matrix_data_form};
+    use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
+    use crate::tests::problem_2::{
+        artificial_tableau_form, create_matrix_data_data, matrix_data_form,
+    };
 
     type T = Rational64;
     type S = RationalBig;
@@ -474,18 +511,20 @@ mod test {
                 SparseVector::from_test_data(vec![-1, 1, 0]),
                 SparseVector::from_test_data(vec![-1, 0, 1]),
             ]);
-            Carry::<S, BasisInverseRows<S>>::new(minus_objective, minus_pi, b, basis_indices, basis_inverse_rows)
+            Carry::<S, BasisInverseRows<S>>::new(
+                minus_objective,
+                minus_pi,
+                b,
+                basis_indices,
+                basis_inverse_rows,
+            )
         };
         let mut basis_columns = HashSet::new();
         basis_columns.insert(2);
         basis_columns.insert(3);
         basis_columns.insert(4);
 
-        Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
-            data,
-            carry,
-            basis_columns,
-        )
+        Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(data, carry, basis_columns)
     }
 
     #[test]
@@ -546,7 +585,9 @@ mod test {
         let mut artificial_tableau = artificial_tableau_form(&matrix_data_form);
         let column = artificial_tableau.nr_artificial_variables() + 0;
         let column_data = artificial_tableau.generate_column(column);
-        let row = artificial_tableau.select_primal_pivot_row(&column_data).unwrap();
+        let row = artificial_tableau
+            .select_primal_pivot_row(&column_data)
+            .unwrap();
         let cost = artificial_tableau.relative_cost(column);
         artificial_tableau.bring_into_basis(column, row, column_data, cost);
 
@@ -567,7 +608,10 @@ mod test {
 
     fn bfs_tableau<'a>(
         data: &'a MatrixData<'a, Rational64>,
-    ) -> Tableau<Carry<RationalBig, BasisInverseRows<RationalBig>>, NonArtificial<'a, MatrixData<'a, Rational64>>> {
+    ) -> Tableau<
+        Carry<RationalBig, BasisInverseRows<RationalBig>>,
+        NonArtificial<'a, MatrixData<'a, Rational64>>,
+    > {
         let m = 3;
         let carry = {
             let minus_objective = RB!(0);
@@ -579,18 +623,20 @@ mod test {
                 SparseVector::from_test_data(vec![-1, 1, 0]),
                 SparseVector::from_test_data(vec![-1, 0, 1]),
             ]);
-            Carry::new(minus_objective, minus_pi, b, basis_indices, basis_inverse_rows)
+            Carry::new(
+                minus_objective,
+                minus_pi,
+                b,
+                basis_indices,
+                basis_inverse_rows,
+            )
         };
         let mut basis_columns = HashSet::new();
         basis_columns.insert(m + 2);
         basis_columns.insert(m + 3);
         basis_columns.insert(m + 4);
 
-        Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
-            data,
-            carry,
-            basis_columns,
-        )
+        Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(data, carry, basis_columns)
     }
 
     #[test]

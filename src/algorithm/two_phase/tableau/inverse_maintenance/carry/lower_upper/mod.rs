@@ -1,6 +1,6 @@
 //! # LU decomposition
-use std::cmp::max;
 use std::cmp::Ordering;
+use std::cmp::max;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::Display;
@@ -9,16 +9,18 @@ use std::iter;
 use num_traits::Zero;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnIterator, ColumnNumber};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, ops};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::eta_file::EtaFile;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{FullPermutation, Permutation, RotateToBackPermutation};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::permutation::{
+    FullPermutation, Permutation, RotateToBackPermutation,
+};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::{ColumnComputationInfo, ops};
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_algebra::vector::{SparseVector, Vector};
 
 mod decomposition;
-mod permutation;
 mod eta_file;
+mod permutation;
 
 /// Decompose a matrix `B` into `PBQ = LU` where
 ///
@@ -75,7 +77,7 @@ where
         }
     }
 
-    fn invert<C: Column>(columns: impl ExactSizeIterator<Item=C>) -> Self
+    fn invert<C: Column>(columns: impl ExactSizeIterator<Item = C>) -> Self
     where
         Self::F: ops::Column<C::F>,
     {
@@ -113,11 +115,9 @@ where
             .filter_map(|j| {
                 let column = &self.upper_triangular[j - 1];
                 column
-                    .binary_search_by_key(&pivot_column_index, |&(i, _)| i).ok()
-                    .map(|data_index| (
-                        (j, column[data_index].1.clone()),
-                        (j, data_index),
-                    ))
+                    .binary_search_by_key(&pivot_column_index, |&(i, _)| i)
+                    .ok()
+                    .map(|data_index| ((j, column[data_index].1.clone()), (j, data_index)))
             })
             .unzip();
         let u_bar = u_bar.into_iter().collect();
@@ -134,7 +134,9 @@ where
 
         eta_file.update_spike_pivot_value(&mut spike);
         debug_assert!(
-            spike.binary_search_by_key(&pivot_column_index, |&(i, _)| i).is_ok(),
+            spike
+                .binary_search_by_key(&pivot_column_index, |&(i, _)| i)
+                .is_ok(),
             "This value should be present to avoid singularity because it will be the bottom corner value.",
         );
 
@@ -164,20 +166,30 @@ where
         *self.upper_diagonal.last_mut().unwrap() = corner_value;
 
         // `upper_triangular` is diagonal again
-        debug_assert!(self.upper_triangular.iter().all(|column| {
-            column.windows(2).all(|w| w[0].0 < w[1].0)
-        }));
-        debug_assert!(self.upper_triangular.iter().enumerate().all(|(data_j, column)| {
-            let j = data_j + 1;
-            column.last().map_or(true, |&(i, _)| i < j)
-        }));
+        debug_assert!(
+            self.upper_triangular
+                .iter()
+                .all(|column| { column.windows(2).all(|w| w[0].0 < w[1].0) })
+        );
+        debug_assert!(
+            self.upper_triangular
+                .iter()
+                .enumerate()
+                .all(|(data_j, column)| {
+                    let j = data_j + 1;
+                    column.last().is_none_or(|&(i, _)| i < j)
+                })
+        );
         self.updates.push((eta_file, q));
 
         // return the column, unmodified
         column
     }
 
-    fn left_multiply_by_basis_inverse<'a, I: ColumnIterator<'a>>(&self, iter: I) -> Self::ColumnComputationInfo
+    fn left_multiply_by_basis_inverse<'a, I: ColumnIterator<'a>>(
+        &self,
+        iter: I,
+    ) -> Self::ColumnComputationInfo
     where
         Self::F: ops::Column<I::F>,
     {
@@ -210,7 +222,8 @@ where
     }
 
     fn right_multiply_by_basis_inverse<'a, I: ColumnIterator<'a>>(
-        &self, row: I,
+        &self,
+        row: I,
     ) -> SparseVector<Self::F, Self::F>
     where
         Self::F: ops::Column<I::F>,
@@ -237,13 +250,18 @@ where
     }
 
     fn generate_element<'a, I: ColumnIterator<'a>>(
-        &'a self, i: usize, original_column: I,
+        &'a self,
+        i: usize,
+        original_column: I,
     ) -> Option<Self::F>
     where
         Self::F: ops::Column<I::F>,
     {
         // TODO(PERFORMANCE): Compute a single value only
-        self.left_multiply_by_basis_inverse(original_column).into_column().get(i).cloned()
+        self.left_multiply_by_basis_inverse(original_column)
+            .into_column()
+            .get(i)
+            .cloned()
     }
 
     fn should_refactor(&self) -> bool {
@@ -320,7 +338,11 @@ where
         result
     }
 
-    fn left_multiply_by_upper_inverse_row(&self, mut rhs: BTreeMap<usize, F>, target_row: usize) -> Option<F> {
+    fn left_multiply_by_upper_inverse_row(
+        &self,
+        mut rhs: BTreeMap<usize, F>,
+        target_row: usize,
+    ) -> Option<F> {
         while let Some((row, rhs_value)) = rhs.pop_last() {
             let column = row;
             match row.cmp(&target_row) {
@@ -329,7 +351,7 @@ where
                 Ordering::Greater => {
                     let result_value = rhs_value / &self.upper_diagonal[column];
                     self.update_rhs(column, &result_value, &mut rhs);
-                },
+                }
             }
         }
 
@@ -487,7 +509,7 @@ where
                             Ok(index) => column[index].1.to_string(),
                             Err(_) => "0".to_string(),
                         }
-                    },
+                    }
                 };
                 write!(f, "{0:^width$}", value, width = width)?;
             }
@@ -556,29 +578,37 @@ mod test {
             let identity = LUDecomposition::<RationalBig>::identity(2);
 
             let column = vec![(0, RB!(1))];
-            let result = identity.left_multiply_by_upper_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.left_multiply_by_upper_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(0, RB!(1))];
-            let result = identity.right_multiply_by_upper_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.right_multiply_by_upper_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(0, RB!(1))];
-            let result = identity.left_multiply_by_lower_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.left_multiply_by_lower_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(0, RB!(1))];
-            let result = identity.right_multiply_by_lower_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.right_multiply_by_lower_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
 
             let column = vec![(1, RB!(1))];
-            let result = identity.left_multiply_by_upper_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.left_multiply_by_upper_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(1, RB!(1))];
-            let result = identity.right_multiply_by_upper_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.right_multiply_by_upper_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(1, RB!(1))];
-            let result = identity.left_multiply_by_lower_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.left_multiply_by_lower_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(1, RB!(1))];
-            let result = identity.right_multiply_by_lower_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.right_multiply_by_lower_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
         }
 
@@ -587,16 +617,20 @@ mod test {
             let identity = LUDecomposition::<RationalBig>::identity(2);
 
             let column = vec![(0, RB!(1)), (1, RB!(1))];
-            let result = identity.left_multiply_by_upper_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.left_multiply_by_upper_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(0, RB!(1)), (1, RB!(1))];
-            let result = identity.right_multiply_by_upper_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.right_multiply_by_upper_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(0, RB!(1)), (1, RB!(1))];
-            let result = identity.left_multiply_by_lower_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.left_multiply_by_lower_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
             let column = vec![(0, RB!(1)), (1, RB!(1))];
-            let result = identity.right_multiply_by_lower_inverse(column.clone().into_iter().collect());
+            let result =
+                identity.right_multiply_by_lower_inverse(column.clone().into_iter().collect());
             assert_eq!(result, column);
         }
 
@@ -635,7 +669,10 @@ mod test {
                 slack: None,
             };
             let result = offdiag.left_multiply_by_basis_inverse(column.iter());
-            assert_eq!(result.column, SparseVector::new(vec![(0, RB!(1)), (1, RB!(-1))], 2));
+            assert_eq!(
+                result.column,
+                SparseVector::new(vec![(0, RB!(1)), (1, RB!(-1))], 2)
+            );
 
             let column = Column::Sparse {
                 constraint_values: vec![(1, R64!(1))],
@@ -667,19 +704,27 @@ mod test {
             };
 
             assert_eq!(
-                dense.left_multiply_by_basis_inverse(IdentityColumn::new(0).iter()).into_column(),
+                dense
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(0).iter())
+                    .into_column(),
                 SparseVector::new(vec![(0, RB!(-2)), (1, RB!(3, 2))], 2),
             );
             assert_eq!(
-                dense.left_multiply_by_basis_inverse(IdentityColumn::new(1).iter()).into_column(),
+                dense
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(1).iter())
+                    .into_column(),
                 SparseVector::new(vec![(0, RB!(1)), (1, RB!(-1, 2))], 2),
             );
             assert_eq!(
-                dense.right_multiply_by_basis_inverse(IdentityColumn::new(0).iter()).into_column(),
+                dense
+                    .right_multiply_by_basis_inverse(IdentityColumn::new(0).iter())
+                    .into_column(),
                 SparseVector::new(vec![(0, RB!(-2)), (1, RB!(1))], 2),
             );
             assert_eq!(
-                dense.right_multiply_by_basis_inverse(IdentityColumn::new(1).iter()).into_column(),
+                dense
+                    .right_multiply_by_basis_inverse(IdentityColumn::new(1).iter())
+                    .into_column(),
                 SparseVector::new(vec![(0, RB!(3, 2)), (1, RB!(-1, 2))], 2),
             );
         }
@@ -756,7 +801,12 @@ mod test {
                 row_permutation: FullPermutation::identity(m),
                 column_permutation: FullPermutation::identity(m),
                 lower_triangular: vec![vec![]; m - 1],
-                upper_triangular: vec![vec![], vec![], vec![], vec![(0, RB!(2)), (1, RB!(5)), (2, RB!(7))]],
+                upper_triangular: vec![
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![(0, RB!(2)), (1, RB!(5)), (2, RB!(7))],
+                ],
                 upper_diagonal: vec![RB!(1), RB!(1), RB!(1), RB!(1), RB!(3)],
                 updates: vec![(
                     EtaFile::new(vec![], 1, m),
@@ -803,19 +853,27 @@ mod test {
 
             // Columns
             assert_eq!(
-                modified.left_multiply_by_basis_inverse(IdentityColumn::new(0).iter()).into_column(),
+                modified
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(0).iter())
+                    .into_column(),
                 SparseVector::standard_basis_vector(0, m),
             );
             assert_eq!(
-                modified.left_multiply_by_basis_inverse(IdentityColumn::new(1).iter()).into_column(),
+                modified
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(1).iter())
+                    .into_column(),
                 SparseVector::new(vec![(1, RB!(-3, 4)), (2, RB!(9, 16)), (3, RB!(1, 2))], m),
             );
             assert_eq!(
-                modified.left_multiply_by_basis_inverse(IdentityColumn::new(2).iter()).into_column(),
+                modified
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(2).iter())
+                    .into_column(),
                 SparseVector::new(vec![(2, RB!(1, 4))], m),
             );
             assert_eq!(
-                modified.left_multiply_by_basis_inverse(IdentityColumn::new(3).iter()).into_column(),
+                modified
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(3).iter())
+                    .into_column(),
                 SparseVector::new(vec![(1, RB!(5, 8)), (2, RB!(-15, 32)), (3, RB!(-1, 4))], m),
             );
 
@@ -877,11 +935,15 @@ mod test {
                 ],
                 upper_diagonal: vec![RB!(11), RB!(33), RB!(44), RB!(55), RB!(-215, 363)],
                 updates: vec![(
-                    EtaFile::new(vec![
+                    EtaFile::new(
+                        vec![
                             (2, RB!(23, 33)),
                             (3, RB!(24 * 33 - 34 * 23, 33 * 44)),
                             (4, RB!(43, 7986)),
-                        ], 1, m),
+                        ],
+                        1,
+                        m,
+                    ),
                     RotateToBackPermutation::new(1, m),
                 )],
             };
@@ -889,30 +951,69 @@ mod test {
 
             // Columns
             assert_eq!(
-                modified.left_multiply_by_basis_inverse(IdentityColumn::new(0).iter()).into_column(),
+                modified
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(0).iter())
+                    .into_column(),
                 SparseVector::new(vec![(0, RB!(1, 11))], m),
             );
             assert_eq!(
-                modified.left_multiply_by_basis_inverse(IdentityColumn::new(1).iter()).into_column(),
-                SparseVector::new(vec![(0, RB!(-2, 11)), (1, RB!(-363, 215)), (2, RB!(-1, 43)), (3, RB!(693, 430))], m),
+                modified
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(1).iter())
+                    .into_column(),
+                SparseVector::new(
+                    vec![
+                        (0, RB!(-2, 11)),
+                        (1, RB!(-363, 215)),
+                        (2, RB!(-1, 43)),
+                        (3, RB!(693, 430))
+                    ],
+                    m
+                ),
             );
             assert_eq!(
-                modified.left_multiply_by_basis_inverse(IdentityColumn::new(2).iter()).into_column(),
-                SparseVector::new(vec![(0, RB!(1, 11)), (1, RB!(253, 215)), (2, RB!(2, 43)), (3, RB!(-483, 430))], m),
+                modified
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(2).iter())
+                    .into_column(),
+                SparseVector::new(
+                    vec![
+                        (0, RB!(1, 11)),
+                        (1, RB!(253, 215)),
+                        (2, RB!(2, 43)),
+                        (3, RB!(-483, 430))
+                    ],
+                    m
+                ),
             );
             assert_eq!(
-                modified.left_multiply_by_basis_inverse(IdentityColumn::new(3).iter()).into_column(),
+                modified
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(3).iter())
+                    .into_column(),
                 SparseVector::new(vec![(1, RB!(1, 86)), (2, RB!(-1, 43)), (3, RB!(1, 86))], m),
             );
             assert_eq!(
-                modified.left_multiply_by_basis_inverse(IdentityColumn::new(4).iter()).into_column(),
-                SparseVector::new(vec![(1, RB!(1, 110)), (3, RB!(-3, 110)), (4, RB!(1, 55))], m),
+                modified
+                    .left_multiply_by_basis_inverse(IdentityColumn::new(4).iter())
+                    .into_column(),
+                SparseVector::new(
+                    vec![(1, RB!(1, 110)), (3, RB!(-3, 110)), (4, RB!(1, 55))],
+                    m
+                ),
             );
             // Sum of two
             let iter = matrix_data::Column::TwoSlack((0, RB!(1)), (1, RB!(1)));
             assert_eq!(
-                modified.left_multiply_by_basis_inverse(iter.iter()).into_column(),
-                SparseVector::new(vec![(0, RB!(-1, 11)), (1, RB!(-363, 215)), (2, RB!(-1, 43)), (3, RB!(693, 430))], m),
+                modified
+                    .left_multiply_by_basis_inverse(iter.iter())
+                    .into_column(),
+                SparseVector::new(
+                    vec![
+                        (0, RB!(-1, 11)),
+                        (1, RB!(-363, 215)),
+                        (2, RB!(-1, 43)),
+                        (3, RB!(693, 430))
+                    ],
+                    m
+                ),
             );
 
             // Rows
@@ -922,7 +1023,15 @@ mod test {
             );
             assert_eq!(
                 modified.basis_inverse_row(1),
-                SparseVector::new(vec![(1, RB!(-363, 215)), (2, RB!(253, 215)), (3, RB!(1, 86)), (4, RB!(1, 110))], m),
+                SparseVector::new(
+                    vec![
+                        (1, RB!(-363, 215)),
+                        (2, RB!(253, 215)),
+                        (3, RB!(1, 86)),
+                        (4, RB!(1, 110))
+                    ],
+                    m
+                ),
             );
             assert_eq!(
                 modified.basis_inverse_row(2),
@@ -930,7 +1039,15 @@ mod test {
             );
             assert_eq!(
                 modified.basis_inverse_row(3),
-                SparseVector::new(vec![(1, RB!(693, 430)), (2, RB!(-483, 430)), (3, RB!(1, 86)), (4, RB!(-3, 110))], m),
+                SparseVector::new(
+                    vec![
+                        (1, RB!(693, 430)),
+                        (2, RB!(-483, 430)),
+                        (3, RB!(1, 86)),
+                        (4, RB!(-3, 110))
+                    ],
+                    m
+                ),
             );
             assert_eq!(
                 modified.basis_inverse_row(4),

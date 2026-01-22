@@ -12,11 +12,11 @@
 
 #[cfg(all(feature = "burkardt"))]
 mod burkardt;
+#[cfg(all(feature = "cook"))]
+mod cook;
 #[cfg(all(feature = "miplib"))]
 mod miplib;
 #[cfg(all(feature = "netlib"))]
 mod netlib;
 #[cfg(all(feature = "unicamp"))]
 mod unicamp;
-#[cfg(all(feature = "cook"))]
-mod cook;

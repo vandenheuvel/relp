@@ -1,24 +1,24 @@
 use std::collections::HashSet;
 
-use relp_num::{Rational64, RationalBig};
 use relp_num::Field;
 use relp_num::NonZero;
 use relp_num::RB;
+use relp_num::{Rational64, RationalBig};
 
 use crate::algorithm::OptimizationResult;
-use crate::algorithm::two_phase::{phase_one, phase_two};
 use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, Carry};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use crate::algorithm::two_phase::tableau::Tableau;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, Carry};
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
-use crate::algorithm::two_phase::tableau::Tableau;
+use crate::algorithm::two_phase::{phase_one, phase_two};
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
-use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_algebra::vector::test::TestVector;
+use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 use crate::data::linear_program::elements::VariableType;
 use crate::data::linear_program::general_form::Variable;
 
@@ -32,10 +32,14 @@ fn conversion_pipeline() {
 
     // Artificial tableau form
     let artificial_tableau_form_computed = Tableau::<_, Partially<_>>::new(&matrix_data_form);
-    assert_eq!(artificial_tableau_form_computed, artificial_tableau_form(&matrix_data_form));
+    assert_eq!(
+        artificial_tableau_form_computed,
+        artificial_tableau_form(&matrix_data_form)
+    );
 
     // Get to a basic feasible solution
-    let feasibility_result = phase_one::primal::<_, _, MatrixData<T>, FirstProfitable>(artificial_tableau_form_computed);
+    let feasibility_result =
+        phase_one::primal::<_, _, MatrixData<T>, FirstProfitable>(artificial_tableau_form_computed);
     let mut tableau_form_computed = match feasibility_result {
         RankedFeasibilityResult::Feasible {
             rank,
@@ -50,7 +54,7 @@ fn conversion_pipeline() {
                 basis,
                 &matrix_data_form,
             )
-        },
+        }
         _ => panic!(),
     };
 
@@ -59,15 +63,20 @@ fn conversion_pipeline() {
 
     // Get to a basic feasible solution
     let result = phase_two::primal::<_, _, FirstProfitable>(&mut tableau_form_computed);
-    assert_eq!(result, OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(vec![
-        (1, 0.5f64),
-        (3, 2.5f64),
-        (4, 1.5f64),
-    ], 5)));
+    assert_eq!(
+        result,
+        OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(
+            vec![(1, 0.5f64), (3, 2.5f64), (4, 1.5f64),],
+            5
+        ))
+    );
 }
 
-pub fn create_matrix_data_data<'a, T: Field + From<u8> + From<&'a u8> + NonZero>(
-) -> (SparseMatrix<T, T, ColumnMajor>, DenseVector<T>, Vec<Variable<T>>) {
+pub fn create_matrix_data_data<'a, T: Field + From<u8> + From<&'a u8> + NonZero>() -> (
+    SparseMatrix<T, T, ColumnMajor>,
+    DenseVector<T>,
+    Vec<Variable<T>>,
+) {
     let constraints = ColumnMajor::from_test_data(
         &vec![
             vec![3, 2, 1, 0, 0],
@@ -76,12 +85,8 @@ pub fn create_matrix_data_data<'a, T: Field + From<u8> + From<&'a u8> + NonZero>
         ],
         5,
     );
-    
-    let b = DenseVector::from_test_data(vec![
-        1,
-        3,
-        4,
-    ]);
+
+    let b = DenseVector::from_test_data(vec![1, 3, 4]);
 
     let variables = vec![
         Variable {
@@ -91,7 +96,8 @@ pub fn create_matrix_data_data<'a, T: Field + From<u8> + From<&'a u8> + NonZero>
             shift: T::from(0),
             variable_type: VariableType::Continuous,
             flipped: false,
-        }; 5
+        };
+        5
     ];
 
     (constraints, b, variables)
@@ -125,16 +131,19 @@ pub fn artificial_tableau_form<'a>(
         let b = DenseVector::from_test_data(vec![1, 3, 4]);
         let basis_indices = artificials.clone();
         let basis_inverse_rows = BasisInverseRows::identity(m);
-        Carry::new(minus_objective, minus_pi, b, basis_indices, basis_inverse_rows)
+        Carry::new(
+            minus_objective,
+            minus_pi,
+            b,
+            basis_indices,
+            basis_inverse_rows,
+        )
     };
-    let basis_columns = (0..m).map(|i| carry.basis_column_index_for_row(i)).collect();
+    let basis_columns = (0..m)
+        .map(|i| carry.basis_column_index_for_row(i))
+        .collect();
 
-    Tableau::<_, Partially<_>>::new_with_basis(
-        data,
-        carry,
-        basis_columns,
-        artificials,
-    )
+    Tableau::<_, Partially<_>>::new_with_basis(data, carry, basis_columns, artificials)
 }
 
 pub fn tableau_form<'a>(
@@ -143,11 +152,7 @@ pub fn tableau_form<'a>(
     let carry = {
         let minus_objective = RationalBig::from((-9, 2));
         let minus_pi = DenseVector::from_test_data(vec![(5, 2), (-1, 1), (-1, 1)]);
-        let b = DenseVector::from_test_data(vec![
-            (1, 2),
-            (5, 2),
-            (3, 2),
-        ]);
+        let b = DenseVector::from_test_data(vec![(1, 2), (5, 2), (3, 2)]);
         let basis_indices = vec![1, 3, 4];
         let basis_inverse_rows = BasisInverseRows::new(vec![
             SparseVector::from_test_data(vec![(1, 2), (0, 1), (0, 1)]),
@@ -155,7 +160,13 @@ pub fn tableau_form<'a>(
             SparseVector::from_test_data(vec![(-5, 2), (0, 1), (1, 1)]),
         ]);
 
-        Carry::new(minus_objective, minus_pi, b, basis_indices, basis_inverse_rows)
+        Carry::new(
+            minus_objective,
+            minus_pi,
+            b,
+            basis_indices,
+            basis_inverse_rows,
+        )
     };
     let basis_columns = {
         let mut basis_columns = HashSet::new();
@@ -166,9 +177,5 @@ pub fn tableau_form<'a>(
         basis_columns
     };
 
-    Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
-        data,
-        carry,
-        basis_columns,
-    )
+    Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(data, carry, basis_columns)
 }

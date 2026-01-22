@@ -14,10 +14,7 @@ impl Swap {
     pub fn new(indices: (usize, usize), len: usize) -> Self {
         debug_assert!(indices.0 < len && indices.1 < len);
 
-        Self {
-            indices,
-            len,
-        }
+        Self { indices, len }
     }
 }
 
@@ -51,7 +48,7 @@ impl Permutation for Swap {
             items[found].0 = new_index;
             match found.cmp(&not_found) {
                 Ordering::Less => items[found..not_found].rotate_left(1),
-                Ordering::Equal => {},
+                Ordering::Equal => {}
                 Ordering::Greater => items[not_found..=found].rotate_right(1),
             };
         };

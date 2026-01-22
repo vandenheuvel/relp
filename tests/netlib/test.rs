@@ -19,7 +19,6 @@ fn test_80BAU3B() {
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-5)); // Gurobi
 }
 
-
 #[test]
 fn test_ADLITTLE() {
     let result = solve("ADLITTLE");

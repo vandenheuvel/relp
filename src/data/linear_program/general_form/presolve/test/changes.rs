@@ -4,12 +4,12 @@ use relp_num::R32;
 
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
-use crate::data::linear_program::elements::{Objective, VariableType};
 use crate::data::linear_program::elements::BoundDirection;
 use crate::data::linear_program::elements::LinearProgramType;
-use crate::data::linear_program::general_form::{GeneralForm, RangedConstraintRelation, Variable};
-use crate::data::linear_program::general_form::presolve::updates::Changes;
+use crate::data::linear_program::elements::{Objective, VariableType};
 use crate::data::linear_program::general_form::RemovedVariable;
+use crate::data::linear_program::general_form::presolve::updates::Changes;
+use crate::data::linear_program::general_form::{GeneralForm, RangedConstraintRelation, Variable};
 
 /// A simple problem that should not be presolved (further).
 ///
@@ -19,7 +19,8 @@ use crate::data::linear_program::general_form::RemovedVariable;
 fn no_changes() {
     let initial = GeneralForm::new(
         Objective::Maximize,
-        ColumnMajor::from_test_data(&[
+        ColumnMajor::from_test_data(
+            &[
                 vec![R32!(1), R32!(1)],
                 vec![R32!(4, 5), R32!(3, 2)],
                 vec![R32!(3, 2), R32!(4, 5)],
@@ -32,14 +33,17 @@ fn no_changes() {
             RangedConstraintRelation::Less,
         ],
         DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-        vec![Variable {
-            variable_type: VariableType::Continuous,
-            cost: R32!(1),
-            lower_bound: Some(R32!(0)),
-            upper_bound: Some(R32!(3, 4)),
-            shift: R32!(0),
-            flipped: false,
-        }; 2],
+        vec![
+            Variable {
+                variable_type: VariableType::Continuous,
+                cost: R32!(1),
+                lower_bound: Some(R32!(0)),
+                upper_bound: Some(R32!(3, 4)),
+                shift: R32!(0),
+                flipped: false,
+            };
+            2
+        ],
         vec!["x".to_string(); 2],
         R32!(0),
     );
@@ -68,12 +72,13 @@ mod initialization {
         fn empty_column() {
             let initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
-                    vec![R32!(1), R32!(1), R32!(0)],
-                    vec![R32!(4, 5), R32!(3, 2), R32!(0)],
-                    vec![R32!(3, 2), R32!(4, 5), R32!(0)],
-                ],
-                                            3,
+                ColumnMajor::from_test_data(
+                    &[
+                        vec![R32!(1), R32!(1), R32!(0)],
+                        vec![R32!(4, 5), R32!(3, 2), R32!(0)],
+                        vec![R32!(3, 2), R32!(4, 5), R32!(0)],
+                    ],
+                    3,
                 ),
                 vec![
                     RangedConstraintRelation::Less,
@@ -81,14 +86,17 @@ mod initialization {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: Some(R32!(3, 4)),
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: Some(R32!(3, 4)),
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -110,12 +118,13 @@ mod initialization {
         fn empty_column_no_cost() {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
-                    vec![R32!(1), R32!(1), R32!(0)],
-                    vec![R32!(4, 5), R32!(3, 2), R32!(0)],
-                    vec![R32!(3, 2), R32!(4, 5), R32!(0)],
-                ],
-                                            3,
+                ColumnMajor::from_test_data(
+                    &[
+                        vec![R32!(1), R32!(1), R32!(0)],
+                        vec![R32!(4, 5), R32!(3, 2), R32!(0)],
+                        vec![R32!(3, 2), R32!(4, 5), R32!(0)],
+                    ],
+                    3,
                 ),
                 vec![
                     RangedConstraintRelation::Less,
@@ -123,14 +132,17 @@ mod initialization {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: Some(R32!(3, 4)),
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: Some(R32!(3, 4)),
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -155,12 +167,13 @@ mod initialization {
         fn empty_column_no_cost_no_bound() {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
-                    vec![R32!(1), R32!(1), R32!(0)],
-                    vec![R32!(4, 5), R32!(3, 2), R32!(0)],
-                    vec![R32!(3, 2), R32!(4, 5), R32!(0)],
-                ],
-                                            3,
+                ColumnMajor::from_test_data(
+                    &[
+                        vec![R32!(1), R32!(1), R32!(0)],
+                        vec![R32!(4, 5), R32!(3, 2), R32!(0)],
+                        vec![R32!(3, 2), R32!(4, 5), R32!(0)],
+                    ],
+                    3,
                 ),
                 vec![
                     RangedConstraintRelation::Less,
@@ -168,14 +181,17 @@ mod initialization {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: None,
-                    upper_bound: None,
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: None,
+                        upper_bound: None,
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -193,9 +209,7 @@ mod initialization {
                 }),
             );
         }
-
     }
-
 
     /// Removal of empty constraint.
     mod empty_constraint {
@@ -206,13 +220,14 @@ mod initialization {
         fn infeasible_equality_bound() {
             let initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
-                    vec![R32!(1), R32!(1)],
-                    vec![R32!(4, 5), R32!(3, 2)],
-                    vec![R32!(3, 2), R32!(4, 5)],
-                    vec![R32!(0), R32!(0)],
-                ],
-                                            2,
+                ColumnMajor::from_test_data(
+                    &[
+                        vec![R32!(1), R32!(1)],
+                        vec![R32!(4, 5), R32!(3, 2)],
+                        vec![R32!(3, 2), R32!(4, 5)],
+                        vec![R32!(0), R32!(0)],
+                    ],
+                    2,
                 ),
                 vec![
                     RangedConstraintRelation::Less,
@@ -221,14 +236,17 @@ mod initialization {
                     RangedConstraintRelation::Equal,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5), R32!(123)], 4),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: Some(R32!(3, 4)),
-                    shift: R32!(0),
-                    flipped: false,
-                }; 2],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: Some(R32!(3, 4)),
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    2
+                ],
                 vec!["x".to_string(); 2],
                 R32!(0),
             );
@@ -243,13 +261,14 @@ mod initialization {
         fn infeasible_inequality_bound() {
             let initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
-                    vec![R32!(1), R32!(1)],
-                    vec![R32!(4, 5), R32!(3, 2)],
-                    vec![R32!(3, 2), R32!(4, 5)],
-                    vec![R32!(0), R32!(0)],
-                ],
-                                            2,
+                ColumnMajor::from_test_data(
+                    &[
+                        vec![R32!(1), R32!(1)],
+                        vec![R32!(4, 5), R32!(3, 2)],
+                        vec![R32!(3, 2), R32!(4, 5)],
+                        vec![R32!(0), R32!(0)],
+                    ],
+                    2,
                 ),
                 vec![
                     RangedConstraintRelation::Less,
@@ -258,14 +277,17 @@ mod initialization {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5), R32!(-123)], 4),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: None,
-                    upper_bound: Some(R32!(3, 4)),
-                    shift: R32!(0),
-                    flipped: false,
-                }; 2],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: None,
+                        upper_bound: Some(R32!(3, 4)),
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    2
+                ],
                 vec!["x".to_string(); 2],
                 R32!(0),
             );
@@ -280,15 +302,16 @@ mod initialization {
         fn feasible_multiple() {
             let initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
-                    vec![R32!(1), R32!(1)],
-                    vec![R32!(4, 5), R32!(3, 2)],
-                    vec![R32!(0), R32!(0)],
-                    vec![R32!(3, 2), R32!(4, 5)],
-                    vec![R32!(0), R32!(0)],
-                    vec![R32!(0), R32!(0)],
-                ],
-                                            2,
+                ColumnMajor::from_test_data(
+                    &[
+                        vec![R32!(1), R32!(1)],
+                        vec![R32!(4, 5), R32!(3, 2)],
+                        vec![R32!(0), R32!(0)],
+                        vec![R32!(3, 2), R32!(4, 5)],
+                        vec![R32!(0), R32!(0)],
+                        vec![R32!(0), R32!(0)],
+                    ],
+                    2,
                 ),
                 vec![
                     RangedConstraintRelation::Less,
@@ -298,22 +321,28 @@ mod initialization {
                     RangedConstraintRelation::Greater,
                     RangedConstraintRelation::Less,
                 ],
-                DenseVector::new(vec![
-                    R32!(1),
-                    R32!(6, 5),
-                    R32!(0),
-                    R32!(6, 5),
-                    R32!(-1234),
-                    R32!(0),
-                ], 6),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: None,
-                    shift: R32!(0),
-                    flipped: false,
-                }; 2],
+                DenseVector::new(
+                    vec![
+                        R32!(1),
+                        R32!(6, 5),
+                        R32!(0),
+                        R32!(6, 5),
+                        R32!(-1234),
+                        R32!(0),
+                    ],
+                    6,
+                ),
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: None,
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    2
+                ],
                 vec!["x".to_string(); 2],
                 R32!(0),
             );
@@ -335,16 +364,17 @@ mod initialization {
         fn infeasible_multiple() {
             let initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
-                    vec![R32!(1), R32!(1)],
-                    vec![R32!(4, 5), R32!(3, 2)],
-                    vec![R32!(0), R32!(0)],
-                    vec![R32!(3, 2), R32!(4, 5)],
-                    vec![R32!(0), R32!(0)],
-                    vec![R32!(0), R32!(0)],
-                    vec![R32!(0), R32!(0)],
-                ],
-                                            2,
+                ColumnMajor::from_test_data(
+                    &[
+                        vec![R32!(1), R32!(1)],
+                        vec![R32!(4, 5), R32!(3, 2)],
+                        vec![R32!(0), R32!(0)],
+                        vec![R32!(3, 2), R32!(4, 5)],
+                        vec![R32!(0), R32!(0)],
+                        vec![R32!(0), R32!(0)],
+                        vec![R32!(0), R32!(0)],
+                    ],
+                    2,
                 ),
                 vec![
                     RangedConstraintRelation::Less,
@@ -355,23 +385,29 @@ mod initialization {
                     RangedConstraintRelation::Greater,
                     RangedConstraintRelation::Less,
                 ],
-                DenseVector::new(vec![
-                    R32!(1),
-                    R32!(6, 5),
-                    R32!(0),
-                    R32!(6, 5),
-                    R32!(-5678),
-                    R32!(-1234),
-                    R32!(0),
-                ], 7),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: None,
-                    shift: R32!(0),
-                    flipped: false,
-                }; 2],
+                DenseVector::new(
+                    vec![
+                        R32!(1),
+                        R32!(6, 5),
+                        R32!(0),
+                        R32!(6, 5),
+                        R32!(-5678),
+                        R32!(-1234),
+                        R32!(0),
+                    ],
+                    7,
+                ),
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: None,
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    2
+                ],
                 vec!["x".to_string(); 2],
                 R32!(0),
             );
@@ -393,7 +429,8 @@ mod fixed_variable {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                    ColumnMajor::from_test_data(&[
+                ColumnMajor::from_test_data(
+                    &[
                         vec![R32!(1), R32!(1), R32!(1, 1000)],
                         vec![R32!(4, 5), R32!(3, 2), R32!(0)],
                         vec![R32!(3, 2), R32!(4, 5), R32!(0)],
@@ -406,14 +443,17 @@ mod fixed_variable {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: Some(R32!(3, 4)),
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: Some(R32!(3, 4)),
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -447,7 +487,8 @@ mod fixed_variable {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
+                ColumnMajor::from_test_data(
+                    &[
                         vec![R32!(1), R32!(1), R32!(0)],
                         vec![R32!(4, 5), R32!(3, 2), R32!(0)],
                         vec![R32!(3, 2), R32!(4, 5), R32!(0)],
@@ -460,14 +501,17 @@ mod fixed_variable {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: Some(R32!(3, 4)),
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: Some(R32!(3, 4)),
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -499,7 +543,8 @@ mod fixed_variable {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
+                ColumnMajor::from_test_data(
+                    &[
                         vec![R32!(0), R32!(-51), R32!(0)],
                         vec![R32!(1), R32!(1, 100), R32!(1)],
                         vec![R32!(4, 5), R32!(0), R32!(3, 2)],
@@ -514,14 +559,17 @@ mod fixed_variable {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(-20), R32!(1), R32!(6, 5), R32!(6, 5)], 4),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: Some(R32!(3, 4)),
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: Some(R32!(3, 4)),
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -549,7 +597,6 @@ mod fixed_variable {
         );
     }
 
-
     /// Triggering a bound row to be removed.
     ///
     /// Middle variable removed, first constraint read as bound.
@@ -558,7 +605,8 @@ mod fixed_variable {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
+                ColumnMajor::from_test_data(
+                    &[
                         vec![R32!(0), R32!(1, 2), R32!(1)],
                         vec![R32!(1), R32!(0), R32!(1)],
                         vec![R32!(4, 5), R32!(1, 20), R32!(3, 2)],
@@ -573,14 +621,17 @@ mod fixed_variable {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(1), R32!(6, 5), R32!(6, 5)], 4),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(-12),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: None,
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(-12),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: None,
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -622,13 +673,14 @@ mod bound_constraint {
     fn feasible_inequality() {
         let initial = GeneralForm::new(
             Objective::Maximize,
-            ColumnMajor::from_test_data(&[
-                vec![R32!(1), R32!(1)],
-                vec![R32!(4, 5), R32!(3, 2)],
-                vec![R32!(0), R32!(1)],
-                vec![R32!(3, 2), R32!(4, 5)],
-            ],
-                                        2,
+            ColumnMajor::from_test_data(
+                &[
+                    vec![R32!(1), R32!(1)],
+                    vec![R32!(4, 5), R32!(3, 2)],
+                    vec![R32!(0), R32!(1)],
+                    vec![R32!(3, 2), R32!(4, 5)],
+                ],
+                2,
             ),
             vec![
                 RangedConstraintRelation::Less,
@@ -637,14 +689,17 @@ mod bound_constraint {
                 RangedConstraintRelation::Less,
             ],
             DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(3, 4), R32!(6, 5)], 4),
-            vec![Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(-2),
-                lower_bound: None,
-                upper_bound: None,
-                shift: R32!(14),
-                flipped: false,
-            }; 2],
+            vec![
+                Variable {
+                    variable_type: VariableType::Continuous,
+                    cost: R32!(-2),
+                    lower_bound: None,
+                    upper_bound: None,
+                    shift: R32!(14),
+                    flipped: false,
+                };
+                2
+            ],
             vec!["x".to_string(); 2],
             R32!(12),
         );
@@ -670,7 +725,8 @@ mod bound_constraint {
     fn feasible_inequality_negative_sign() {
         let initial = GeneralForm::new(
             Objective::Maximize,
-            ColumnMajor::from_test_data(&[
+            ColumnMajor::from_test_data(
+                &[
                     vec![R32!(1), R32!(1)],
                     vec![R32!(4, 5), R32!(3, 2)],
                     vec![R32!(0), R32!(-1)],
@@ -685,14 +741,17 @@ mod bound_constraint {
                 RangedConstraintRelation::Less,
             ],
             DenseVector::new(vec![R32!(1), R32!(6, 5), -R32!(3, 4), R32!(6, 5)], 4),
-            vec![Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(-2),
-                lower_bound: None,
-                upper_bound: None,
-                shift: R32!(14),
-                flipped: false,
-            }; 2],
+            vec![
+                Variable {
+                    variable_type: VariableType::Continuous,
+                    cost: R32!(-2),
+                    lower_bound: None,
+                    upper_bound: None,
+                    shift: R32!(14),
+                    flipped: false,
+                };
+                2
+            ],
             vec!["x".to_string(); 2],
             R32!(12),
         );
@@ -719,10 +778,11 @@ mod bound_constraint {
     fn feasible_equality_unsolved_no_substitution() {
         let initial = GeneralForm::new(
             Objective::Maximize,
-            ColumnMajor::from_test_data(&[
-                    vec![R32!(1),    R32!(1),    R32!(0)],
+            ColumnMajor::from_test_data(
+                &[
+                    vec![R32!(1), R32!(1), R32!(0)],
                     vec![R32!(4, 5), R32!(3, 2), R32!(0)],
-                    vec![R32!(0),    R32!(0),    R32!(1)],
+                    vec![R32!(0), R32!(0), R32!(1)],
                     vec![R32!(3, 2), R32!(4, 5), R32!(0)],
                 ],
                 3,
@@ -734,14 +794,17 @@ mod bound_constraint {
                 RangedConstraintRelation::Less,
             ],
             DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(10), R32!(6, 5)], 4),
-            vec![Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(2),
-                lower_bound: None,
-                upper_bound: None,
-                shift: R32!(14),
-                flipped: false,
-            }; 3],
+            vec![
+                Variable {
+                    variable_type: VariableType::Continuous,
+                    cost: R32!(2),
+                    lower_bound: None,
+                    upper_bound: None,
+                    shift: R32!(14),
+                    flipped: false,
+                };
+                3
+            ],
             vec!["x".to_string(); 3],
             R32!(12),
         );
@@ -763,10 +826,11 @@ mod bound_constraint {
     fn feasible_equality_unsolved_substitution() {
         let initial = GeneralForm::new(
             Objective::Maximize,
-            ColumnMajor::from_test_data(&[
-                    vec![R32!(1),    R32!(1),    R32!(0)     ],
-                    vec![R32!(4, 5), R32!(3, 2), R32!(0)     ],
-                    vec![R32!(0),    R32!(0),    R32!(-1)    ],
+            ColumnMajor::from_test_data(
+                &[
+                    vec![R32!(1), R32!(1), R32!(0)],
+                    vec![R32!(4, 5), R32!(3, 2), R32!(0)],
+                    vec![R32!(0), R32!(0), R32!(-1)],
                     vec![R32!(3, 2), R32!(4, 5), R32!(1, 100)],
                 ],
                 3,
@@ -778,14 +842,17 @@ mod bound_constraint {
                 RangedConstraintRelation::Less,
             ],
             DenseVector::new(vec![R32!(1), R32!(6, 5), -R32!(3), R32!(6, 5)], 4),
-            vec![Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(2),
-                lower_bound: None,
-                upper_bound: None,
-                shift: R32!(14),
-                flipped: false,
-            }; 3],
+            vec![
+                Variable {
+                    variable_type: VariableType::Continuous,
+                    cost: R32!(2),
+                    lower_bound: None,
+                    upper_bound: None,
+                    shift: R32!(14),
+                    flipped: false,
+                };
+                3
+            ],
             vec!["x".to_string(); 3],
             R32!(12),
         );
@@ -794,7 +861,7 @@ mod bound_constraint {
             Ok(Changes {
                 b: {
                     let mut map = HashMap::new();
-                    map.insert(3,R32!(117, 100));
+                    map.insert(3, R32!(117, 100));
                     map
                 },
                 constraints: vec![],
@@ -811,7 +878,8 @@ mod bound_constraint {
     fn feasible_equality_solved() {
         let initial = GeneralForm::new(
             Objective::Maximize,
-            ColumnMajor::from_test_data(&[
+            ColumnMajor::from_test_data(
+                &[
                     vec![R32!(1), R32!(1)],
                     vec![R32!(4, 5), R32!(3, 2)],
                     vec![R32!(1), R32!(0)],
@@ -826,14 +894,17 @@ mod bound_constraint {
                 RangedConstraintRelation::Less,
             ],
             DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(3, 4), R32!(6, 5)], 4),
-            vec![Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(2),
-                lower_bound: None,
-                upper_bound: None,
-                shift: R32!(14),
-                flipped: false,
-            }; 2],
+            vec![
+                Variable {
+                    variable_type: VariableType::Continuous,
+                    cost: R32!(2),
+                    lower_bound: None,
+                    upper_bound: None,
+                    shift: R32!(14),
+                    flipped: false,
+                };
+                2
+            ],
             vec!["x".to_string(); 2],
             R32!(12),
         );
@@ -859,13 +930,14 @@ mod bound_constraint {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Minimize,
-                ColumnMajor::from_test_data(&[
-                    vec![R32!(1),    R32!(1),    R32!(0) ],
-                    vec![R32!(4, 5), R32!(3, 2), R32!(0) ],
-                    vec![R32!(0),    R32!(0),    R32!(1)],
-                    vec![R32!(3, 2), R32!(4, 5), R32!(0) ],
-                ],
-                                            3,
+                ColumnMajor::from_test_data(
+                    &[
+                        vec![R32!(1), R32!(1), R32!(0)],
+                        vec![R32!(4, 5), R32!(3, 2), R32!(0)],
+                        vec![R32!(0), R32!(0), R32!(1)],
+                        vec![R32!(3, 2), R32!(4, 5), R32!(0)],
+                    ],
+                    3,
                 ),
                 vec![
                     RangedConstraintRelation::Less,
@@ -874,14 +946,17 @@ mod bound_constraint {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), -R32!(3), R32!(6, 5)], 4),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(-3),
-                    lower_bound: None,
-                    upper_bound: None,
-                    shift: R32!(-1),
-                    flipped: true,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(-3),
+                        lower_bound: None,
+                        upper_bound: None,
+                        shift: R32!(-1),
+                        flipped: true,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(-12),
             );
@@ -907,10 +982,11 @@ mod bound_constraint {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Minimize,
-                ColumnMajor::from_test_data(&[
-                        vec![R32!(1),    R32!(1),    R32!(1)],
+                ColumnMajor::from_test_data(
+                    &[
+                        vec![R32!(1), R32!(1), R32!(1)],
                         vec![R32!(4, 5), R32!(3, 2), R32!(0)],
-                        vec![R32!(0),    R32!(0),    R32!(1)],
+                        vec![R32!(0), R32!(0), R32!(1)],
                         vec![R32!(3, 2), R32!(4, 5), R32!(0)],
                     ],
                     3,
@@ -922,14 +998,17 @@ mod bound_constraint {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(2), R32!(6, 5), R32!(1), R32!(6, 5)], 4),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(-3),
-                    lower_bound: None,
-                    upper_bound: None,
-                    shift: R32!(-1),
-                    flipped: true,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(-3),
+                        lower_bound: None,
+                        upper_bound: None,
+                        shift: R32!(-1),
+                        flipped: true,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(-12),
             );
@@ -947,10 +1026,13 @@ mod bound_constraint {
                 constraints: vec![(0, RangedConstraintRelation::Less)],
                 fixed_cost: R32!(0),
                 bounds: HashMap::default(),
-                removed_variables: vec![(2, RemovedVariable::FunctionOfOthers {
-                    constant: R32!(2),
-                    coefficients: vec![(0, R32!(1)), (1, R32!(1))],
-                })],
+                removed_variables: vec![(
+                    2,
+                    RemovedVariable::FunctionOfOthers {
+                        constant: R32!(2),
+                        coefficients: vec![(0, R32!(1)), (1, R32!(1))],
+                    }
+                )],
                 constraints_marked_removed: vec![2],
             }),
         );
@@ -967,7 +1049,8 @@ mod slack_variable {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
+                ColumnMajor::from_test_data(
+                    &[
                         vec![R32!(1), R32!(1), R32!(1)],
                         vec![R32!(4, 5), R32!(3, 2), R32!(0)],
                         vec![R32!(3, 2), R32!(4, 5), R32!(0)],
@@ -980,14 +1063,17 @@ mod slack_variable {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: Some(R32!(3, 4)),
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: Some(R32!(3, 4)),
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -1002,10 +1088,13 @@ mod slack_variable {
                 constraints: vec![(0, RangedConstraintRelation::Less)],
                 fixed_cost: R32!(0),
                 bounds: HashMap::default(),
-                removed_variables: vec![(2, RemovedVariable::FunctionOfOthers {
-                    constant: R32!(1),
-                    coefficients: vec![(0, R32!(1)), (1, R32!(1))]
-                })],
+                removed_variables: vec![(
+                    2,
+                    RemovedVariable::FunctionOfOthers {
+                        constant: R32!(1),
+                        coefficients: vec![(0, R32!(1)), (1, R32!(1))]
+                    }
+                )],
                 constraints_marked_removed: vec![],
             }),
         );
@@ -1017,11 +1106,12 @@ mod slack_variable {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
-                    vec![R32!(1), R32!(1), R32!(1)],
-                    vec![R32!(4, 5), R32!(3, 2), R32!(0)],
-                    vec![R32!(3, 2), R32!(4, 5), R32!(0)],
-                ],
+                ColumnMajor::from_test_data(
+                    &[
+                        vec![R32!(1), R32!(1), R32!(1)],
+                        vec![R32!(4, 5), R32!(3, 2), R32!(0)],
+                        vec![R32!(3, 2), R32!(4, 5), R32!(0)],
+                    ],
                     3,
                 ),
                 vec![
@@ -1030,14 +1120,17 @@ mod slack_variable {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: Some(R32!(3, 4)),
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: Some(R32!(3, 4)),
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -1051,10 +1144,13 @@ mod slack_variable {
                 constraints: vec![(0, RangedConstraintRelation::Range(R32!(3, 4)))],
                 fixed_cost: R32!(0),
                 bounds: HashMap::default(),
-                removed_variables: vec![(2, RemovedVariable::FunctionOfOthers {
-                    constant: R32!(1),
-                    coefficients: vec![(0, R32!(1)), (1, R32!(1))],
-                })],
+                removed_variables: vec![(
+                    2,
+                    RemovedVariable::FunctionOfOthers {
+                        constant: R32!(1),
+                        coefficients: vec![(0, R32!(1)), (1, R32!(1))],
+                    }
+                )],
                 constraints_marked_removed: vec![],
             }),
         );
@@ -1066,7 +1162,8 @@ mod slack_variable {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
+                ColumnMajor::from_test_data(
+                    &[
                         vec![R32!(1), R32!(1), R32!(1)],
                         vec![R32!(4, 5), R32!(3, 2), R32!(0)],
                         vec![R32!(3, 2), R32!(4, 5), R32!(0)],
@@ -1079,14 +1176,17 @@ mod slack_variable {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(1),
-                    lower_bound: Some(R32!(0)),
-                    upper_bound: Some(R32!(3, 4)),
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(1),
+                        lower_bound: Some(R32!(0)),
+                        upper_bound: Some(R32!(3, 4)),
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -1102,10 +1202,13 @@ mod slack_variable {
                 constraints: vec![],
                 fixed_cost: R32!(0),
                 bounds: HashMap::default(),
-                removed_variables: vec![(2, RemovedVariable::FunctionOfOthers {
-                    constant: R32!(1),
-                    coefficients: vec![(0, R32!(1)), (1, R32!(1))],
-                })],
+                removed_variables: vec![(
+                    2,
+                    RemovedVariable::FunctionOfOthers {
+                        constant: R32!(1),
+                        coefficients: vec![(0, R32!(1)), (1, R32!(1))],
+                    }
+                )],
                 constraints_marked_removed: vec![0],
             }),
         );
@@ -1117,7 +1220,8 @@ mod slack_variable {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
+                ColumnMajor::from_test_data(
+                    &[
                         vec![R32!(1), R32!(1), R32!(1)],
                         vec![R32!(4, 5), R32!(3, 2), R32!(0)],
                         vec![R32!(3, 2), R32!(4, 5), R32!(0)],
@@ -1130,14 +1234,17 @@ mod slack_variable {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(14),
-                    lower_bound: None,
-                    upper_bound: None,
-                    shift: R32!(0),
-                    flipped: false,
-                }; 3],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(14),
+                        lower_bound: None,
+                        upper_bound: None,
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    3
+                ],
                 vec!["x".to_string(); 3],
                 R32!(0),
             );
@@ -1154,10 +1261,13 @@ mod slack_variable {
                 constraints: vec![(0, RangedConstraintRelation::Range(R32!(1)))],
                 fixed_cost: R32!(0),
                 bounds: HashMap::default(),
-                removed_variables: vec![(2, RemovedVariable::FunctionOfOthers {
-                    constant: R32!(1),
-                    coefficients: vec![(0, R32!(1)), (1, R32!(1))],
-                })],
+                removed_variables: vec![(
+                    2,
+                    RemovedVariable::FunctionOfOthers {
+                        constant: R32!(1),
+                        coefficients: vec![(0, R32!(1)), (1, R32!(1))],
+                    }
+                )],
                 constraints_marked_removed: vec![],
             }),
         );
@@ -1168,7 +1278,8 @@ mod slack_variable {
     fn range_slack_inequality_bound() {
         let mut initial = GeneralForm::new(
             Objective::Maximize,
-            ColumnMajor::from_test_data(&[
+            ColumnMajor::from_test_data(
+                &[
                     vec![R32!(1), R32!(0), R32!(1)],
                     vec![R32!(1), R32!(1), R32!(0)],
                     vec![R32!(4, 5), R32!(3, 2), R32!(0)],
@@ -1183,14 +1294,17 @@ mod slack_variable {
                 RangedConstraintRelation::Less,
             ],
             DenseVector::new(vec![R32!(1), R32!(1), R32!(6, 5), R32!(6, 5)], 4),
-            vec![Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(1),
-                lower_bound: None,
-                upper_bound: None,
-                shift: R32!(0),
-                flipped: false,
-            }; 3],
+            vec![
+                Variable {
+                    variable_type: VariableType::Continuous,
+                    cost: R32!(1),
+                    lower_bound: None,
+                    upper_bound: None,
+                    shift: R32!(0),
+                    flipped: false,
+                };
+                3
+            ],
             vec!["x".to_string(); 3],
             R32!(0),
         );
@@ -1225,7 +1339,8 @@ mod domain_propagation {
     fn remove_redundant_constraint() {
         let initial = GeneralForm::new(
             Objective::Maximize,
-            ColumnMajor::from_test_data(&[
+            ColumnMajor::from_test_data(
+                &[
                     vec![R32!(1), R32!(1)],
                     vec![R32!(4, 5), R32!(3, 2)],
                     vec![R32!(3, 2), R32!(4, 5)],
@@ -1238,14 +1353,17 @@ mod domain_propagation {
                 RangedConstraintRelation::Less,
             ],
             DenseVector::new(vec![R32!(3, 2), R32!(6, 5), R32!(6, 5)], 3),
-            vec![Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(1),
-                lower_bound: Some(R32!(0)),
-                upper_bound: Some(R32!(3, 4)),
-                shift: R32!(0),
-                flipped: false,
-            }; 2],
+            vec![
+                Variable {
+                    variable_type: VariableType::Continuous,
+                    cost: R32!(1),
+                    lower_bound: Some(R32!(0)),
+                    upper_bound: Some(R32!(3, 4)),
+                    shift: R32!(0),
+                    flipped: false,
+                };
+                2
+            ],
             vec!["x".to_string(); 2],
             R32!(0),
         );
@@ -1268,7 +1386,8 @@ mod domain_propagation {
         let initial = {
             let mut initial = GeneralForm::new(
                 Objective::Maximize,
-                ColumnMajor::from_test_data(&[
+                ColumnMajor::from_test_data(
+                    &[
                         vec![R32!(1), R32!(1)],
                         vec![R32!(4, 5), R32!(3, 2)],
                         vec![R32!(3, 2), R32!(4, 5)],
@@ -1281,14 +1400,17 @@ mod domain_propagation {
                     RangedConstraintRelation::Less,
                 ],
                 DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-                vec![Variable {
-                    variable_type: VariableType::Continuous,
-                    cost: R32!(14),
-                    lower_bound: None,
-                    upper_bound: None,
-                    shift: R32!(0),
-                    flipped: false,
-                }; 2],
+                vec![
+                    Variable {
+                        variable_type: VariableType::Continuous,
+                        cost: R32!(14),
+                        lower_bound: None,
+                        upper_bound: None,
+                        shift: R32!(0),
+                        flipped: false,
+                    };
+                    2
+                ],
                 vec!["x".to_string(); 2],
                 R32!(0),
             );
@@ -1298,7 +1420,10 @@ mod domain_propagation {
             initial
         };
 
-        assert_eq!(initial.compute_presolve_changes(), Err(LinearProgramType::Infeasible));
+        assert_eq!(
+            initial.compute_presolve_changes(),
+            Err(LinearProgramType::Infeasible)
+        );
     }
 
     /// Derive variable bounds that solve the problem.
@@ -1306,12 +1431,13 @@ mod domain_propagation {
     fn trigger_substitution_feasible() {
         let initial = GeneralForm::new(
             Objective::Maximize,
-            ColumnMajor::from_test_data(&[
-                vec![R32!(1), R32!(1)],
-                vec![R32!(4, 5), R32!(3, 2)],
-                vec![R32!(3, 2), R32!(4, 5)],
-            ],
-                                        2,
+            ColumnMajor::from_test_data(
+                &[
+                    vec![R32!(1), R32!(1)],
+                    vec![R32!(4, 5), R32!(3, 2)],
+                    vec![R32!(3, 2), R32!(4, 5)],
+                ],
+                2,
             ),
             vec![
                 RangedConstraintRelation::Equal,
@@ -1319,14 +1445,17 @@ mod domain_propagation {
                 RangedConstraintRelation::Less,
             ],
             DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-            vec![Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(14),
-                lower_bound: Some(R32!(1, 2)),
-                upper_bound: None,
-                shift: R32!(0),
-                flipped: false,
-            }; 2],
+            vec![
+                Variable {
+                    variable_type: VariableType::Continuous,
+                    cost: R32!(14),
+                    lower_bound: Some(R32!(1, 2)),
+                    upper_bound: None,
+                    shift: R32!(0),
+                    flipped: false,
+                };
+                2
+            ],
             vec!["x".to_string(); 2],
             R32!(0),
         );
@@ -1352,12 +1481,13 @@ mod domain_propagation {
     fn trigger_substitution_infeasible() {
         let initial = GeneralForm::new(
             Objective::Maximize,
-            ColumnMajor::from_test_data(&[
-                vec![R32!(1), R32!(1)],
-                vec![R32!(4, 5), R32!(3, 2)],
-                vec![R32!(3, 2), R32!(4, 5)],
-            ],
-                                        2,
+            ColumnMajor::from_test_data(
+                &[
+                    vec![R32!(1), R32!(1)],
+                    vec![R32!(4, 5), R32!(3, 2)],
+                    vec![R32!(3, 2), R32!(4, 5)],
+                ],
+                2,
             ),
             vec![
                 RangedConstraintRelation::Less,
@@ -1365,14 +1495,17 @@ mod domain_propagation {
                 RangedConstraintRelation::Less,
             ],
             DenseVector::new(vec![R32!(1), R32!(6, 5), R32!(6, 5)], 3),
-            vec![Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(14),
-                lower_bound: Some(R32!(2, 3)),
-                upper_bound: None,
-                shift: R32!(0),
-                flipped: false,
-            }; 2],
+            vec![
+                Variable {
+                    variable_type: VariableType::Continuous,
+                    cost: R32!(14),
+                    lower_bound: Some(R32!(2, 3)),
+                    upper_bound: None,
+                    shift: R32!(0),
+                    flipped: false,
+                };
+                2
+            ],
             vec!["x".to_string(); 2],
             R32!(0),
         );
@@ -1388,12 +1521,13 @@ mod domain_propagation {
     fn all_constraints_redundant() {
         let initial = GeneralForm::new(
             Objective::Maximize,
-            ColumnMajor::from_test_data(&[
-                vec![R32!(1), R32!(1)],
-                vec![R32!(4, 5), R32!(3, 2)],
-                vec![R32!(3, 2), R32!(4, 5)],
-            ],
-                                        2,
+            ColumnMajor::from_test_data(
+                &[
+                    vec![R32!(1), R32!(1)],
+                    vec![R32!(4, 5), R32!(3, 2)],
+                    vec![R32!(3, 2), R32!(4, 5)],
+                ],
+                2,
             ),
             vec![
                 RangedConstraintRelation::Less,
@@ -1401,14 +1535,17 @@ mod domain_propagation {
                 RangedConstraintRelation::Less,
             ],
             DenseVector::new(vec![R32!(3, 2), R32!(6, 5), R32!(6, 5)], 3),
-            vec![Variable {
-                variable_type: VariableType::Continuous,
-                cost: R32!(1),
-                lower_bound: Some(R32!(0)),
-                upper_bound: Some(R32!(1, 4)),
-                shift: R32!(0),
-                flipped: false,
-            }; 2],
+            vec![
+                Variable {
+                    variable_type: VariableType::Continuous,
+                    cost: R32!(1),
+                    lower_bound: Some(R32!(0)),
+                    upper_bound: Some(R32!(1, 4)),
+                    shift: R32!(0),
+                    flipped: false,
+                };
+                2
+            ],
             vec!["x".to_string(); 2],
             R32!(0),
         );

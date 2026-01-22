@@ -5,15 +5,15 @@ use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 use index_utils::remove_sparse_indices;
-use relp_num::{Field, Negateable, One};
 use relp_num::NonZero;
 use relp_num::RationalBig;
+use relp_num::{Field, Negateable, One};
 
-use crate::algorithm::two_phase::matrix_provider::column::{Column, SparseSliceIterator};
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
+use crate::algorithm::two_phase::matrix_provider::column::{Column, SparseSliceIterator};
 use crate::algorithm::two_phase::matrix_provider::filter::generic_wrapper::IntoFilteredColumn;
-use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
+use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
 
@@ -34,10 +34,15 @@ impl IncidenceMatrix {
         let nr_vertices = adjacency_matrix.nr_columns();
         debug_assert_eq!(adjacency_matrix.nr_columns(), adjacency_matrix.nr_rows());
         // No self-arcs
-        debug_assert!((0..nr_vertices).all(|j| adjacency_matrix.data[j].iter().all(|&(i, _)| i != j)));
+        debug_assert!(
+            (0..nr_vertices).all(|j| adjacency_matrix.data[j].iter().all(|&(i, _)| i != j))
+        );
         removed.sort_unstable();
 
-        let (edges, values): (Vec<_>, Vec<_>) = adjacency_matrix.data.into_iter().enumerate()
+        let (edges, values): (Vec<_>, Vec<_>) = adjacency_matrix
+            .data
+            .into_iter()
+            .enumerate()
             .flat_map(|(from, outgoing_arcs)| {
                 let removed_ref = &removed;
 
@@ -46,31 +51,40 @@ impl IncidenceMatrix {
                     let to_deleted = removed_ref.binary_search(&to);
 
                     let tuples = match (from_deleted, to_deleted) {
-                        (Ok(_), Ok(_)) => {  // Both deleted
+                        (Ok(_), Ok(_)) => {
+                            // Both deleted
                             vec![]
-                        },
+                        }
                         (Ok(_), Err(to_shift)) => {
                             vec![(to - to_shift, ArcDirection::Incoming)]
                         }
                         (Err(from_shift), Ok(_)) => {
                             vec![(from - from_shift, ArcDirection::Outgoing)]
                         }
-                        (Err(from_shift), Err(to_shift)) => {  // Both there
+                        (Err(from_shift), Err(to_shift)) => {
+                            // Both there
                             let from_shifted = from - from_shift;
                             let to_shifted = to - to_shift;
 
                             // Correct ordering
                             if from_shifted < to_shifted {
-                                vec![(from_shifted, ArcDirection::Outgoing), (to_shifted, ArcDirection::Incoming)]
+                                vec![
+                                    (from_shifted, ArcDirection::Outgoing),
+                                    (to_shifted, ArcDirection::Incoming),
+                                ]
                             } else {
-                                vec![(to_shifted, ArcDirection::Incoming), (from_shifted, ArcDirection::Outgoing)]
+                                vec![
+                                    (to_shifted, ArcDirection::Incoming),
+                                    (from_shifted, ArcDirection::Outgoing),
+                                ]
                             }
-                        },
+                        }
                     };
 
                     (tuples, values)
                 })
-            }).unzip();
+            })
+            .unzip();
 
         let nr_edges = edges.len();
 
@@ -103,7 +117,7 @@ impl IncidenceMatrix {
 pub struct ArcIncidenceColumn(pub Vec<SparseTuple<ArcDirection>>);
 impl IntoIterator for ArcIncidenceColumn {
     type Item = SparseTuple<ArcDirection>;
-    type IntoIter = impl Iterator<Item=Self::Item>;
+    type IntoIter = impl Iterator<Item = Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -118,7 +132,8 @@ impl Column for ArcIncidenceColumn {
     }
 
     fn index_to_string(&self, i: usize) -> String {
-        self.0.iter()
+        self.0
+            .iter()
             .find(|&&(index, _)| index == i)
             .map_or_else(|| "0".to_string(), |(_, v)| v.to_string())
     }
@@ -280,7 +295,7 @@ impl MulAssign<&ArcDirection> for RationalBig {
     #[inline]
     fn mul_assign(&mut self, rhs: &ArcDirection) {
         match rhs {
-            ArcDirection::Incoming => {},
+            ArcDirection::Incoming => {}
             ArcDirection::Outgoing => self.negate(),
         }
     }
@@ -329,7 +344,7 @@ impl DivAssign<&ArcDirection> for RationalBig {
     #[inline]
     fn div_assign(&mut self, rhs: &ArcDirection) {
         match rhs {
-            ArcDirection::Incoming => {},
+            ArcDirection::Incoming => {}
             ArcDirection::Outgoing => self.negate(),
         }
     }

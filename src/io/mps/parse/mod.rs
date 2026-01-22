@@ -8,12 +8,14 @@ use std::str::FromStr;
 
 use crate::data::linear_algebra::{SparseTuple, SparseTupleVec};
 use crate::data::linear_program::elements::{ConstraintRelation, Objective, VariableType};
-use crate::io::error::{FileLocation, Import as ImportError, Inconsistency, Parse as ParseError, ParseResult};
-use crate::io::mps::{Bound, BoundType, Column, MPS, Range, Rhs, Row};
-use crate::io::mps::number::parse::Parse;
+use crate::io::error::{
+    FileLocation, Import as ImportError, Inconsistency, Parse as ParseError, ParseResult,
+};
 use crate::io::mps::RowType;
 use crate::io::mps::Section;
+use crate::io::mps::number::parse::Parse;
 use crate::io::mps::token::{COMMENT_INDICATOR, END_OF_INTEGER, NAME, START_OF_INTEGER};
+use crate::io::mps::{Bound, BoundType, Column, MPS, Range, Rhs, Row};
 
 mod fixed;
 mod free;
@@ -62,21 +64,34 @@ fn parse<'a, F: Parse, CR: ColumnRetriever<'a>>(
     let column_index = build_column_index(&columns);
 
     let (rhss, next_section) = if next_section == Section::Rhs {
-        parse_optional_section::<_, CR, _, _, 2>(&mut lines, [Section::Ranges, Section::Bounds], &row_index)?
-    } else { (Vec::with_capacity(0), next_section) };
+        parse_optional_section::<_, CR, _, _, 2>(
+            &mut lines,
+            [Section::Ranges, Section::Bounds],
+            &row_index,
+        )?
+    } else {
+        (Vec::with_capacity(0), next_section)
+    };
 
     let (ranges, next_section) = if next_section == Section::Ranges {
         parse_optional_section::<_, CR, _, _, 1>(&mut lines, [Section::Bounds], &row_index)?
-    } else { (Vec::with_capacity(0), next_section) };
+    } else {
+        (Vec::with_capacity(0), next_section)
+    };
     check_ranges_consistency(&ranges)?;
 
     let bounds = if next_section == Section::Bounds {
         parse_bounds_section::<_, CR, _>(&mut lines, &column_index)?
-    } else { Vec::with_capacity(0) };
+    } else {
+        Vec::with_capacity(0)
+    };
 
     if lines.next().is_some() {
-        return Err(ParseError::new("File parsed successfully, but it has nonempty lines a\
-        t the end").into());
+        return Err(ParseError::new(
+            "File parsed successfully, but it has nonempty lines a\
+        t the end",
+        )
+        .into());
     }
 
     Ok(MPS {
@@ -135,7 +150,8 @@ trait ColumnRetriever<'a> {
     /// Depending on whether it is, either the marker field is returned (marker name is discarded)
     /// or the column name, row name and value text are returned (typically happens).
     /// TODO(OPTIMIZATION): Should the implementors of this method use branch prediction hints?
-    fn is_column_marker_line(line: &'a str) -> ParseResult<ColumnLineContent<'a, Self::RestOfLine>>;
+    fn is_column_marker_line(line: &'a str)
+    -> ParseResult<ColumnLineContent<'a, Self::RestOfLine>>;
 
     /// Read three columns from either the RHS or RANGES section.
     ///
@@ -181,19 +197,24 @@ fn parse_program_name<'a, CR: ColumnRetriever<'a>>(
 
             let expected_name_string = &line[0..NAME.len()];
             if expected_name_string == NAME {
-                let name = CR::two_or_three(&line[NAME.len()..])
-                    .map_err(|e| e.wrap(format!("Could not read program name \
-                    from line {}. Ths line looked like \"{}\"", number, line)))?[0];
+                let name = CR::two_or_three(&line[NAME.len()..]).map_err(|e| {
+                    e.wrap(format!(
+                        "Could not read program name \
+                    from line {}. Ths line looked like \"{}\"",
+                        number, line
+                    ))
+                })?[0];
                 Ok(name.to_string())
             } else {
                 Err(ParseError::with_location(
                     format!(
-                        "Expected a \"{}\" indicator, found \"{}\" instead", NAME, expected_name_string,
+                        "Expected a \"{}\" indicator, found \"{}\" instead",
+                        NAME, expected_name_string,
                     ),
                     (number, line),
                 ))
             }
-        },
+        }
     }
 }
 
@@ -215,17 +236,22 @@ fn parse_objsense_section<'a, L: Iterator<Item = FileLocation<'a>>>(
     lines: &mut L,
 ) -> ParseResult<Objective> {
     match lines.next() {
-        None => Err(ParseError::new("No line to read, is the program more than a name?")),
+        None => Err(ParseError::new(
+            "No line to read, is the program more than a name?",
+        )),
         Some((number, line)) => {
             match line.trim_end() {
                 // The default: OBJSENSE is not mentioned and we minimize.
                 "ROWS" => Ok(Objective::Minimize),
                 "OBJSENSE" => {
                     match lines.next() {
-                        None => Err(ParseError::new("Program can't end in the OBJSENSE section.")),
+                        None => Err(ParseError::new(
+                            "Program can't end in the OBJSENSE section.",
+                        )),
                         Some((number, line)) => {
                             // Throw away the next line, who's contents are "ROWS", check to be sure
-                            if !matches!(lines.next(), Some((_, line)) if line.starts_with("ROWS")) {
+                            if !matches!(lines.next(), Some((_, line)) if line.starts_with("ROWS"))
+                            {
                                 return Err(ParseError::new("Expected the ROWS section next."));
                             }
 
@@ -239,7 +265,7 @@ fn parse_objsense_section<'a, L: Iterator<Item = FileLocation<'a>>>(
                             }
                         }
                     }
-                },
+                }
                 _ => Err(ParseError::with_location(
                     format!("Line contents \"{}\" were unexpected", line),
                     (number, line),
@@ -267,19 +293,28 @@ fn parse_row_section<'a, CR: ColumnRetriever<'a>, L: Iterator<Item = FileLocatio
                     match row_type {
                         RowType::Cost => {
                             if cost_row_name.is_some() {
-                                return Err(ParseError::with_location("Second cost row \
-                                detected. This is not supported.", (number, line)));
+                                return Err(ParseError::with_location(
+                                    "Second cost row \
+                                detected. This is not supported.",
+                                    (number, line),
+                                ));
                             }
                             cost_row_name = Some(name)
-                        },
+                        }
                         RowType::Constraint(constraint_type) => {
-                            collector.push(Row { name, constraint_type, });
-                        },
+                            collector.push(Row {
+                                name,
+                                constraint_type,
+                            });
+                        }
                     }
-                },
-                Err(error) => return Err(error.wrap(
-                    format!("Couldn't parse row type on line {}: \"{}\"", number, line),
-                )),
+                }
+                Err(error) => {
+                    return Err(error.wrap(format!(
+                        "Couldn't parse row type on line {}: \"{}\"",
+                        number, line
+                    )));
+                }
             }
         } else {
             // Section has ended.
@@ -297,13 +332,22 @@ fn check_row_section_consistency(
 ) -> Result<(String, Vec<Row>), Inconsistency> {
     if let Some(cost_name) = cost_row_name {
         rows.sort_unstable_by(|row1, row2| row1.name.cmp(&row2.name));
-        if rows.binary_search_by_key(&cost_name.as_str(), |row| row.name.as_str()).is_ok() {
+        if rows
+            .binary_search_by_key(&cost_name.as_str(), |row| row.name.as_str())
+            .is_ok()
+        {
             return Err(Inconsistency::new("Cost row name found in other rows."));
         }
 
-        if let Some(name) = rows.windows(2)
-            .find(|w| w[0].name == w[1].name).map(|w| &w[0].name) {
-            return Err(Inconsistency::new(format!("Duplicate row name {} found.", name)));
+        if let Some(name) = rows
+            .windows(2)
+            .find(|w| w[0].name == w[1].name)
+            .map(|w| &w[0].name)
+        {
+            return Err(Inconsistency::new(format!(
+                "Duplicate row name {} found.",
+                name
+            )));
         }
 
         Ok((cost_name, rows))
@@ -335,11 +379,16 @@ fn build_row_index<'a>(
     rows: &'a [Row],
     cost_row_name: &str,
 ) -> Result<HashMap<&'a str, usize>, Inconsistency> {
-    let names = rows.iter().map(|row| row.name.as_str()).collect::<HashSet<_>>();
+    let names = rows
+        .iter()
+        .map(|row| row.name.as_str())
+        .collect::<HashSet<_>>();
     debug_assert_eq!(names.len(), rows.len());
     debug_assert!(!names.contains(cost_row_name));
 
-    let index = rows.iter().enumerate()
+    let index = rows
+        .iter()
+        .enumerate()
         .map(|(i, row)| (row.name.as_str(), i))
         .collect::<HashMap<_, _>>();
 
@@ -350,7 +399,12 @@ fn build_row_index<'a>(
     }
 }
 
-fn parse_column_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item = FileLocation<'a>>>(
+fn parse_column_section<
+    'a,
+    F: Parse,
+    CR: ColumnRetriever<'a>,
+    L: Iterator<Item = FileLocation<'a>>,
+>(
     lines: &mut L,
     cost_row_name: &str,
     row_map: &HashMap<&str, usize>,
@@ -371,10 +425,12 @@ fn parse_column_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item 
         if is_part_of_same_section(line) {
             // Row is part of same section
 
-            let content = CR::is_column_marker_line(line)
-                .map_err(|e| e.wrap(format!(
-                    "Could not determine whether line {} is a marker line: \"{}\"", number, line,
-                )))?;
+            let content = CR::is_column_marker_line(line).map_err(|e| {
+                e.wrap(format!(
+                    "Could not determine whether line {} is a marker line: \"{}\"",
+                    number, line,
+                ))
+            })?;
             match content {
                 ColumnLineContent::Marker([marker_text]) => {
                     // A marker indicates a variable type change.
@@ -383,7 +439,10 @@ fn parse_column_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item 
                     // variable type.
                     save_to_column_collector(
                         None,
-                        &mut column_to_be_saved, &mut column_collector, &mut collector, active_variable_type,
+                        &mut column_to_be_saved,
+                        &mut column_collector,
+                        &mut collector,
+                        active_variable_type,
                     )?;
 
                     // TODO(CORRECTNESS): Err when the type doesn't actually change?
@@ -391,19 +450,26 @@ fn parse_column_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item 
                     active_variable_type = match marker_text {
                         START_OF_INTEGER => VariableType::Integer,
                         END_OF_INTEGER => VariableType::Continuous,
-                        _ => return Err(ParseError::with_location(
-                            format!("Marker type \"{}\" unknown.", marker_text), (number, line),
-                        ).into()),
+                        _ => {
+                            return Err(ParseError::with_location(
+                                format!("Marker type \"{}\" unknown.", marker_text),
+                                (number, line),
+                            )
+                            .into());
+                        }
                     };
                     debug_assert_ne!(previous_variable_type, active_variable_type);
-                },
+                }
                 ColumnLineContent::Data([column_name, row_name, value_text], rest_of_line) => {
                     // Read the name of the group and save the group if necessary
                     if let Some(active_group) = column_to_be_saved.as_ref() {
                         if active_group != column_name {
                             save_to_column_collector(
                                 Some(column_name.to_string()),
-                                &mut column_to_be_saved, &mut column_collector, &mut collector, active_variable_type,
+                                &mut column_to_be_saved,
+                                &mut column_collector,
+                                &mut collector,
+                                active_variable_type,
                             )?;
                         }
                     } else {
@@ -411,17 +477,22 @@ fn parse_column_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item 
                     }
 
                     let mut save_pair = |row_name, value_text| {
-                        let value = F::parse(value_text).map_err(|e| e.wrap(
-                            "Couldn't parse (row name, value) pair",
-                        ))?;
+                        let value = F::parse(value_text)
+                            .map_err(|e| e.wrap("Couldn't parse (row name, value) pair"))?;
 
                         match row_map.get(row_name) {
-                            None => if row_name == cost_row_name {
-                                let column_index = collector.len();
-                                cost_values_collector.push((column_index, value))
-                            } else {
-                                return Err(Inconsistency::new(format!("Row \"{}\" not known.", row_name)).into());
-                            },
+                            None => {
+                                if row_name == cost_row_name {
+                                    let column_index = collector.len();
+                                    cost_values_collector.push((column_index, value))
+                                } else {
+                                    return Err(Inconsistency::new(format!(
+                                        "Row \"{}\" not known.",
+                                        row_name
+                                    ))
+                                    .into());
+                                }
+                            }
                             Some(row_index) => column_collector.push((*row_index, value)),
                         }
 
@@ -432,22 +503,28 @@ fn parse_column_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item 
                     _result?;
                     match CR::five_and_six(rest_of_line) {
                         Ok(Some([row_name, value_text])) => save_pair(row_name, value_text)?,
-                        Ok(None) => {},
-                        Err(e) => return Err(e.wrap(format!(
-                            "Line {} contained an unexpected number of elements: \"{}\"", number, line,
-                        )).into()),
+                        Ok(None) => {}
+                        Err(e) => {
+                            return Err(e
+                                .wrap(format!(
+                                    "Line {} contained an unexpected number of elements: \"{}\"",
+                                    number, line,
+                                ))
+                                .into());
+                        }
                     }
-                },
+                }
             }
         } else {
-            let next_section = try_parse_next_section(
-                line,
-                [Section::Rhs, Section::Ranges, Section::Bounds],
-            )?;
+            let next_section =
+                try_parse_next_section(line, [Section::Rhs, Section::Ranges, Section::Bounds])?;
             // Save the values read of the last column before quiting.
             save_to_column_collector(
                 None,
-                &mut column_to_be_saved, &mut column_collector, &mut collector, active_variable_type,
+                &mut column_to_be_saved,
+                &mut column_collector,
+                &mut collector,
+                active_variable_type,
             )?;
 
             debug_assert!(cost_values_collector.is_sorted_by_key(|&(j, _)| j));
@@ -472,7 +549,10 @@ fn save_to_column_collector<F>(
         let mut values = take(column_collector);
         values.sort_unstable_by_key(|&(i, _)| i);
         if values.windows(2).any(|w| w[0].0 == w[1].0) {
-            return Err(Inconsistency::new(format!("Duplicate row for column \"{}\"", column_name)));
+            return Err(Inconsistency::new(format!(
+                "Duplicate row for column \"{}\"",
+                column_name
+            )));
         }
 
         collector.push(Column {
@@ -504,11 +584,16 @@ fn save_to_column_collector<F>(
 /// This assignment is not a specific order.
 fn build_column_index<F>(columns: &[Column<F>]) -> HashMap<&str, usize> {
     debug_assert_eq!(
-        columns.iter().map(|column| column.name.as_str()).collect::<HashSet<_>>().len(),
+        columns
+            .iter()
+            .map(|column| column.name.as_str())
+            .collect::<HashSet<_>>()
+            .len(),
         columns.len(),
     );
 
-    columns.iter()
+    columns
+        .iter()
         .enumerate()
         .map(|(index, column)| (column.name.as_str(), index))
         .collect()
@@ -522,21 +607,21 @@ impl<F> ListedInGroup for Rhs<F> {
     type ValueType = F;
 
     fn new(name: String, values: Vec<(usize, Self::ValueType)>) -> Self {
-        Self { name, values, }
+        Self { name, values }
     }
 }
 impl<F> ListedInGroup for Range<F> {
     type ValueType = F;
 
     fn new(name: String, values: Vec<(usize, Self::ValueType)>) -> Self {
-        Self { name, values, }
+        Self { name, values }
     }
 }
 impl<F> ListedInGroup for Bound<F> {
     type ValueType = BoundType<F>;
 
     fn new(name: String, values: Vec<(usize, Self::ValueType)>) -> Self {
-        Self { name, values, }
+        Self { name, values }
     }
 }
 
@@ -574,16 +659,23 @@ fn parse_optional_section<
             let next_section = try_parse_next_section(line, valid_next_sections)?;
             save_to_group_collector::<_, false>(
                 None,
-                &mut group_to_be_saved, &mut group_collector, &mut collector,
+                &mut group_to_be_saved,
+                &mut group_collector,
+                &mut collector,
             )?;
-            return Ok((collector, next_section))
+            return Ok((collector, next_section));
         }
     }
 
     Err(ParseError::new("Section \"COLUMNS\" ended sooner than expected.").into())
 }
 
-fn parse_value_section_line<'a, F: Parse, T: ListedInGroup<ValueType = F>, CR: ColumnRetriever<'a>>(
+fn parse_value_section_line<
+    'a,
+    F: Parse,
+    T: ListedInGroup<ValueType = F>,
+    CR: ColumnRetriever<'a>,
+>(
     group_name: &str,
     row_name: &str,
     value_text: &str,
@@ -598,7 +690,9 @@ fn parse_value_section_line<'a, F: Parse, T: ListedInGroup<ValueType = F>, CR: C
         if active_group != group_name {
             save_to_group_collector::<_, false>(
                 Some(group_name.to_string()),
-                group_to_be_saved, group_collector, collector,
+                group_to_be_saved,
+                group_collector,
+                collector,
             )?;
         }
     } else {
@@ -606,11 +700,11 @@ fn parse_value_section_line<'a, F: Parse, T: ListedInGroup<ValueType = F>, CR: C
     }
 
     let mut save_pair = |row_name, value_text| {
-        let row_index: Result<_, Inconsistency> = row_map.get(row_name)
+        let row_index: Result<_, Inconsistency> = row_map
+            .get(row_name)
             .ok_or_else(|| Inconsistency::new(format!("Row \"{}\" not known.", row_name)));
-        let value: Result<_, ParseError> = F::parse(value_text).map_err(|e| e.wrap(
-            "Couldn't parse (row name, value) pair",
-        ));
+        let value: Result<_, ParseError> =
+            F::parse(value_text).map_err(|e| e.wrap("Couldn't parse (row name, value) pair"));
 
         group_collector.push((*row_index?, value?));
         Ok(())
@@ -620,7 +714,9 @@ fn parse_value_section_line<'a, F: Parse, T: ListedInGroup<ValueType = F>, CR: C
     match CR::five_and_six(rest_of_line) {
         Ok(Some([row_name, value_text])) => save_pair(row_name, value_text),
         Ok(None) => Ok(()),
-        Err(e) => Err(e.wrap("Line contained an unexpected number of elements").into()),
+        Err(e) => Err(e
+            .wrap("Line contained an unexpected number of elements")
+            .into()),
     }
 }
 
@@ -635,12 +731,13 @@ fn save_to_group_collector<T: ListedInGroup, const CAN_HAVE_DUPLICATES: bool>(
         values.sort_unstable_by_key(|&(i, _)| i);
         // TODO(CORRECTNESS): The level of defensiveness should be more consistent: why check for
         //  duplicates here?
-        if !CAN_HAVE_DUPLICATES {
-            if let Some(&[(row_id, _), _]) = values.windows(2)
-                .find(|w| w[0].0 == w[1].0) {
-                return Err(Inconsistency::new(format!(
-                    "Duplicate row id \"{}\" for group \"{}\"", row_id, group_name)));
-            }
+        if !CAN_HAVE_DUPLICATES
+            && let Some(&[(row_id, _), _]) = values.windows(2).find(|w| w[0].0 == w[1].0)
+        {
+            return Err(Inconsistency::new(format!(
+                "Duplicate row id \"{}\" for group \"{}\"",
+                row_id, group_name
+            )));
         }
 
         collector.push(T::new(group_name, values));
@@ -653,15 +750,26 @@ fn save_to_group_collector<T: ListedInGroup, const CAN_HAVE_DUPLICATES: bool>(
 
 fn check_ranges_consistency<F>(ranges: &[Range<F>]) -> Result<(), Inconsistency> {
     let mut unique = HashSet::with_capacity(ranges.iter().map(|r| r.values.len()).sum());
-    let all_unique = ranges.iter().flat_map(|range| range.values.iter())
+    let all_unique = ranges
+        .iter()
+        .flat_map(|range| range.values.iter())
         .all(|&(row_index, _)| unique.insert(row_index));
 
-    if all_unique { Ok(()) } else {
-        Err(Inconsistency::new("Each row can have at most one range value"))
+    if all_unique {
+        Ok(())
+    } else {
+        Err(Inconsistency::new(
+            "Each row can have at most one range value",
+        ))
     }
 }
 
-fn parse_bounds_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item = FileLocation<'a>>>(
+fn parse_bounds_section<
+    'a,
+    F: Parse,
+    CR: ColumnRetriever<'a>,
+    L: Iterator<Item = FileLocation<'a>>,
+>(
     lines: &mut L,
     column_index: &HashMap<&str, usize>,
 ) -> Result<Vec<Bound<F>>, ImportError> {
@@ -672,7 +780,8 @@ fn parse_bounds_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item 
     for (_number, line) in lines {
         if is_part_of_same_section(line) {
             // Row is part of same section
-            let ([bound_type_text, bound_name, column_name], rest_of_line) = CR::one_through_three(line)?;
+            let ([bound_type_text, bound_name, column_name], rest_of_line) =
+                CR::one_through_three(line)?;
             parse_bound_line::<_, CR>(
                 bound_type_text,
                 bound_name,
@@ -687,7 +796,9 @@ fn parse_bounds_section<'a, F: Parse, CR: ColumnRetriever<'a>, L: Iterator<Item 
             try_parse_next_section(line, [])?;
             save_to_group_collector::<_, true>(
                 None,
-                &mut bound_to_be_saved, &mut bound_collector, &mut collector,
+                &mut bound_to_be_saved,
+                &mut bound_collector,
+                &mut collector,
             )?;
             return Ok(collector);
         }
@@ -706,15 +817,17 @@ fn parse_bound_line<'a, F: Parse, CR: ColumnRetriever<'a>>(
     collector: &mut Vec<Bound<F>>,
     column_index: &HashMap<&str, usize>,
 ) -> Result<(), ImportError> {
-    let column_index = *column_index.get(column_name).ok_or_else(
-        || Inconsistency::new(format!("Column name \"{}\" unknown", column_name))
-    )?;
+    let column_index = *column_index
+        .get(column_name)
+        .ok_or_else(|| Inconsistency::new(format!("Column name \"{}\" unknown", column_name)))?;
 
     if let Some(active_column) = active_group {
         if active_column != bound_name {
             save_to_group_collector::<_, true>(
                 Some(bound_name.to_string()),
-                active_group, group_collector, collector,
+                active_group,
+                group_collector,
+                collector,
             )?;
         }
     } else {
@@ -728,9 +841,8 @@ fn parse_bound_line<'a, F: Parse, CR: ColumnRetriever<'a>>(
         "BV" => BoundType::Binary,
         "LO" | "UP" | "FX" | "LI" | "UI" => {
             let [value_text] = CR::four(rest_of_line)?;
-            let value = F::parse(value_text).map_err(|e| e.wrap(
-                "Couldn't parse (row name, value) pair",
-            ))?;
+            let value = F::parse(value_text)
+                .map_err(|e| e.wrap("Couldn't parse (row name, value) pair"))?;
 
             match bound_type_text {
                 "LO" => BoundType::LowerContinuous(value),
@@ -740,9 +852,13 @@ fn parse_bound_line<'a, F: Parse, CR: ColumnRetriever<'a>>(
                 "UI" => BoundType::UpperInteger(value),
                 _ => unreachable!(),
             }
-        },
+        }
         "SC" => unimplemented!(),
-        _ => return Err(ParseError::new(format!("Bound type \"{}\" unknown.", bound_type_text)).into()),
+        _ => {
+            return Err(
+                ParseError::new(format!("Bound type \"{}\" unknown.", bound_type_text)).into(),
+            );
+        }
     };
 
     group_collector.push((column_index, bound_type));
@@ -758,7 +874,9 @@ fn try_parse_next_section<const N: usize>(
         .map_err(|e| e.wrap(format!("Could not parse new section header \"{}\".", line)))?;
     if new_section != Section::Endata && !acceptable_next_sections.contains(&new_section) {
         return Err(ParseError::new(format!(
-            "Expected the {} section headers, found the {} section.", Section::Endata, new_section,
+            "Expected the {} section headers, found the {} section.",
+            Section::Endata,
+            new_section,
         )));
     }
 
@@ -789,13 +907,16 @@ impl FromStr for Section {
     /// A `()` error if no `Section` is recognized.
     fn from_str(text: &str) -> Result<Self, Self::Err> {
         match text {
-            "ROWS"     => Ok(Section::Rows),
-            "COLUMNS"  => Ok(Section::Columns),
-            "RHS"      => Ok(Section::Rhs),
-            "BOUNDS"   => Ok(Section::Bounds),
-            "RANGES"   => Ok(Section::Ranges),
-            "ENDATA"   => Ok(Section::Endata),
-            _  => Err(ParseError::new(format!("Unknown section header \"{}\".", text))),
+            "ROWS" => Ok(Section::Rows),
+            "COLUMNS" => Ok(Section::Columns),
+            "RHS" => Ok(Section::Rhs),
+            "BOUNDS" => Ok(Section::Bounds),
+            "RANGES" => Ok(Section::Ranges),
+            "ENDATA" => Ok(Section::Endata),
+            _ => Err(ParseError::new(format!(
+                "Unknown section header \"{}\".",
+                text
+            ))),
         }
     }
 }
@@ -834,10 +955,13 @@ impl FromStr for RowType {
 #[cfg(test)]
 mod test {
     use crate::data::linear_program::elements::ConstraintRelation;
-    use crate::io::mps::parse::{check_row_section_consistency, ColumnRetriever, into_lines, parse_program_name, parse_row_section};
+    use crate::io::mps::Row;
     use crate::io::mps::parse::fixed::Fixed;
     use crate::io::mps::parse::free::Free;
-    use crate::io::mps::Row;
+    use crate::io::mps::parse::{
+        ColumnRetriever, check_row_section_consistency, into_lines, parse_program_name,
+        parse_row_section,
+    };
 
     const MPS_LITERAL_STRING: &str = "
 * Start of the file
@@ -870,11 +994,7 @@ ENDATA";
     #[test]
     fn test_into_lines() {
         let result = into_lines(MPS_LITERAL_STRING).collect::<Vec<_>>();
-        let expected = vec![
-            (3, "NAME          TESTPROB"),
-            (5, "ROWS"),
-            (7, " N  COST"),
-        ];
+        let expected = vec![(3, "NAME          TESTPROB"), (5, "ROWS"), (7, " N  COST")];
         assert_eq!(result[..expected.len()], expected);
         assert_eq!(result.last(), Some(&(27, "ENDATA")));
     }
@@ -900,20 +1020,26 @@ ENDATA";
         let _section = lines.next();
         let result = parse_row_section::<CR, _>(&mut lines);
 
-        assert_eq!(result.ok(), Some((Some("COST".to_string()), vec![
-            Row {
-                name: "LIM1".to_string(),
-                constraint_type: ConstraintRelation::Less,
-            },
-            Row {
-                name: "LIM2".to_string(),
-                constraint_type: ConstraintRelation::Greater,
-            },
-            Row {
-                name: "MYEQN".to_string(),
-                constraint_type: ConstraintRelation::Equal,
-            },
-        ])));
+        assert_eq!(
+            result.ok(),
+            Some((
+                Some("COST".to_string()),
+                vec![
+                    Row {
+                        name: "LIM1".to_string(),
+                        constraint_type: ConstraintRelation::Less,
+                    },
+                    Row {
+                        name: "LIM2".to_string(),
+                        constraint_type: ConstraintRelation::Greater,
+                    },
+                    Row {
+                        name: "MYEQN".to_string(),
+                        constraint_type: ConstraintRelation::Equal,
+                    },
+                ]
+            ))
+        );
         assert!(lines.next().unwrap().1.starts_with("    XONE"));
     }
     #[test]
@@ -928,35 +1054,53 @@ ENDATA";
     #[test]
     fn test_check_row_section_consistency() {
         assert!(check_row_section_consistency(None, vec![]).is_err());
-        assert!(check_row_section_consistency(Some("a".to_string()), vec![
-            Row {
-                name: "a".to_string(),
-                constraint_type: ConstraintRelation::Equal
-            },
-            Row {
-                name: "a".to_string(),
-                constraint_type: ConstraintRelation::Equal
-            },
-        ]).is_err());
-        assert!(check_row_section_consistency(Some("a".to_string()), vec![
-            Row {
-                name: "a".to_string(),
-                constraint_type: ConstraintRelation::Equal
-            },
-            Row {
-                name: "b".to_string(),
-                constraint_type: ConstraintRelation::Equal
-            },
-        ]).is_err());
-        assert!(check_row_section_consistency(Some("a".to_string()), vec![
-            Row {
-                name: "b".to_string(),
-                constraint_type: ConstraintRelation::Equal
-            },
-            Row {
-                name: "c".to_string(),
-                constraint_type: ConstraintRelation::Equal
-            },
-        ]).is_ok());
+        assert!(
+            check_row_section_consistency(
+                Some("a".to_string()),
+                vec![
+                    Row {
+                        name: "a".to_string(),
+                        constraint_type: ConstraintRelation::Equal
+                    },
+                    Row {
+                        name: "a".to_string(),
+                        constraint_type: ConstraintRelation::Equal
+                    },
+                ]
+            )
+            .is_err()
+        );
+        assert!(
+            check_row_section_consistency(
+                Some("a".to_string()),
+                vec![
+                    Row {
+                        name: "a".to_string(),
+                        constraint_type: ConstraintRelation::Equal
+                    },
+                    Row {
+                        name: "b".to_string(),
+                        constraint_type: ConstraintRelation::Equal
+                    },
+                ]
+            )
+            .is_err()
+        );
+        assert!(
+            check_row_section_consistency(
+                Some("a".to_string()),
+                vec![
+                    Row {
+                        name: "b".to_string(),
+                        constraint_type: ConstraintRelation::Equal
+                    },
+                    Row {
+                        name: "c".to_string(),
+                        constraint_type: ConstraintRelation::Equal
+                    },
+                ]
+            )
+            .is_ok()
+        );
     }
 }

@@ -19,7 +19,9 @@ mod dense;
 mod sparse;
 
 /// Defines basic ways to create or change a vector, regardless of back-end.
-pub trait Vector<F>: Deref<Target=[Self::Inner]> + PartialEq + FromIterator<F> + Display + Debug {
+pub trait Vector<F>:
+    Deref<Target = [Self::Inner]> + PartialEq + FromIterator<F> + Display + Debug
+{
     /// Items stored internally.
     type Inner;
 
@@ -39,16 +41,19 @@ pub trait Vector<F>: Deref<Target=[Self::Inner]> + PartialEq + FromIterator<F> +
     fn sparse_inner_product<'a, 'b, I: ColumnIterator<'b>, O>(&'a self, column: I) -> O
     where
         F: 'a,
-        &'a F: Mul<&'b I::F, Output=O>,
-        O: Zero + AddAssign,
-    ;
+        &'a F: Mul<&'b I::F, Output = O>,
+        O: Zero + AddAssign;
     /// Make a vector longer by one, by adding an extra value at the end of this vector.
-    fn push_value(&mut self, value: F) where F: NonZero;
+    fn push_value(&mut self, value: F)
+    where
+        F: NonZero;
     /// Set the value at an index.
     ///
     /// Depending on internal representation, this can be an expensive operation (for `SparseVector`
     /// 's, the cost depends on the (lack of) sparsity.
-    fn set(&mut self, index: usize, value: F) where F: NonZero;
+    fn set(&mut self, index: usize, value: F)
+    where
+        F: NonZero;
     /// Retrieve the value at an index.
     ///
     /// # Returns
@@ -58,9 +63,9 @@ pub trait Vector<F>: Deref<Target=[Self::Inner]> + PartialEq + FromIterator<F> +
     /// Remove the items at the specified indices.
     fn remove_indices(&mut self, indices: &[usize]);
     /// Iterate over the internal values.
-    fn iter(&self) -> Iter<Self::Inner>;
+    fn iter(&self) -> Iter<'_, Self::Inner>;
     /// Iterate over the internal values mutably.
-    fn iter_mut(&mut self) -> IterMut<Self::Inner>;
+    fn iter_mut(&mut self) -> IterMut<'_, Self::Inner>;
     /// Number of items represented by the vector.
     fn len(&self) -> usize;
     /// Whether the vector is empty.
@@ -75,19 +80,24 @@ pub mod test {
     //! Contains also some helper methods to be used in other test modules.
 
     use num_traits::{FromPrimitive, NumCast};
-    use relp_num::{Field, FieldRef};
     use relp_num::F;
     use relp_num::NonZero;
+    use relp_num::{Field, FieldRef};
 
     use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
     use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 
     pub trait TestVector<F>: Vector<F> {
-        fn from_test_data<T: NonZero>(data: Vec<T>) -> Self where F: From<T>;
+        fn from_test_data<T: NonZero>(data: Vec<T>) -> Self
+        where
+            F: From<T>;
     }
     impl<F: Field> TestVector<F> for DenseVector<F> {
         /// Create a `DenseVector` from the provided data.
-        fn from_test_data<T>(data: Vec<T>) -> Self where F: From<T> {
+        fn from_test_data<T>(data: Vec<T>) -> Self
+        where
+            F: From<T>,
+        {
             let len = data.len();
             Self::new(data.into_iter().map(|v| F::from(v)).collect(), len)
         }
@@ -97,7 +107,10 @@ pub mod test {
         F: Field + FromPrimitive + NonZero,
     {
         /// Create a `SparseVector` from the provided data.
-        fn from_test_data<T: NonZero>(data: Vec<T>) -> Self where F: From<T> {
+        fn from_test_data<T: NonZero>(data: Vec<T>) -> Self
+        where
+            F: From<T>,
+        {
             debug_assert_ne!(data.len(), 0);
 
             let size = data.len();
@@ -123,12 +136,15 @@ pub mod test {
             debug_assert!(data.is_sorted_by_key(|&(i, _)| i));
             debug_assert_ne!(len, 0);
             debug_assert!(data.len() <= len);
-            debug_assert!(data.iter().all(|&(_, v)| v.to_f64().unwrap().abs() > f64::EPSILON));
+            debug_assert!(
+                data.iter()
+                    .all(|&(_, v)| v.to_f64().unwrap().abs() > f64::EPSILON)
+            );
 
             Self::new(
-                data.into_iter().map(|(i, v)| {
-                    (i, F::from_f64(v.to_f64().unwrap()).unwrap())
-                }).collect(),
+                data.into_iter()
+                    .map(|(i, v)| (i, F::from_f64(v.to_f64().unwrap()).unwrap()))
+                    .collect(),
                 len,
             )
         }
@@ -140,7 +156,10 @@ pub mod test {
     }
 
     /// Test
-    fn push_value<F: Field + FromPrimitive + From<u8> + NonZero, V: TestVector<F>>() where for<'r> &'r F: FieldRef<F> {
+    fn push_value<F: Field + FromPrimitive + From<u8> + NonZero, V: TestVector<F>>()
+    where
+        for<'r> &'r F: FieldRef<F>,
+    {
         let mut v = get_test_vector::<F, V>();
         let len = v.len();
         let new_v = F!(1);
@@ -198,12 +217,15 @@ pub mod test {
     #[cfg(test)]
     mod dense_vector {
         use num_traits::{FromPrimitive, Zero};
+        use relp_num::Field;
         use relp_num::{F, R32};
         use relp_num::{Rational32, Rational64};
-        use relp_num::Field;
 
+        use crate::data::linear_algebra::vector::test::{
+            TestVector, get_set, get_test_vector, len, out_of_bounds_get, out_of_bounds_set,
+            push_value,
+        };
         use crate::data::linear_algebra::vector::{DenseVector, Vector};
-        use crate::data::linear_algebra::vector::test::{get_set, get_test_vector, len, out_of_bounds_get, out_of_bounds_set, push_value, TestVector};
 
         type T = Rational32;
 
@@ -292,8 +314,11 @@ pub mod test {
         use relp_num::Rational32;
 
         use crate::algorithm::two_phase::matrix_provider::column::SparseSliceIterator;
+        use crate::data::linear_algebra::vector::test::{
+            TestVector, get_set, get_test_vector, len, out_of_bounds_get, out_of_bounds_set,
+            push_value,
+        };
         use crate::data::linear_algebra::vector::{SparseVector, Vector};
-        use crate::data::linear_algebra::vector::test::{get_set, get_test_vector, len, out_of_bounds_get, out_of_bounds_set, push_value, TestVector};
 
         type T = Rational32;
 
@@ -335,48 +360,83 @@ pub mod test {
         #[test]
         fn sparse_inner_product() {
             let v = get_test_vector::<T, SparseVector<T, T>>();
-            let w = vec![(1, R32!(5)), (2, R32!(6)), ];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(5 * 5 + 6 * 6));
+            let w = vec![(1, R32!(5)), (2, R32!(6))];
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(5 * 5 + 6 * 6)
+            );
 
             let v = SparseVector::<T, T>::from_test_data(vec![3]);
             let w = vec![(0, R32!(5))];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(15));
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(15)
+            );
 
             let v = SparseVector::<T, T>::from_test_data(vec![0]);
             let w = vec![(0, R32!(1))];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(0)
+            );
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2]);
             let w = vec![(1, R32!(3))];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(6));
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(6)
+            );
 
             let v = SparseVector::<T, T>::from_test_data(vec![2, 0]);
             let w = vec![(1, R32!(3))];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(0)
+            );
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2]);
             let w = vec![(0, R32!(3))];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(0)
+            );
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2]);
             let w = vec![(1, R32!(3))];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(6));
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(6)
+            );
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 0, 0]);
             let w = vec![(1, R32!(3)), (2, R32!(7))];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(0)
+            );
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2, 0]);
             let w = vec![(0, R32!(5)), (1, R32!(7))];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(14));
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(14)
+            );
 
             let v = SparseVector::<T, T>::from_test_data(vec![0, 2, 0]);
             let w = vec![(0, R32!(5)), (2, R32!(7))];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(0)
+            );
 
-            let v = SparseVector::<T, T>::from_test_data(vec![1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0]);
+            let v = SparseVector::<T, T>::from_test_data(vec![
+                1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0,
+            ]);
             let w = vec![(0, R32!(-1)), (1, R32!(1)), (2, R32!(1)), (12, R32!(1))];
-            assert_eq!(v.sparse_inner_product(SparseSliceIterator::new(&w)), R32!(0));
+            assert_eq!(
+                v.sparse_inner_product(SparseSliceIterator::new(&w)),
+                R32!(0)
+            );
         }
 
         #[test]
@@ -420,7 +480,10 @@ pub mod test {
             let vs = vec![(2, 2), (3, 3), (5, 5), (10, 10)];
             let mut v = SparseVector::<T, T>::from_test_tuples(vs, 11);
             v.remove_indices(&vec![3, 4, 6]);
-            assert_eq!(v, SparseVector::<T, T>::from_test_tuples(vec![(2, 2), (3, 5), (7, 10)], 8));
+            assert_eq!(
+                v,
+                SparseVector::<T, T>::from_test_tuples(vec![(2, 2), (3, 5), (7, 10)], 8)
+            );
         }
 
         #[test]

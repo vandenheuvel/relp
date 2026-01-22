@@ -18,19 +18,19 @@
 //! minimums and column maximums are, as well as the slack variable for each of the constraints that
 //! don't already contain a pivot from the column minimum or maximum.
 use num_traits::Zero;
-use relp_num::RationalBig;
 use relp_num::RB;
+use relp_num::RationalBig;
 
 use relp::algorithm::OptimizationResult;
-use relp::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
+use relp::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 use relp::algorithm::two_phase::phase_two;
 use relp::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
-use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
-use relp::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
-use relp::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use relp::algorithm::two_phase::tableau::Tableau;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
+use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
+use relp::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use relp::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
 use relp::data::linear_algebra::vector::{DenseVector, Vector};
 use relp::data::linear_program::elements::VariableType;
@@ -42,21 +42,24 @@ fn main() {
     // non-negative.
     let input_matrix = [
         [Some(3), Some(3), Some(3)],
-        [None,    Some(3), Some(3)],
+        [None, Some(3), Some(3)],
         [Some(1), Some(2), Some(3)],
     ];
 
     let m = input_matrix.len();
     let n = input_matrix[0].len();
 
-    let column_extreme = |f: fn(_) -> Option<i32>| (0..n)
-        .map(|j| f((0..m).filter_map(move |i| input_matrix[i][j])).unwrap())
-        .collect::<Vec<_>>();
+    let column_extreme = |f: fn(_) -> Option<i32>| {
+        (0..n)
+            .map(|j| f((0..m).filter_map(move |i| input_matrix[i][j])).unwrap())
+            .collect::<Vec<_>>()
+    };
     let column_min = column_extreme(Iterator::min);
     let column_max = column_extreme(Iterator::max);
 
     // Variables
-    let subtraction_amount = (0..m).map(|_| Variable {
+    let subtraction_amount = (0..m)
+        .map(|_| Variable {
             variable_type: VariableType::Continuous,
             cost: RB!(0),
             lower_bound: Some(RB!(0)),
@@ -65,7 +68,8 @@ fn main() {
             flipped: false,
         })
         .collect::<Vec<_>>();
-    let column_minimum = (0..n).map(|_| Variable {
+    let column_minimum = (0..n)
+        .map(|_| Variable {
             variable_type: VariableType::Continuous,
             // We subtract this variable from a corresponding variable to compute a column range.
             cost: RB!(-1),
@@ -75,7 +79,8 @@ fn main() {
             flipped: false,
         })
         .collect::<Vec<_>>();
-    let column_maximum = (0..n).map(|_| Variable {
+    let column_maximum = (0..n)
+        .map(|_| Variable {
             variable_type: VariableType::Continuous,
             cost: RB!(1),
             lower_bound: Some(RB!(0)),
@@ -107,9 +112,9 @@ fn main() {
             if let Some(value) = input_matrix[i][j] {
                 // There is a value there, so we add a constraint.
                 row_major_constraints.push(vec![
-                    (i, RB!(1)),     // The "subtraction amount" variable index
+                    (i, RB!(1)), // The "subtraction amount" variable index
                     (m + j, RB!(1)), // The "column minimum" variable index (there are `m` of the
-                                     // "subtraction amount" variables)
+                                 // "subtraction amount" variables)
                 ]);
                 b.push(RB!(value));
                 basis_columns.push(if value == column_min[j] {
@@ -163,15 +168,25 @@ fn main() {
             constraints[column_index].push((row_index, value));
         }
     }
-    let constraints = ColumnMajor::new(constraints, nr_upper_bounded_constraints + nr_lower_bounded_constraints, m + 2 * n);
-    let b = DenseVector::new(b, nr_upper_bounded_constraints + nr_lower_bounded_constraints);
+    let constraints = ColumnMajor::new(
+        constraints,
+        nr_upper_bounded_constraints + nr_lower_bounded_constraints,
+        m + 2 * n,
+    );
+    let b = DenseVector::new(
+        b,
+        nr_upper_bounded_constraints + nr_lower_bounded_constraints,
+    );
 
     // Create the datastructure that will serve as a `MatrixProvider`
     let matrix = MatrixData::new(
         &constraints,
         &b,
         Vec::with_capacity(0),
-        0, 0, nr_upper_bounded_constraints, nr_lower_bounded_constraints,
+        0,
+        0,
+        nr_upper_bounded_constraints,
+        nr_lower_bounded_constraints,
         &variables,
     );
 
@@ -182,7 +197,9 @@ fn main() {
     // We create a tableau using the constructed matrix. The basis is initialized using the
     // specified columns.
     let mut tableau = Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(
-        &matrix, inverse_maintainer, basis_columns.into_iter().collect(),
+        &matrix,
+        inverse_maintainer,
+        basis_columns.into_iter().collect(),
     );
 
     // We apply primal simplex to improve the solution.
@@ -197,7 +214,7 @@ fn main() {
                 })
                 .collect::<Vec<_>>();
             println!("{:?}", shifts);
-        },
+        }
         _ => panic!("We started with a feasible solution, and has at least value 0."),
     }
 }

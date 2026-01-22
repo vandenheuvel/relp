@@ -30,15 +30,11 @@ where
     /// * `len`: Dimension of the matrix.
     pub fn new(values: Vec<(usize, F)>, pivot: usize, len: usize) -> Self {
         debug_assert!(values.windows(2).all(|w| w[0].0 < w[1].0));
-        debug_assert!(values.first().map_or(true, |&(i, _)| i > pivot));
-        debug_assert!(values.last().map_or(true, |&(i, _)| i < len));
+        debug_assert!(values.first().is_none_or(|&(i, _)| i > pivot));
+        debug_assert!(values.last().is_none_or(|&(i, _)| i < len));
         debug_assert!(pivot < len);
 
-        Self {
-            values,
-            pivot,
-            len,
-        }
+        Self { values, pivot, len }
     }
 
     /// Row-multiply with this matrix (from the left, i.e. x M)
@@ -48,7 +44,7 @@ where
     /// * `vector`: Sparse vector of size `self.len`.
     pub fn apply_left(&self, vector: &mut Vec<(usize, F)>) {
         debug_assert!(vector.windows(2).all(|w| w[0].0 < w[1].0));
-        debug_assert!(vector.last().map_or(true, |&(i, _)| i < self.len));
+        debug_assert!(vector.last().is_none_or(|&(i, _)| i < self.len));
 
         let pivot_index = vector.binary_search_by_key(&self.pivot, |&(i, _)| i);
         if let Ok(pivot_index) = pivot_index {
@@ -71,7 +67,7 @@ where
     /// * `vector`: Sparse vector of size `self.len`.
     pub fn apply_right(&self, vector: &mut Vec<(usize, F)>) {
         debug_assert!(vector.windows(2).all(|w| w[0].0 < w[1].0));
-        debug_assert!(vector.last().map_or(true, |&(i, _)| i < self.len));
+        debug_assert!(vector.last().is_none_or(|&(i, _)| i < self.len));
 
         // We don't modify `vector` below this index
         let pivot_index = vector.binary_search_by_key(&self.pivot, |&(i, _)| i);
@@ -119,14 +115,14 @@ where
             Err(index) => index,
         };
 
-        let difference = self.values.iter()
+        let difference = self
+            .values
+            .iter()
             .filter_map(|(row, value)| {
                 spike[search_index..]
                     .binary_search_by_key(row, |&(i, _)| i)
                     .ok()
-                    .map(|shift| {
-                        value * &spike[search_index + shift].1
-                    })
+                    .map(|shift| value * &spike[search_index + shift].1)
             })
             .sum::<F>();
 
@@ -139,9 +135,8 @@ fn update_value<F>(
     pivot_index: Result<usize, usize>,
     new_index: usize,
     vector: &mut Vec<(usize, F)>,
-)
-where
-    F: SubAssign<F> + Neg<Output=F> + Zero,
+) where
+    F: SubAssign<F> + Neg<Output = F> + Zero,
 {
     if !difference.is_zero() {
         match pivot_index {
@@ -150,7 +145,7 @@ where
                 if vector[data_index].1.is_zero() {
                     vector.remove(data_index);
                 }
-            },
+            }
             Err(data_index) => vector.insert(data_index, (new_index, -difference)),
         }
     }
@@ -158,7 +153,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use relp_num::{R16, R8};
+    use relp_num::{R8, R16};
 
     use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::eta_file::EtaFile;
 
@@ -218,11 +213,17 @@ mod test {
         let eta = EtaFile::new(vec![(1, R8!(5)), (2, R8!(7))], 0, 3);
         let mut vector = vec![(0, R8!(13)), (1, R8!(17)), (2, R8!(19))];
         eta.apply_right(&mut vector);
-        debug_assert_eq!(vector, vec![(0, R8!(13 - 5 * 17 - 7 * 19)), (1, R8!(17)), (2, R8!(19))]);
+        debug_assert_eq!(
+            vector,
+            vec![(0, R8!(13 - 5 * 17 - 7 * 19)), (1, R8!(17)), (2, R8!(19))]
+        );
 
         let mut vector = vec![(0, R8!(13)), (1, R8!(17)), (2, R8!(19))];
         eta.apply_left(&mut vector);
-        debug_assert_eq!(vector, vec![(0, R8!(13)), (1, R8!(-5 * 13 + 17)), (2, R8!(-7 * 13 + 19))]);
+        debug_assert_eq!(
+            vector,
+            vec![(0, R8!(13)), (1, R8!(-5 * 13 + 17)), (2, R8!(-7 * 13 + 19))]
+        );
     }
 
     #[test]
@@ -230,11 +231,17 @@ mod test {
         let eta = EtaFile::new(vec![(1, R8!(5))], 0, 3);
         let mut vector = vec![(0, R8!(13)), (1, R8!(17)), (2, R8!(19))];
         eta.apply_right(&mut vector);
-        debug_assert_eq!(vector, vec![(0, R8!(13 - 5 * 17)), (1, R8!(17)), (2, R8!(19))]);
+        debug_assert_eq!(
+            vector,
+            vec![(0, R8!(13 - 5 * 17)), (1, R8!(17)), (2, R8!(19))]
+        );
 
         let mut vector = vec![(0, R8!(13)), (1, R8!(17)), (2, R8!(19))];
         eta.apply_left(&mut vector);
-        debug_assert_eq!(vector, vec![(0, R8!(13)), (1, R8!(-5 * 13 + 17)), (2, R8!(19))]);
+        debug_assert_eq!(
+            vector,
+            vec![(0, R8!(13)), (1, R8!(-5 * 13 + 17)), (2, R8!(19))]
+        );
     }
 
     #[test]
@@ -242,22 +249,80 @@ mod test {
         let eta = EtaFile::new(vec![(2, R8!(5))], 0, 3);
         let mut vector = vec![(0, R8!(13)), (1, R8!(17)), (2, R8!(19))];
         eta.apply_right(&mut vector);
-        debug_assert_eq!(vector, vec![(0, R8!(13 - 5 * 19)), (1, R8!(17)), (2, R8!(19))]);
+        debug_assert_eq!(
+            vector,
+            vec![(0, R8!(13 - 5 * 19)), (1, R8!(17)), (2, R8!(19))]
+        );
 
         let mut vector = vec![(0, R8!(13)), (1, R8!(17)), (2, R8!(19))];
         eta.apply_left(&mut vector);
-        debug_assert_eq!(vector, vec![(0, R8!(13)), (1, R8!(17)), (2, R8!(-5 * 13 + 19))]);
+        debug_assert_eq!(
+            vector,
+            vec![(0, R8!(13)), (1, R8!(17)), (2, R8!(-5 * 13 + 19))]
+        );
     }
 
     #[test]
     fn many() {
-        let eta = EtaFile::new(vec![(1, R16!(2)), (2, R16!(3)), (5, R16!(5)), (7, R16!(7)), (11, R16!(11)), (12, R16!(13))], 0, 14);
-        let mut vector = vec![(0, R16!(17)), (1, R16!(19)), (3, R16!(23)), (5, R16!(29)), (6, R16!(31)), (9, R16!(37)), (11, R16!(41))];
+        let eta = EtaFile::new(
+            vec![
+                (1, R16!(2)),
+                (2, R16!(3)),
+                (5, R16!(5)),
+                (7, R16!(7)),
+                (11, R16!(11)),
+                (12, R16!(13)),
+            ],
+            0,
+            14,
+        );
+        let mut vector = vec![
+            (0, R16!(17)),
+            (1, R16!(19)),
+            (3, R16!(23)),
+            (5, R16!(29)),
+            (6, R16!(31)),
+            (9, R16!(37)),
+            (11, R16!(41)),
+        ];
         eta.apply_right(&mut vector);
-        debug_assert_eq!(vector, vec![(0, R16!(17 - 2 * 19 - 5 * 29 - 11 * 41)), (1, R16!(19)), (3, R16!(23)), (5, R16!(29)), (6, R16!(31)), (9, R16!(37)), (11, R16!(41))]);
+        debug_assert_eq!(
+            vector,
+            vec![
+                (0, R16!(17 - 2 * 19 - 5 * 29 - 11 * 41)),
+                (1, R16!(19)),
+                (3, R16!(23)),
+                (5, R16!(29)),
+                (6, R16!(31)),
+                (9, R16!(37)),
+                (11, R16!(41))
+            ]
+        );
 
-        let mut vector = vec![(0, R16!(13)), (1, R16!(19)), (3, R16!(23)), (5, R16!(29)), (6, R16!(31)), (9, R16!(37)), (11, R16!(41))];
+        let mut vector = vec![
+            (0, R16!(13)),
+            (1, R16!(19)),
+            (3, R16!(23)),
+            (5, R16!(29)),
+            (6, R16!(31)),
+            (9, R16!(37)),
+            (11, R16!(41)),
+        ];
         eta.apply_left(&mut vector);
-        debug_assert_eq!(vector, vec![(0, R16!(13)), (1, R16!(19 - 2 * 13)), (2, R16!(-3 * 13)), (3, R16!(23)), (5, R16!(29 -5 * 13)), (6, R16!(31)), (7, R16!(-7 * 13)), (9, R16!(37)), (11, R16!(41 - 11 * 13)), (12, R16!(-13 * 13))]);
+        debug_assert_eq!(
+            vector,
+            vec![
+                (0, R16!(13)),
+                (1, R16!(19 - 2 * 13)),
+                (2, R16!(-3 * 13)),
+                (3, R16!(23)),
+                (5, R16!(29 - 5 * 13)),
+                (6, R16!(31)),
+                (7, R16!(-7 * 13)),
+                (9, R16!(37)),
+                (11, R16!(41 - 11 * 13)),
+                (12, R16!(-13 * 13))
+            ]
+        );
     }
 }

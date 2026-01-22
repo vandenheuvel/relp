@@ -7,14 +7,14 @@
 //! the traits in the parent module and write code that is efficiently converts their specific
 //! instance.
 use std::collections::HashSet;
-use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::fmt::{Display, Formatter};
 
 use index_utils::remove_sparse_indices;
 
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::filter::{Filtered, ToFiltered};
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::variable::FeasibilityLogic;
 use crate::algorithm::two_phase::phase_one::PartialInitialBasis;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
@@ -32,7 +32,7 @@ pub trait IntoFilteredColumn: Column {
     /// This type has no lifetime attached to it, because it is likely better to filter once and
     /// then iterate over references of the filtered object, rather than to filter repeatedly while
     /// iterating.
-    type Filtered: Column<F=Self::F>;
+    type Filtered: Column<F = Self::F>;
 
     /// Filter the column.
     ///
@@ -86,7 +86,10 @@ where
     /// A new `RemoveRows` instance.
     default fn to_filtered(&self, rows_to_skip: Vec<usize>) -> Self::Filtered<'_> {
         debug_assert!(rows_to_skip.is_sorted());
-        debug_assert_eq!(rows_to_skip.iter().collect::<HashSet<_>>().len(), rows_to_skip.len());
+        debug_assert_eq!(
+            rows_to_skip.iter().collect::<HashSet<_>>().len(),
+            rows_to_skip.len()
+        );
 
         RemoveRows {
             provider: self,
@@ -112,7 +115,10 @@ where
     /// A new `RemoveRows` instance.
     pub fn new(provider: &'provider MP, rows_to_skip: Vec<usize>) -> Self {
         debug_assert!(rows_to_skip.is_sorted());
-        debug_assert_eq!(rows_to_skip.iter().collect::<HashSet<_>>().len(), rows_to_skip.len());
+        debug_assert_eq!(
+            rows_to_skip.iter().collect::<HashSet<_>>().len(),
+            rows_to_skip.len()
+        );
 
         RemoveRows {
             provider,
@@ -152,7 +158,8 @@ where
             Ok(_) => panic!("Deleting a row that already was deleted!"),
             Err(nr) => nr,
         };
-        self.rows_to_skip.insert(insertion_index, in_original_problem);
+        self.rows_to_skip
+            .insert(insertion_index, in_original_problem);
     }
 
     /// How many constraints were removed.
@@ -226,7 +233,10 @@ where
     MP: MatrixProvider<Column: IntoFilteredColumn>,
 {
     type Column = <MP::Column as IntoFilteredColumn>::Filtered;
-    type Cost<'a> = MP::Cost<'provider> where Self: 'a;
+    type Cost<'a>
+        = MP::Cost<'provider>
+    where
+        Self: 'a;
     type Rhs = MP::Rhs;
 
     fn column(&self, j: usize) -> Self::Column {
@@ -249,10 +259,16 @@ where
 
     fn bound_row_index(&self, j: usize, bound_type: BoundDirection) -> Option<usize> {
         debug_assert!(j < self.nr_columns());
-        debug_assert!(self.rows_to_skip.iter().all(|&i| i < self.provider.nr_constraints()));
+        debug_assert!(
+            self.rows_to_skip
+                .iter()
+                .all(|&i| i < self.provider.nr_constraints())
+        );
 
         // Only constraint rows are deleted,
-        self.provider.bound_row_index(j, bound_type).map(|nr| nr - self.nr_constraints_deleted())
+        self.provider
+            .bound_row_index(j, bound_type)
+            .map(|nr| nr - self.nr_constraints_deleted())
     }
 
     /// This implementation assumes that only constraint rows are removed from the `MatrixProvider`.
@@ -262,7 +278,11 @@ where
 
     /// This implementation assumes that only constraint rows are removed from the `MatrixProvider`.
     fn nr_variable_bounds(&self) -> usize {
-        debug_assert!(self.rows_to_skip.iter().all(|&i| i < self.provider.nr_constraints()));
+        debug_assert!(
+            self.rows_to_skip
+                .iter()
+                .all(|&i| i < self.provider.nr_constraints())
+        );
 
         self.provider.nr_variable_bounds()
     }
@@ -313,7 +333,10 @@ where
         &self,
         j: usize,
         value: <MP::Column as Column>::F,
-    ) -> (Option<<MP::Column as Column>::F>, Option<<MP::Column as Column>::F>) {
+    ) -> (
+        Option<<MP::Column as Column>::F>,
+        Option<<MP::Column as Column>::F>,
+    ) {
         debug_assert!(j < self.nr_columns());
 
         self.provider.closest_feasible(j, value)
@@ -337,7 +360,12 @@ where
         for row in 0..self.nr_rows() {
             write!(f, "{:>width$}", format!("{} |", row), width = width)?;
             for j in 0..self.nr_columns() {
-                 write!(f, "{:^width$}", self.column(j).index_to_string(row), width = width)?;
+                write!(
+                    f,
+                    "{:^width$}",
+                    self.column(j).index_to_string(row),
+                    width = width
+                )?;
             }
             writeln!(f)?;
         }
@@ -361,9 +389,16 @@ mod test {
             (vec![2], 5),
             (vec![2, 3], 6),
         ] {
-            let left_from_original = (0..size).filter(|i| !deleted.contains(i)).collect::<Vec<_>>();
-            for (in_reduced, in_original) in (0..left_from_original.len()).zip(left_from_original.into_iter()) {
-                assert_eq!(RemoveRows::<MatrixData<T>>::get_underlying_index(&deleted, in_reduced), in_original);
+            let left_from_original = (0..size)
+                .filter(|i| !deleted.contains(i))
+                .collect::<Vec<_>>();
+            for (in_reduced, in_original) in
+                (0..left_from_original.len()).zip(left_from_original.into_iter())
+            {
+                assert_eq!(
+                    RemoveRows::<MatrixData<T>>::get_underlying_index(&deleted, in_reduced),
+                    in_original
+                );
             }
         }
     }

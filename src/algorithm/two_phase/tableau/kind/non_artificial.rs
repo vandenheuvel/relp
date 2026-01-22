@@ -4,12 +4,12 @@
 //! `Tableau` logic that is only relevant in the second phase.
 use std::collections::HashSet;
 
+use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
+use crate::algorithm::two_phase::tableau::Tableau;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
-use crate::algorithm::two_phase::tableau::Tableau;
 
 /// The `TableauType` in case the `Tableau` does not contain any artificial variables.
 ///
@@ -72,10 +72,10 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintainer<F:
-        im_ops::FieldHR +
-        im_ops::Column<<MP::Column as Column>::F> +
-        im_ops::Cost<MP::Cost<'provider>> +
+    IM: InverseMaintainer<
+        F: im_ops::FieldHR
+               + im_ops::Column<<MP::Column as Column>::F>
+               + im_ops::Cost<MP::Cost<'provider>>,
     >,
     MP: MatrixProvider,
 {
@@ -101,9 +101,7 @@ where
             inverse_maintainer,
             basis_columns,
 
-            kind: NonArtificial {
-                provider,
-            },
+            kind: NonArtificial { provider },
         }
     }
 
@@ -133,9 +131,7 @@ where
             inverse_maintainer: IM::from_basis(&arbitrary_order, provider),
             basis_columns: basis.clone(),
 
-            kind: NonArtificial {
-                provider,
-            },
+            kind: NonArtificial { provider },
         }
     }
 
@@ -155,26 +151,25 @@ where
         provider: &'provider MP,
     ) -> Self {
         Tableau {
-            inverse_maintainer: IM::from_artificial(
-                inverse_maintainer,
-                provider,
-                nr_artificial,
-            ),
+            inverse_maintainer: IM::from_artificial(inverse_maintainer, provider, nr_artificial),
             // Shift the basis column indices back
-            basis_columns: basis_indices.into_iter()
+            basis_columns: basis_indices
+                .into_iter()
                 .map(|column| column - nr_artificial)
                 .collect(),
 
-            kind: NonArtificial {
-                provider,
-            },
+            kind: NonArtificial { provider },
         }
     }
 }
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintainer<F: im_ops::FieldHR + im_ops::Column<<MP::Column as Column>::F> + im_ops::Cost<MP::Cost<'provider>>>,
+    IM: InverseMaintainer<
+        F: im_ops::FieldHR
+               + im_ops::Column<<MP::Column as Column>::F>
+               + im_ops::Cost<MP::Cost<'provider>>,
+    >,
     MP: Filtered,
 {
     /// Create a `Tableau` from an artificial tableau while removing some rows.
@@ -194,11 +189,13 @@ where
         mut basis: HashSet<usize>,
         provider: &'provider MP,
     ) -> Self {
-        debug_assert!(
-            basis.iter().all(|&v| v >= nr_artificial || provider.filtered_rows().iter()
-                .any(|&row| inverse_maintainer.basis_column_index_for_row(row) == v)
-            ),
-        );
+        debug_assert!(basis.iter().all(|&v| {
+            v >= nr_artificial
+                || provider
+                    .filtered_rows()
+                    .iter()
+                    .any(|&row| inverse_maintainer.basis_column_index_for_row(row) == v)
+        }),);
 
         for &row in provider.filtered_rows() {
             let column = inverse_maintainer.basis_column_index_for_row(row);
@@ -208,19 +205,14 @@ where
         let basis_columns = basis.into_iter().map(|j| j - nr_artificial).collect();
 
         // Remove same row and column from carry matrix
-        let inverse_maintainer = IM::from_artificial_remove_rows(
-            inverse_maintainer,
-            provider,
-            nr_artificial,
-        );
+        let inverse_maintainer =
+            IM::from_artificial_remove_rows(inverse_maintainer, provider, nr_artificial);
 
         Tableau {
             inverse_maintainer,
             basis_columns,
 
-            kind: NonArtificial {
-                provider,
-            },
+            kind: NonArtificial { provider },
         }
     }
 }

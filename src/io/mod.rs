@@ -29,16 +29,15 @@ pub mod mps;
 ///
 /// When a file extension is unknown, a file cannot be found or read, there is an inconsistency in
 /// the problem file, etc. an error type is returned.
-pub fn import<F: From<Rational64> + Zero + One + Neg<Output=F> + Ord + Element + NonZero>(
-    file_path: &Path
-) -> Result<impl TryInto<GeneralForm<F>, Error=Inconsistency>, Import>
+pub fn import<F: From<Rational64> + Zero + One + Neg<Output = F> + Ord + Element + NonZero>(
+    file_path: &Path,
+) -> Result<impl TryInto<GeneralForm<F>, Error = Inconsistency>, Import>
 where
-    for<'r> F: Add<&'r F, Output=F>,
-    for<'r> &'r F: Neg<Output=F>,
+    for<'r> F: Add<&'r F, Output = F>,
+    for<'r> &'r F: Neg<Output = F>,
 {
     // Open and read the file
-    let program = read_to_string(file_path)
-        .map_err(Import::IO)?;
+    let program = read_to_string(file_path).map_err(Import::IO)?;
 
     // Choose the right parser
     match file_path.extension() {
@@ -66,9 +65,9 @@ enum DataTypes {
 
 impl<F> TryInto<GeneralForm<F>> for DataTypes
 where
-    F: From<Rational64> + NonZero + Zero + One + Neg<Output=F> + Ord + Element,
-    for<'r> F: Add<&'r F, Output=F>,
-    for<'r> &'r F: Neg<Output=F>,
+    F: From<Rational64> + NonZero + Zero + One + Neg<Output = F> + Ord + Element,
+    for<'r> F: Add<&'r F, Output = F>,
+    for<'r> &'r F: Neg<Output = F>,
 {
     type Error = Inconsistency;
 

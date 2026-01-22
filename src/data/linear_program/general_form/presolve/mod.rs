@@ -4,23 +4,23 @@
 //! applying the changes proposed. This module contains data structures and logic for presolving.
 use std::iter::Iterator;
 
-use relp_num::{Field, OrderedField, OrderedFieldRef};
 use relp_num::NonZeroSign;
-
-pub use scale::Scalable as Prescalable;
+use relp_num::{Field, OrderedField, OrderedFieldRef};
 
 use crate::data::linear_algebra::traits::SparseElement;
-use crate::data::linear_program::elements::{BoundDirection, LinearProgramType, RangedConstraintRelation};
-use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable};
+use crate::data::linear_program::elements::{
+    BoundDirection, LinearProgramType, RangedConstraintRelation,
+};
 use crate::data::linear_program::general_form::presolve::counters::Counters;
 use crate::data::linear_program::general_form::presolve::queues::Queues;
 use crate::data::linear_program::general_form::presolve::updates::Updates;
+use crate::data::linear_program::general_form::{GeneralForm, RemovedVariable};
 
-mod rule;
-mod queues;
-pub(super) mod updates;
 mod counters;
+mod queues;
+mod rule;
 pub(super) mod scale;
+pub(super) mod updates;
 
 /// Container data structure to keep track of presolve status.
 ///
@@ -126,23 +126,26 @@ where
     /// `Err` type.
     pub(super) fn presolve_step(&mut self) -> Result<Change, LinearProgramType<OF>> {
         // Rules that are guaranteed to make the problem smaller
-        if let Some(variable) = self.queues.substitution.pop() {
-            if self.counters.is_variable_still_active(variable) {
-                return self.presolve_fixed_variable(variable)
-                    // always removes a variable
-                    .map(|()| Change::Meaningful);
-            }
+        if let Some(variable) = self.queues.substitution.pop()
+            && self.counters.is_variable_still_active(variable)
+        {
+            return self
+                .presolve_fixed_variable(variable)
+                // always removes a variable
+                .map(|()| Change::Meaningful);
         }
         while let Some(constraint) = self.queues.bound.pop() {
             if self.counters.is_constraint_still_active(constraint) {
-                return self.presolve_bound_constraint(constraint)
+                return self
+                    .presolve_bound_constraint(constraint)
                     // always removes a constraint
                     .map(|()| Change::Meaningful);
             }
         }
         while let Some(variable) = self.queues.slack.pop() {
             if self.counters.is_variable_still_active(variable) {
-                return self.presolve_slack(variable)
+                return self
+                    .presolve_slack(variable)
                     // always removes a variable
                     .map(|()| Change::Meaningful);
             }
@@ -152,7 +155,11 @@ where
         while let Some((constraint, direction)) = self.queues.activity.pop() {
             if self.counters.is_constraint_still_active(constraint) {
                 // Rules with higher priority are applied when a row or column counter equals 1.
-                debug_assert!(self.counters.constraint[constraint] > 1, "was {}", self.counters.constraint[constraint]);
+                debug_assert!(
+                    self.counters.constraint[constraint] > 1,
+                    "was {}",
+                    self.counters.constraint[constraint]
+                );
                 return self.presolve_domain_propagation(constraint, direction);
             }
         }
@@ -182,13 +189,20 @@ where
         direction: BoundDirection,
         change: Option<OF>,
     ) {
-        debug_assert!(self.updates.removed_variables.iter().all(|&(j, _)| variable != j));
+        debug_assert!(
+            self.updates
+                .removed_variables
+                .iter()
+                .all(|&(j, _)| variable != j)
+        );
         debug_assert!(match direction {
-            BoundDirection::Lower => change.as_ref().map_or(true, |v| v.is_positive()),
-            BoundDirection::Upper => change.as_ref().map_or(true, |v| v.is_negative()),
+            BoundDirection::Lower => change.as_ref().is_none_or(|v| v.is_positive()),
+            BoundDirection::Upper => change.as_ref().is_none_or(|v| v.is_negative()),
         });
 
-        if self.updates.is_variable_fixed(variable).is_some() && self.counters.is_variable_still_active(variable) {
+        if self.updates.is_variable_fixed(variable).is_some()
+            && self.counters.is_variable_still_active(variable)
+        {
             self.queues.substitution.push(variable);
         }
 
@@ -222,7 +236,10 @@ where
             BoundDirection::Upper => by_how_much < OF::zero(),
         });
 
-        let rows_to_check = self.counters.iter_active_column(variable).collect::<Vec<_>>();
+        let rows_to_check = self
+            .counters
+            .iter_active_column(variable)
+            .collect::<Vec<_>>();
         for (row, coefficient) in rows_to_check {
             if !self.counters.is_constraint_still_active(row) {
                 continue;
@@ -234,10 +251,12 @@ where
                 BoundDirection::Upper => &mut self.activity_bounds[row].1,
             } {
                 *bound += &by_how_much * coefficient;
-                debug_assert!(match bound_to_edit {
-                    BoundDirection::Lower => self.counters.activity[row].0,
-                    BoundDirection::Upper => self.counters.activity[row].1,
-                } <= 1);
+                debug_assert!(
+                    match bound_to_edit {
+                        BoundDirection::Lower => self.counters.activity[row].0,
+                        BoundDirection::Upper => self.counters.activity[row].1,
+                    } <= 1
+                );
                 self.queues.activity.push((row, bound_to_edit));
             }
         }
@@ -249,14 +268,13 @@ where
     ///
     /// * `variable`: Variable who's bound was added.
     /// * `direction`: Whether a variable upper or lower bound was added.
-    fn update_activity_counters(
-        &mut self,
-        variable: usize,
-        direction: BoundDirection,
-    ) {
-        let constraints_to_check = self.counters.iter_active_column(variable)
+    fn update_activity_counters(&mut self, variable: usize, direction: BoundDirection) {
+        let constraints_to_check = self
+            .counters
+            .iter_active_column(variable)
             // TODO(ARCHITECTURE): Avoid This clone
-            .map(|(i, v)| (i, v.clone())).collect::<Vec<_>>();
+            .map(|(i, v)| (i, v.clone()))
+            .collect::<Vec<_>>();
         for (constraint, coefficient) in constraints_to_check {
             let activity_direction = direction * coefficient.non_zero_signum();
             let counter = match activity_direction {
@@ -279,12 +297,11 @@ where
     /// # Arguments
     ///
     /// * `constraint`: Constraint to iter over.
-    fn remove_constraint_values(
-        &mut self,
-        constraint: usize,
-    ) -> Result<(), LinearProgramType<OF>> {
+    fn remove_constraint_values(&mut self, constraint: usize) -> Result<(), LinearProgramType<OF>> {
         // TODO(ARCHITECTURE): Avoid this clone and collect.
-        let variables_to_scan = self.counters.iter_active_row(constraint)
+        let variables_to_scan = self
+            .counters
+            .iter_active_row(constraint)
             .map(|(j, _)| j)
             .collect::<Vec<_>>();
         for variable in variables_to_scan {
@@ -314,10 +331,12 @@ where
                     self.updates.optimize_column_independently(variable)?
                 };
                 self.remove_variable(variable, value);
-            },
-            1 => if self.general_form.variables[variable].cost.is_zero() {
-                self.queues.slack.push(variable);
-            },
+            }
+            1 => {
+                if self.general_form.variables[variable].cost.is_zero() {
+                    self.queues.slack.push(variable);
+                }
+            }
             _ => (),
         }
 
@@ -342,7 +361,10 @@ where
     /// # Returns
     ///
     /// Whether a meaningful change was made in the function (such as when the constraint is empty).
-    fn queue_constraint_by_counter(&mut self, constraint: usize) -> Result<Change, LinearProgramType<OF>> {
+    fn queue_constraint_by_counter(
+        &mut self,
+        constraint: usize,
+    ) -> Result<Change, LinearProgramType<OF>> {
         match self.counters.constraint[constraint] {
             0 => {
                 let right_hand_side = self.updates.b(constraint);
@@ -357,7 +379,7 @@ where
             1 => {
                 self.queues.bound.push(constraint);
                 Ok(Change::None)
-            },
+            }
             _ => Ok(Change::None),
         }
     }
@@ -409,18 +431,12 @@ where
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {
     match constraint_type {
-        RangedConstraintRelation::Equal => {
-            right_hand_side == &OF::zero()
-        },
+        RangedConstraintRelation::Equal => right_hand_side == &OF::zero(),
         RangedConstraintRelation::Range(range) => {
             right_hand_side >= &OF::zero() && right_hand_side - range <= OF::zero()
-        },
-        RangedConstraintRelation::Less => {
-            right_hand_side >= &OF::zero()
-        },
-        RangedConstraintRelation::Greater => {
-            right_hand_side <= &OF::zero()
-        },
+        }
+        RangedConstraintRelation::Less => right_hand_side >= &OF::zero(),
+        RangedConstraintRelation::Greater => right_hand_side <= &OF::zero(),
     }
 }
 

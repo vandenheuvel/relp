@@ -3,8 +3,8 @@
 //! A set of counters that makes searching during presolving unnecessary.
 use relp_num::{Field, OrderedField, OrderedFieldRef};
 
-use crate::data::linear_algebra::matrix::{RowMajor, SparseMatrix};
 use crate::data::linear_algebra::SparseTuple;
+use crate::data::linear_algebra::matrix::{RowMajor, SparseMatrix};
 use crate::data::linear_algebra::traits::SparseElement;
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::presolve::NonZeroSign;
@@ -46,7 +46,8 @@ where
     ///
     /// A new instance.
     pub fn new(general_form: &'a GeneralForm<OF>) -> Self {
-        let rows: SparseMatrix<_, _, _> = SparseMatrix::from_column_major(&general_form.constraints);
+        let rows: SparseMatrix<_, _, _> =
+            SparseMatrix::from_column_major(&general_form.constraints);
 
         Self {
             constraint: (0..general_form.nr_active_constraints())
@@ -55,23 +56,32 @@ where
             variable: (0..general_form.nr_active_variables())
                 .map(|j| general_form.constraints.data[j].len())
                 .collect(),
-            activity: rows.iter_rows().map(|row| {
-                row.iter()
-                    .map(|&(j, coefficient)| {
-                        let (lower, upper) =  (&general_form.variables[j].lower_bound, &general_form.variables[j].upper_bound);
-                        match coefficient.non_zero_signum() {
-                            NonZeroSign::Positive => (lower, upper),
-                            NonZeroSign::Negative => (upper, lower),
-                        }
-                    })
-                    .fold((0, 0), |(lower_total, upper_total), (lower, upper)| {
-                        let is_missing = |option: &Option<_>| match option.as_ref() {
-                            Some(_) => 0,
-                            None => 1,
-                        };
-                        (lower_total + is_missing(lower), upper_total + is_missing(upper))
-                    })
-            }).collect(),
+            activity: rows
+                .iter_rows()
+                .map(|row| {
+                    row.iter()
+                        .map(|&(j, coefficient)| {
+                            let (lower, upper) = (
+                                &general_form.variables[j].lower_bound,
+                                &general_form.variables[j].upper_bound,
+                            );
+                            match coefficient.non_zero_signum() {
+                                NonZeroSign::Positive => (lower, upper),
+                                NonZeroSign::Negative => (upper, lower),
+                            }
+                        })
+                        .fold((0, 0), |(lower_total, upper_total), (lower, upper)| {
+                            let is_missing = |option: &Option<_>| match option.as_ref() {
+                                Some(_) => 0,
+                                None => 1,
+                            };
+                            (
+                                lower_total + is_missing(lower),
+                                upper_total + is_missing(upper),
+                            )
+                        })
+                })
+                .collect(),
 
             rows,
             general_form,
@@ -93,7 +103,9 @@ where
         &self,
         variable: usize,
     ) -> impl Iterator<Item = SparseTuple<&OF>> {
-        self.general_form.constraints.iter_column(variable)
+        self.general_form
+            .constraints
+            .iter_column(variable)
             .map(|&(i, ref v)| (i, v))
             .filter(move |&(i, _)| self.is_constraint_still_active(i))
     }
@@ -111,10 +123,14 @@ where
     /// # Return value
     ///
     /// A collection of (column index, coefficient value) tuples.
-    pub(crate) fn iter_active_row(&self, constraint: usize) -> impl Iterator<Item = SparseTuple<&OF>> {
+    pub(crate) fn iter_active_row(
+        &self,
+        constraint: usize,
+    ) -> impl Iterator<Item = SparseTuple<&OF>> {
         debug_assert!(self.is_constraint_still_active(constraint));
 
-        self.rows.iter_row(constraint)
+        self.rows
+            .iter_row(constraint)
             .copied()
             .filter(move |&(j, _)| self.is_variable_still_active(j))
     }

@@ -9,9 +9,9 @@ use relp_num::Binary;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
+use crate::algorithm::two_phase::tableau::Tableau;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
 use crate::algorithm::two_phase::tableau::kind::Kind;
-use crate::algorithm::two_phase::tableau::Tableau;
 
 pub mod fully;
 pub mod partially;
@@ -31,7 +31,7 @@ pub type Cost = Binary;
 ///
 /// There are currently two implementations; either all variables are artificial, or not necessarily
 /// all variables are. See the two submodules.
-pub trait Artificial: Kind<Column: Identity, Cost=Cost> {
+pub trait Artificial: Kind<Column: Identity, Cost = Cost> {
     /// How many artificial variables are in the tableau.
     ///
     /// This number varies, because slack variables might have been recognized as practical
@@ -67,7 +67,9 @@ where
 {
     /// Whether there are any artificial variables in the basis.
     pub fn has_artificial_in_basis(&self) -> bool {
-        self.basis_columns.iter().any(|&c| c < self.nr_artificial_variables())
+        self.basis_columns
+            .iter()
+            .any(|&c| c < self.nr_artificial_variables())
     }
 
     /// Get the indices of the artificial variables that are still in the basis.

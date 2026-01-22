@@ -15,38 +15,28 @@ use crate::data::linear_algebra::SparseTuple;
 use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
 use crate::data::linear_algebra::vector::Vector;
 use crate::data::linear_program::general_form::GeneralForm;
-use crate::data::linear_program::general_form::presolve::scale::{Scalable, scale, Scaling};
+use crate::data::linear_program::general_form::presolve::scale::{Scalable, Scaling, scale};
 
 /// Multiplication traits necessary for scaling.
-pub trait Multiplication<F> =
-    One +
-    MulAssign<F> +
-    DivAssign<F> +
-    MulAssign<Self> +
-    DivAssign<Self> +
+pub trait Multiplication<F> = One + MulAssign<F> + DivAssign<F> + MulAssign<Self> + DivAssign<Self>
 where
-    for<'r> Self:
-        MulAssign<&'r F> +
-        DivAssign<&'r F> +
-        MulAssign<&'r Self> +
-        DivAssign<&'r Self> +
-        Mul<&'r Self, Output=Self> +
-    ,
-;
+    for<'r> Self: MulAssign<&'r F>
+        + DivAssign<&'r F>
+        + MulAssign<&'r Self>
+        + DivAssign<&'r Self>
+        + Mul<&'r Self, Output = Self>;
 
 /// Addition traits necessary for scaling.
 pub trait Addition =
-    Zero +
-    Neg<Output=Self> +
-    Sub<Output=Self> +
-    Add<Output=Self> +
-    AddAssign +
-;
+    Zero + Neg<Output = Self> + Sub<Output = Self> + Add<Output = Self> + AddAssign;
 
 impl<R> Scalable<R> for GeneralForm<R>
 where
-    for<'r> R: NonZeroFactorizable<Power=i32> + Multiplication<R::Factor> + SparseElement<R> + SparseComparator,
-    for<'r> &'r R: Mul<&'r R, Output=R> + Div<&'r R, Output=R>,
+    for<'r> R: NonZeroFactorizable<Power = i32>
+        + Multiplication<R::Factor>
+        + SparseElement<R>
+        + SparseComparator,
+    for<'r> &'r R: Mul<&'r R, Output = R> + Div<&'r R, Output = R>,
     R::Power: Addition + One + Ord,
 {
     fn scale(&mut self) -> Scaling<R> {
@@ -116,7 +106,8 @@ impl<R: NonZeroFactorizable> GeneralFormFactorization<R> {
         self.b.len()
     }
     fn nr_bounds(&self) -> usize {
-        self.bounds.iter()
+        self.bounds
+            .iter()
             .map(|pair| match pair {
                 (None, None) => 0,
                 (Some(_), None) | (None, Some(_)) => 1,
@@ -129,7 +120,7 @@ impl<R: NonZeroFactorizable> GeneralFormFactorization<R> {
     }
 }
 
-impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
+impl<R: NonZeroFactorizable<Power = i32>> GeneralFormFactorization<R> {
     /// Solve the scaling problem posed by this factorization per factor.
     ///
     /// For each factor that was identified, minimize how often it occurs.
@@ -139,8 +130,7 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
         let mut results = Vec::with_capacity(self.factors.len());
         debug_assert!(self.factors.is_sorted());
         while !self.factors.is_empty() {
-            let (factor, (row_scaling, column_scaling)) =
-                self.solve_single(&index);
+            let (factor, (row_scaling, column_scaling)) = self.solve_single(&index);
             results.push((factor, (row_scaling, column_scaling)));
         }
 
@@ -182,7 +172,8 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
         let mut variable_changes = vec![0; self.c.len()];
 
         // Queues tracking which rows / columns still should be tested
-        let mut row_queue = (0..self.b.len()).map(RowToIncrement::ConstraintRow)
+        let mut row_queue = (0..self.b.len())
+            .map(RowToIncrement::ConstraintRow)
             .chain(once(RowToIncrement::CostRow))
             .collect::<FIFOSet<_>>();
         let mut column_queue = (0..self.c.len()).collect::<FIFOSet<_>>();
@@ -192,27 +183,31 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
             match next_side {
                 NextSide::Column(index) => self.update_column(
                     index,
-                    &cost_change, &constraint_changes, &mut variable_changes[index],
+                    &cost_change,
+                    &constraint_changes,
+                    &mut variable_changes[index],
                     &mut row_queue,
                 ),
                 NextSide::Row(row_to_increment) => match row_to_increment {
                     RowToIncrement::ConstraintRow(index) => self.do_constraint(
                         index,
-                        &mut constraint_changes[index], &variable_changes,
+                        &mut constraint_changes[index],
+                        &variable_changes,
                         &mut column_queue,
                         row_major_constraint_index,
                     ),
-                    RowToIncrement::CostRow => self.do_cost(
-                        &mut cost_change,
-                        &variable_changes,
-                        &mut column_queue,
-                    ),
+                    RowToIncrement::CostRow => {
+                        self.do_cost(&mut cost_change, &variable_changes, &mut column_queue)
+                    }
                 },
             }
         }
 
         let factor = self.remove_factor_info();
-        (factor, ((cost_change, constraint_changes), variable_changes))
+        (
+            factor,
+            ((cost_change, constraint_changes), variable_changes),
+        )
     }
 
     /// Retrieve the next value to be tested.
@@ -222,12 +217,14 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
     /// column again sooner than necessary.
     fn constraint_or_variable(
         &self,
-        row_queue: &mut FIFOSet<RowToIncrement>, column_queue: &mut FIFOSet<usize>,
+        row_queue: &mut FIFOSet<RowToIncrement>,
+        column_queue: &mut FIFOSet<usize>,
     ) -> Option<NextSide> {
         match (row_queue.len(), column_queue.len()) {
             (0, 0) => None,
             (constraints, variables) => Some({
-                match (constraints * self.nr_variables()).cmp(&(variables * self.nr_constraints())) {
+                match (constraints * self.nr_variables()).cmp(&(variables * self.nr_constraints()))
+                {
                     Ordering::Less => NextSide::Column(column_queue.pop().unwrap()),
                     Ordering::Equal => {
                         // Somewhat arbitrary choice. Because there are probably more columns, take
@@ -236,7 +233,7 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
                     }
                     Ordering::Greater => NextSide::Row(row_queue.pop().unwrap()),
                 }
-            })
+            }),
         }
     }
 
@@ -247,7 +244,9 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
     fn update_column(
         &self,
         variable: usize,
-        cost_change: &R::Power, constraint_changes: &Vec<R::Power>, column_change: &mut R::Power,
+        cost_change: &R::Power,
+        constraint_changes: &Vec<R::Power>,
+        column_change: &mut R::Power,
         row_queue: &mut FIFOSet<RowToIncrement>,
     ) {
         let (bound_weight, constraint_weight) = self.relative_column_weight();
@@ -265,29 +264,35 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
             if let Some(factorization) = self.c[variable].as_ref() {
                 self.count_positive(
                     factorization,
-                    &mut on_increase, &mut on_decrease,
-                    *cost_change, *column_change,
+                    &mut on_increase,
+                    &mut on_decrease,
+                    *cost_change,
+                    *column_change,
                     constraint_weight as isize,
                 );
             }
             for (row, factorization) in &self.constraints[variable] {
                 self.count_positive(
                     factorization,
-                    &mut on_increase, &mut on_decrease,
-                    constraint_changes[*row], *column_change,
+                    &mut on_increase,
+                    &mut on_decrease,
+                    constraint_changes[*row],
+                    *column_change,
                     constraint_weight as isize,
                 );
             }
 
             self.count_negative(
                 self.bounds[variable].0.as_ref(),
-                &mut on_increase, &mut on_decrease,
+                &mut on_increase,
+                &mut on_decrease,
                 *column_change,
                 bound_weight as isize,
             );
             self.count_negative(
                 self.bounds[variable].1.as_ref(),
-                &mut on_increase, &mut on_decrease,
+                &mut on_increase,
+                &mut on_decrease,
                 *column_change,
                 bound_weight as isize,
             );
@@ -324,7 +329,8 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
     fn do_constraint(
         &self,
         row: usize,
-        row_change: &mut R::Power, column_changes: &Vec<R::Power>,
+        row_change: &mut R::Power,
+        column_changes: &Vec<R::Power>,
         column_queue: &mut FIFOSet<usize>,
         row_major_constraint_index: &Vec<Vec<(usize, usize)>>,
     ) {
@@ -340,8 +346,10 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
             for &(column, data_index) in &row_major_constraint_index[row] {
                 self.count_positive(
                     &self.constraints[column][data_index].1,
-                    &mut on_increase, &mut on_decrease,
-                    *row_change, column_changes[column],
+                    &mut on_increase,
+                    &mut on_decrease,
+                    *row_change,
+                    column_changes[column],
                     constraint_weight as isize,
                 )
             }
@@ -349,8 +357,10 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
             if let Some(factorization) = self.b[row].as_ref() {
                 self.count_positive(
                     factorization,
-                    &mut on_increase, &mut on_decrease,
-                    *row_change, 0,
+                    &mut on_increase,
+                    &mut on_decrease,
+                    *row_change,
+                    0,
                     bound_weight as isize,
                 )
             }
@@ -384,7 +394,8 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
     fn count_negative(
         &self,
         bound: Option<&Factorization<R>>,
-        on_increase: &mut isize, on_decrease: &mut isize,
+        on_increase: &mut isize,
+        on_decrease: &mut isize,
         column_change: R::Power,
         weight: isize,
     ) {
@@ -412,7 +423,8 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
     /// longer profitable.
     fn do_cost(
         &self,
-        change: &mut R::Power, column_changes: &Vec<R::Power>,
+        change: &mut R::Power,
+        column_changes: &Vec<R::Power>,
         column_queue: &mut FIFOSet<usize>,
     ) {
         let (_, constraint_weight) = self.relative_column_weight();
@@ -428,8 +440,10 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
                 if let Some(factorization) = coefficient.as_ref() {
                     self.count_positive(
                         factorization,
-                        &mut on_increase, &mut on_decrease,
-                        *change, column_changes[column],
+                        &mut on_increase,
+                        &mut on_decrease,
+                        *change,
+                        column_changes[column],
                         constraint_weight as isize,
                     )
                 }
@@ -466,8 +480,10 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
     fn count_positive(
         &self,
         factorization: &Factorization<R>,
-        on_increase: &mut isize, on_decrease: &mut isize,
-        existing_change: R::Power, column_change: R::Power,
+        on_increase: &mut isize,
+        on_decrease: &mut isize,
+        existing_change: R::Power,
+        column_change: R::Power,
         weight: isize,
     ) {
         match (self.initial_exponent(factorization) + existing_change + column_change).cmp(&0) {
@@ -518,13 +534,11 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
     /// The factorization is sparse. The factor of interest should be the last value in the
     /// factorization.
     #[inline]
-    fn initial_exponent(
-        &self,
-        factorization: &Vec<(R::Factor, R::Power)>,
-    ) -> R::Power {
+    fn initial_exponent(&self, factorization: &Vec<(R::Factor, R::Power)>) -> R::Power {
         let factor = self.factors.last().unwrap();
 
-        factorization.last()
+        factorization
+            .last()
             .filter(|(f, _)| f == factor)
             .map(|&(_, power)| power)
             .unwrap_or_else(R::Power::zero)
@@ -536,8 +550,10 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
         for column in &mut self.constraints {
             for (_, factorization) in column {
                 match factorization.last() {
-                    Some((f, _)) if f == &factor => {factorization.pop();},
-                    _ => {},
+                    Some((f, _)) if f == &factor => {
+                        factorization.pop();
+                    }
+                    _ => {}
                 }
             }
         }
@@ -545,8 +561,10 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
         let remove_from = |data: &mut [Option<Vec<(R::Factor, R::Power)>>]| {
             for factorization in data.iter_mut().flatten() {
                 match factorization.last() {
-                    Some((f, _)) if f == &factor => {factorization.pop();},
-                    _ => {},
+                    Some((f, _)) if f == &factor => {
+                        factorization.pop();
+                    }
+                    _ => {}
                 }
             }
         };
@@ -557,14 +575,18 @@ impl<R: NonZeroFactorizable<Power=i32>> GeneralFormFactorization<R> {
         for (maybe_lower, maybe_upper) in &mut self.bounds {
             if let Some(factorization) = maybe_lower {
                 match factorization.last() {
-                    Some((f, _)) if f == &factor => {factorization.pop();},
-                    _ => {},
+                    Some((f, _)) if f == &factor => {
+                        factorization.pop();
+                    }
+                    _ => {}
                 }
             }
             if let Some(factorization) = maybe_upper {
                 match factorization.last() {
-                    Some((f, _)) if f == &factor => {factorization.pop();},
-                    _ => {},
+                    Some((f, _)) if f == &factor => {
+                        factorization.pop();
+                    }
+                    _ => {}
                 }
             }
         }
@@ -594,10 +616,13 @@ where
     /// Compute an approximation to the prime factorization of most values in this program.
     fn factorize(&self) -> GeneralFormFactorization<R> {
         let mut all_factors = HashSet::new();
-        let mut add = |factorization: &Factorization<R>|
-            all_factors.extend(factorization.iter().map(|(f, _)| f).cloned());
+        let mut add = |factorization: &Factorization<R>| {
+            all_factors.extend(factorization.iter().map(|(f, _)| f).cloned())
+        };
 
-        let b = self.b.iter()
+        let b = self
+            .b
+            .iter()
             .map(|v| {
                 if v.is_not_zero() {
                     let NonZeroFactorization { factors, .. } = v.factorize();
@@ -610,22 +635,28 @@ where
             })
             .collect();
 
-        let (c, bounds): (Vec<_>, Vec<_>) = self.variables.iter()
+        let (c, bounds): (Vec<_>, Vec<_>) = self
+            .variables
+            .iter()
             .map(|variable| {
                 let factors = if variable.cost.is_not_zero() {
                     let NonZeroFactorization { factors, .. } = variable.cost.factorize();
                     add(&factors);
                     Some(factors)
-                } else { None };
+                } else {
+                    None
+                };
 
                 let mut get_bound = |bound: Option<&R>| {
-                    bound.map(|value| {
+                    bound.and_then(|value| {
                         if value.is_not_zero() {
                             let NonZeroFactorization { factors, .. } = value.factorize();
                             add(&factors);
                             Some(factors)
-                        } else { None }
-                    }).flatten()
+                        } else {
+                            None
+                        }
+                    })
                 };
                 let lower_bound = get_bound(variable.lower_bound.as_ref());
                 let upper_bound = get_bound(variable.upper_bound.as_ref());
@@ -634,17 +665,30 @@ where
             })
             .unzip();
 
-        let constraints = self.constraints.iter_columns().map(|column| {
-            column.iter().map(|(i, v)| {
-                let NonZeroFactorization { factors, .. } = v.factorize();
-                all_factors.extend(factors.iter().map(|(f, _)| f).cloned());
-                (*i, factors)
-            }).collect()
-        }).collect();
+        let constraints = self
+            .constraints
+            .iter_columns()
+            .map(|column| {
+                column
+                    .iter()
+                    .map(|(i, v)| {
+                        let NonZeroFactorization { factors, .. } = v.factorize();
+                        all_factors.extend(factors.iter().map(|(f, _)| f).cloned());
+                        (*i, factors)
+                    })
+                    .collect()
+            })
+            .collect();
 
         let mut factors = all_factors.into_iter().collect::<Vec<_>>();
         factors.sort_unstable();
-        GeneralFormFactorization { factors, b, c, bounds, constraints }
+        GeneralFormFactorization {
+            factors,
+            b,
+            c,
+            bounds,
+            constraints,
+        }
     }
 }
 
@@ -691,15 +735,15 @@ where
                         constraint_row_factors[i] *= &factor;
                         iter += R::Power::one();
                     }
-                },
-                Sign::Zero => {},
+                }
+                Sign::Zero => {}
                 Sign::Negative => {
                     let mut iter = R::Power::zero();
                     while iter < row_change.abs() {
                         constraint_row_factors[i] /= &factor;
                         iter += R::Power::one();
                     }
-                },
+                }
             }
         }
         for (j, column_change) in column_changes.into_iter().enumerate() {
@@ -710,7 +754,7 @@ where
                         constraint_column_factors[j] /= &factor;
                         iter += R::Power::one();
                     }
-                },
+                }
                 Sign::Zero => (),
                 Sign::Negative => {
                     let mut iter = R::Power::zero();
@@ -718,7 +762,7 @@ where
                         constraint_column_factors[j] *= &factor;
                         iter += R::Power::one();
                     }
-                },
+                }
             }
         }
     }

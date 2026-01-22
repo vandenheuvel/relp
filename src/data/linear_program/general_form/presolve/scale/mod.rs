@@ -119,13 +119,10 @@ impl<T> Scaling<T> {
 /// This is a helper method to scale and rescale a `GeneralForm` linear program. The two operations
 /// `op` and `inverse_op` should be `MulAssign` and `DivAssign` respectively when scaling (forward)
 /// and be reversed when scaling back.
-fn scale<T, F, G>(
-    general_form: &mut GeneralForm<T>, scaling: &Scaling<T>,
-    op: F, inverse_op: G,
-)
+fn scale<T, F, G>(general_form: &mut GeneralForm<T>, scaling: &Scaling<T>, op: F, inverse_op: G)
 where
     T: SparseElement<T> + SparseComparator,
-    for<'r> &'r T: Mul<&'r T, Output=T>,
+    for<'r> &'r T: Mul<&'r T, Output = T>,
     F: Fn(&mut T, &T),
     G: Fn(&mut T, &T),
 {
