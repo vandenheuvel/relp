@@ -8,6 +8,7 @@ use std::fmt::{Debug, Display, Formatter, Result as FormatResult};
 
 use num_traits::One;
 use num_traits::Zero;
+use relp_num::Absorb;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, SparseSliceIterator};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{
@@ -42,8 +43,10 @@ pub struct Tableau<IM, K> {
 
 impl<IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintainer<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer,
     K: Kind,
+    IM::F: Absorb<<K::Column as Column>::F>,
+    IM::F: Absorb<K::Cost>,
 {
     /// Brings a column into the basis by updating the `self.carry` matrix and updating the
     /// data structures holding the collection of basis columns.
@@ -112,10 +115,11 @@ where
         debug_assert!(j < self.nr_columns());
 
         let initial = self.kind.initial_cost_value(j);
-        let difference = self
+        let mut difference = self
             .inverse_maintainer
             .cost_difference(&self.kind.original_column(j));
-        difference + initial
+        difference.add_narrow(&initial);
+        difference
     }
 
     /// Column of original problem with respect to the current basis.
@@ -184,6 +188,21 @@ where
         }
     }
 
+    /// Value of the basic variable of a row.
+    ///
+    /// # Arguments
+    ///
+    /// * `row`: Row index, in range `0` until `self.nr_rows()`.
+    ///
+    /// # Return value
+    ///
+    /// The value that the variable which is basic in this row currently has.
+    pub fn constraint_value(&self, row: usize) -> &IM::F {
+        debug_assert!(row < self.nr_rows());
+
+        self.inverse_maintainer.get_constraint_value(row)
+    }
+
     /// Get the current solution.
     ///
     /// # Return value
@@ -206,6 +225,7 @@ where
     pub fn objective_function_value(&self) -> IM::F {
         self.inverse_maintainer.get_objective_function_value()
     }
+
 }
 
 /// Information obtained while changing basis.
@@ -271,18 +291,21 @@ where
 
 impl<IM, K> Tableau<IM, K>
 where
-    IM: InverseMaintainer<
-        F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
-    >,
+    IM: InverseMaintainer<F: im_ops::FieldHR>,
     K: Kind,
+    IM::F: Absorb<<K::Column as Column>::F>,
+    IM::F: Absorb<K::Cost>,
 {
     /// Determine the row to pivot on.
     ///
     /// Determine the row to pivot on, given the column. This is the row with the positive but
     /// minimal ratio between the current constraint vector and the column.
     ///
-    /// When there are multiple choices for the pivot row, Bland's anti cycling algorithm
-    /// is used to avoid cycles.
+    /// When multiple rows attain the minimal ratio, the row is chosen whose basis column has the
+    /// lowest index. That is the leaving half of Bland's rule. It rules out cycling only when the
+    /// entering column is selected with the other half, as
+    /// [`FirstProfitable`](crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable)
+    /// does; a rule that selects the entering column by attractiveness may cycle.
     ///
     /// TODO(ARCHITECTURE): Reconsider the below; should this be a strategy?
     /// Because this method allows for less strategy and heuristics, it is not included in the
@@ -298,12 +321,12 @@ where
     pub fn select_primal_pivot_row(&self, column: &SparseVector<IM::F, IM::F>) -> Option<usize> {
         debug_assert_eq!(Vector::len(column), self.nr_rows());
 
-        // (chosen index, minimum ratio, corresponding leaving_column (for Bland's algorithm))
+        // (chosen index, minimum ratio, corresponding leaving_column (for Bland's rule))
         let mut min_values: Option<(usize, IM::F, usize)> = None;
         for (row, xij) in SparseSliceIterator::new(column) {
             if xij > &IM::F::zero() {
                 let ratio = self.inverse_maintainer.get_constraint_value(row) / xij;
-                // Bland's anti cycling algorithm
+                // Leaving half of Bland's rule: break ties on the lowest leaving column index
                 let leaving_column = self.inverse_maintainer.basis_column_index_for_row(row);
                 if let Some((min_index, min_ratio, min_leaving_column)) = &mut min_values {
                     if &ratio == min_ratio && leaving_column < *min_leaving_column {
@@ -329,8 +352,10 @@ where
 /// Only used for debug purposes.
 pub fn debug_assert_in_basic_feasible_solution_state<IM, K>(tableau: &Tableau<IM, K>)
 where
-    IM: InverseMaintainer<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer,
     K: Kind,
+    IM::F: Absorb<<K::Column as Column>::F>,
+    IM::F: Absorb<K::Cost>,
 {
     // Checking basis_columns
     // Correct number of basis columns (uniqueness is implied because it's a set)
@@ -377,8 +402,10 @@ where
 
 impl<IM, K> Display for Tableau<IM, K>
 where
-    IM: InverseMaintainer<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer,
     K: Kind,
+    IM::F: Absorb<<K::Column as Column>::F>,
+    IM::F: Absorb<K::Cost>,
 {
     fn fmt(&self, f: &mut Formatter) -> FormatResult {
         assert!(self.nr_rows().to_string().len() <= "cost".len());

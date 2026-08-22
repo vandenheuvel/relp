@@ -5,7 +5,6 @@
 #![warn(missing_docs)]
 #![allow(incomplete_features)]
 #![feature(specialization)]
-#![feature(type_alias_impl_trait)]
 #![feature(trait_alias)]
 #![feature(impl_trait_in_assoc_type)]
 

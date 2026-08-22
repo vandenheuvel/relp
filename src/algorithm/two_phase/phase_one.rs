@@ -2,7 +2,7 @@
 use std::collections::HashSet;
 
 use num_traits::Zero;
-use relp_num::{NonZero, Signed};
+use relp_num::{NonZero, Signed, Absorb};
 
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::Column;
@@ -32,12 +32,10 @@ pub trait FeasibilityComputeTrait: MatrixProvider<Column: Identity> {
     /// A value representing the basic feasible solution, or an indicator that there is none.
     fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintainer<
-            F: im_ops::FieldHR
-                   + im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F>
-                   + im_ops::Cost<Cost>
-                   + im_ops::Rhs<<Self as MatrixProvider>::Rhs>,
-        >;
+        IM: InverseMaintainer<F: im_ops::FieldHR>,
+        IM::F: Absorb<<<Self as MatrixProvider>::Column as Column>::F>,
+        IM::F: Absorb<Cost>,
+        IM::F: Absorb<<Self as MatrixProvider>::Rhs>;
 }
 
 /// Most generic implementation: finding a basic feasible solution using the Simplex method.
@@ -47,12 +45,10 @@ where
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintainer<
-            F: im_ops::FieldHR
-                   + im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F>
-                   + im_ops::Cost<Cost>
-                   + im_ops::Rhs<<Self as MatrixProvider>::Rhs>,
-        >,
+        IM: InverseMaintainer<F: im_ops::FieldHR>,
+        IM::F: Absorb<<<Self as MatrixProvider>::Column as Column>::F>,
+        IM::F: Absorb<Cost>,
+        IM::F: Absorb<<Self as MatrixProvider>::Rhs>,
     {
         let artificial_tableau = Tableau::<_, FullyArtificial<_>>::new(self);
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
@@ -87,12 +83,10 @@ where
 {
     default fn compute_bfs_giving_im<IM>(&self) -> RankedFeasibilityResult<IM>
     where
-        IM: InverseMaintainer<
-            F: im_ops::FieldHR
-                   + im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F>
-                   + im_ops::Cost<Cost>
-                   + im_ops::Rhs<<Self as MatrixProvider>::Rhs>,
-        >,
+        IM: InverseMaintainer<F: im_ops::FieldHR>,
+        IM::F: Absorb<<<Self as MatrixProvider>::Column as Column>::F>,
+        IM::F: Absorb<Cost>,
+        IM::F: Absorb<<Self as MatrixProvider>::Rhs>,
     {
         let artificial_tableau = Tableau::<_, PartiallyArtificial<_>>::new(self);
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
@@ -123,10 +117,10 @@ pub trait FullInitialBasis: PartialInitialBasis {}
 /// Whether the tableau might allow a basic feasible solution without artificial variables.
 pub(crate) fn primal<IM, K, MP, PR>(mut tableau: Tableau<IM, K>) -> RankedFeasibilityResult<IM>
 where
-    IM: InverseMaintainer<
-        F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
-    >,
+    IM: InverseMaintainer<F: im_ops::FieldHR>,
     K: Artificial,
+    IM::F: Absorb<<K::Column as Column>::F>,
+    IM::F: Absorb<K::Cost>,
     MP: MatrixProvider,
     PR: PivotRule<IM::F>,
 {
@@ -235,8 +229,10 @@ pub enum Rank {
 /// method.
 fn remove_artificial_basis_variables<IM, K>(tableau: &mut Tableau<IM, K>) -> Vec<usize>
 where
-    IM: InverseMaintainer<F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>>,
+    IM: InverseMaintainer,
     K: Artificial,
+    IM::F: Absorb<<K::Column as Column>::F>,
+    IM::F: Absorb<K::Cost>,
 {
     let artificial_variable_indices = tableau.artificial_basis_columns();
     debug_assert!(artificial_variable_indices.is_sorted_by_key(|&(i, _)| i));

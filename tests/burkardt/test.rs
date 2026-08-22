@@ -3,6 +3,7 @@ use std::ops::{Add, Neg};
 use std::str::FromStr;
 
 use num_traits::{One, Zero};
+use relp_num::Abs;
 use relp_num::OrderedField;
 use relp_num::RB;
 use relp_num::{NonZero, Rational64, RationalBig};
@@ -19,7 +20,9 @@ use relp::io::import;
 
 use super::get_test_file_path;
 
-fn to_general_form<T: From<Rational64> + Zero + NonZero + One + Ord + Element + Neg<Output = T>>(
+fn to_general_form<
+    T: From<Rational64> + Zero + NonZero + One + Ord + Abs + Element + Neg<Output = T>,
+>(
     file_name: &str,
 ) -> GeneralForm<T>
 where

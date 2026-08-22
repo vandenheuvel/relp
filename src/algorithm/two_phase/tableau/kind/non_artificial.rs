@@ -4,6 +4,8 @@
 //! `Tableau` logic that is only relevant in the second phase.
 use std::collections::HashSet;
 
+use relp_num::Absorb;
+
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
@@ -72,12 +74,10 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintainer<
-        F: im_ops::FieldHR
-               + im_ops::Column<<MP::Column as Column>::F>
-               + im_ops::Cost<MP::Cost<'provider>>,
-    >,
+    IM: InverseMaintainer<F: im_ops::FieldHR>,
     MP: MatrixProvider,
+    IM::F: Absorb<<MP::Column as Column>::F>,
+    IM::F: Absorb<MP::Cost<'provider>>,
 {
     /// Creates a Simplex tableau with a specific basis.
     ///
@@ -122,8 +122,8 @@ where
         basis: &HashSet<usize>,
     ) -> Self
     where
-        IM::F: im_ops::Column<MP::Rhs>,
         MP::Rhs: 'static,
+        IM::F: Absorb<MP::Rhs>,
     {
         let arbitrary_order = basis.iter().copied().collect::<Vec<_>>();
 
@@ -165,12 +165,10 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, NonArtificial<'provider, MP>>
 where
-    IM: InverseMaintainer<
-        F: im_ops::FieldHR
-               + im_ops::Column<<MP::Column as Column>::F>
-               + im_ops::Cost<MP::Cost<'provider>>,
-    >,
+    IM: InverseMaintainer<F: im_ops::FieldHR>,
     MP: Filtered,
+    IM::F: Absorb<<MP::Column as Column>::F>,
+    IM::F: Absorb<MP::Cost<'provider>>,
 {
     /// Create a `Tableau` from an artificial tableau while removing some rows.
     ///

@@ -13,7 +13,7 @@ categories = ["algorithms", "science"]
 exclude = ["tests"]
 
 [dependencies]
-relp-num = "0.1.13"
+relp-num = "0.1.14"
 num-traits = "0.2.19"
 
 itertools = "0.14.0"
@@ -31,3 +31,6 @@ cook = []
 
 [profile.release]
 lto = true
+
+[patch.crates-io]
+relp-num = { path = "../relp-num" }

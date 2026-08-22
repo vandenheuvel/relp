@@ -3,6 +3,8 @@
 //! This module contains all data structures and logic specific to the simplex algorithm. The
 //! algorithm is implemented as described in chapters 2 and 4 of Combinatorial Optimization, a book
 //! by Christos H. Papadimitriou and Kenneth Steiglitz.
+use relp_num::Absorb;
+
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber};
@@ -33,13 +35,11 @@ where
     // TODO(ENHANCEMENT): Specialize for MatrixProviders that can be filtered directly.
     default fn solve_relaxation<'provider, IM>(&'provider self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintainer<
-            F: im_ops::FieldHR
-                   + im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F>
-                   + im_ops::Cost<ArtificialCost>
-                   + im_ops::Cost<MP::Cost<'provider>>
-                   + im_ops::Rhs<MP::Rhs>,
-        >,
+        IM: InverseMaintainer<F: im_ops::FieldHR>,
+        IM::F: Absorb<<<Self as MatrixProvider>::Column as Column>::F>,
+        IM::F: Absorb<ArtificialCost>,
+        IM::F: Absorb<MP::Cost<'provider>>,
+        IM::F: Absorb<MP::Rhs>,
     {
         match self.compute_bfs_giving_im::<IM>() {
             RankedFeasibilityResult::Feasible {
@@ -94,13 +94,10 @@ where
 {
     fn solve_relaxation<'provider, IM>(&'provider self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintainer<
-            F: im_ops::FieldHR
-                   + im_ops::Column<<<Self as MatrixProvider>::Column as Column>::F>
-                   + im_ops::Cost<MP::Cost<'provider>>
-                   + im_ops::Rhs<Self::Rhs>
-                   + im_ops::Column<Self::Rhs>,
-        >,
+        IM: InverseMaintainer<F: im_ops::FieldHR>,
+        IM::F: Absorb<<<Self as MatrixProvider>::Column as Column>::F>,
+        IM::F: Absorb<MP::Cost<'provider>>,
+        IM::F: Absorb<Self::Rhs>,
     {
         let basis_indices = self.pivot_element_indices();
         // Sorting of identity matrix columns

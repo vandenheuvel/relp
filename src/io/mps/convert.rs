@@ -31,7 +31,7 @@ use crate::io::mps::{Bound, MPS, Range};
 impl<FI, FO: From<FI>> TryInto<GeneralForm<FO>> for MPS<FI>
 where
     FI: Sub<Output = FI> + Abs + Ord + Zero + Display + Clone,
-    FO: NonZero + Zero + One + Neg<Output = FO> + Ord + Element,
+    FO: NonZero + Zero + One + Neg<Output = FO> + Ord + Abs + Element,
     for<'r> FO: Add<&'r FO, Output = FO>,
     for<'r> &'r FO: Neg<Output = FO>,
 {

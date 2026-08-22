@@ -9,7 +9,7 @@
 use std::iter;
 use std::iter::Once;
 
-use relp_num::One;
+use relp_num::fixed::One;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;

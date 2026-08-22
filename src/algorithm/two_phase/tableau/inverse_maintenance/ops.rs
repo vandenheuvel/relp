@@ -2,49 +2,23 @@
 //!
 //! During the interaction with each of a `MatrixProvider`'s associated types it should be possible
 //! to do certain operations.
-use std::fmt::{Debug, Display};
-use std::iter::Sum;
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
-
-use num_traits::{One, Zero};
-use relp_num::NonZero;
-use relp_num::Signed;
+//!
+//! A matrix provider stores its values in a narrow type: the incidence matrix of a network holds
+//! nothing but `1`, `-1` and `0`. Those values act on the wide accumulator maintained here through
+//! [`Absorb`](relp_num::Absorb), a bound that is stated on this type rather than on the narrow one.
+use std::ops::{Div, Mul, Neg};
 
 use crate::data::linear_algebra::traits::SparseElement;
 
 /// Operations done by the number type within the inverse maintenance algorithm.
-pub trait Field = Zero
-    + NonZero
-    + One
-    + Signed
-    + Neg<Output = Self>
-    + Add<Self, Output = Self>
-    + for<'r> Add<&'r Self, Output = Self>
-    + AddAssign
-    + for<'r> AddAssign<&'r Self>
-    + Sub<Self, Output = Self>
-    + for<'r> Sub<&'r Self, Output = Self>
-    + SubAssign
-    + for<'r> SubAssign<&'r Self>
-    + Mul<Self, Output = Self>
-    + for<'r> Mul<&'r Self, Output = Self>
-    + MulAssign
-    + for<'r> MulAssign<&'r Self>
-    + Div<Self, Output = Self>
-    + for<'r> Div<&'r Self, Output = Self>
-    + DivAssign<Self>
-    + for<'r> DivAssign<&'r Self>
-    + Sum
-    + Column<relp_num::One>
-    + Eq
-    + PartialEq
-    + Ord
-    + PartialOrd
+pub trait Field = relp_num::OrderedField
     + SparseElement<Self>
-    + for<'r> From<&'r Self>
-    + Clone
-    + Debug
-    + Display;
+    // The accumulator acts on itself: values already in this type are "narrow" too.
+    + relp_num::Absorb<Self>
+    // The algorithm builds identity columns of its own, whatever the provider stores, so being
+    // able to read a `One` is a property of the accumulator rather than of any one caller.
+    + relp_num::Absorb<relp_num::fixed::One>
+    + for<'r> From<&'r Self>;
 
 // TODO(ARCHITECTURE): Once HRTB are propagated like normal associated type trait bounds, remove
 //  this trait by integrating the requirements into `InverseMaintenance::F`'s trait bounds.
@@ -53,18 +27,3 @@ pub trait FieldHR = where
     for<'r> &'r Self: Neg<Output = Self>,
     for<'r> &'r Self: Mul<&'r Self, Output = Self>,
     for<'r> &'r Self: Div<&'r Self, Output = Self>;
-
-/// Operations with the values in the columns.
-pub trait Column<Rhs> = for<'r> AddAssign<&'r Rhs>
-    + for<'r> Add<&'r Rhs, Output = Self>
-    + for<'r> Mul<&'r Rhs, Output = Self>
-    + From<Rhs>
-    + for<'r> From<&'r Rhs>
-where for<'r> &'r Self: Mul<&'r Rhs, Output = Self>;
-
-/// Operations with the cost type.
-pub trait Cost<Rhs> = Add<Rhs, Output = Self> + Mul<Rhs, Output = Self>
-where for<'r> &'r Self: Mul<Rhs, Output = Self>;
-
-/// Operations with the right-hand side.
-pub trait Rhs<Rhs> = for<'r> AddAssign<&'r Rhs> + for<'r> Add<&'r Rhs, Output = Self> + From<Rhs>;

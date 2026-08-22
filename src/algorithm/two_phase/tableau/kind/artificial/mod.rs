@@ -5,12 +5,13 @@
 //! artificial variables out of the basis.
 use std::collections::HashSet;
 
-use relp_num::Binary;
+use relp_num::Absorb;
+use relp_num::fixed::Binary;
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::tableau::Tableau;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 
 pub mod fully;
@@ -62,8 +63,10 @@ pub trait Artificial: Kind<Column: Identity, Cost = Cost> {
 /// artificial variables from the problem at zero level.
 impl<'provider, IM, A> Tableau<IM, A>
 where
-    IM: InverseMaintainer<F: im_ops::Column<<A::Column as Column>::F> + im_ops::Cost<A::Cost>>,
+    IM: InverseMaintainer,
     A: Artificial,
+    IM::F: Absorb<<A::Column as Column>::F>,
+    IM::F: Absorb<A::Cost>,
 {
     /// Whether there are any artificial variables in the basis.
     pub fn has_artificial_in_basis(&self) -> bool {

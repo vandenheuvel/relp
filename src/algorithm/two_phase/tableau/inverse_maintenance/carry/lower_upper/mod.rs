@@ -7,6 +7,7 @@ use std::fmt::Display;
 use std::iter;
 
 use num_traits::Zero;
+use relp_num::Absorb;
 
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnIterator, ColumnNumber};
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::BasisInverse;
@@ -79,13 +80,13 @@ where
 
     fn invert<C: Column>(columns: impl ExactSizeIterator<Item = C>) -> Self
     where
-        Self::F: ops::Column<C::F>,
+        Self::F: Absorb<C::F>,
     {
         let m = columns.len();
         let mut rows = vec![Vec::new(); m];
         for (j, column) in columns.into_iter().enumerate() {
             for (i, value) in column {
-                rows[i].push((j, value.into()));
+                rows[i].push((j, <Self::F>::from_narrow(&value)));
             }
         }
         debug_assert!(rows.iter().all(|row| row.is_sorted_by_key(|&(j, _)| j)));
@@ -191,10 +192,10 @@ where
         iter: I,
     ) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<I::F>,
+        Self::F: Absorb<I::F>,
     {
         let rhs = iter
-            .map(|(i, v)| (self.row_permutation[i], v.into()))
+            .map(|(i, v)| (self.row_permutation[i], <Self::F>::from_narrow(v)))
             // Also sorts after the row permutation
             .collect::<BTreeMap<_, _>>();
         let mut w = self.left_multiply_by_lower_inverse(rhs);
@@ -226,10 +227,10 @@ where
         row: I,
     ) -> SparseVector<Self::F, Self::F>
     where
-        Self::F: ops::Column<I::F>,
+        Self::F: Absorb<I::F>,
     {
         let mut lhs = row
-            .map(|(i, v)| (self.column_permutation[i], v.into()))
+            .map(|(i, v)| (self.column_permutation[i], <Self::F>::from_narrow(v)))
             .collect::<Vec<_>>();
 
         for (_, q) in &self.updates {
@@ -255,7 +256,7 @@ where
         original_column: I,
     ) -> Option<Self::F>
     where
-        Self::F: ops::Column<I::F>,
+        Self::F: Absorb<I::F>,
     {
         // TODO(PERFORMANCE): Compute a single value only
         self.left_multiply_by_basis_inverse(original_column)

@@ -7,6 +7,7 @@ use std::ops::{Add, Neg};
 use std::path::Path;
 
 use num_traits::{One, Zero};
+use relp_num::Abs;
 use relp_num::NonZero;
 use relp_num::Rational64;
 
@@ -29,7 +30,7 @@ pub mod mps;
 ///
 /// When a file extension is unknown, a file cannot be found or read, there is an inconsistency in
 /// the problem file, etc. an error type is returned.
-pub fn import<F: From<Rational64> + Zero + One + Neg<Output = F> + Ord + Element + NonZero>(
+pub fn import<F: From<Rational64> + Zero + One + Neg<Output = F> + Ord + Abs + Element + NonZero>(
     file_path: &Path,
 ) -> Result<impl TryInto<GeneralForm<F>, Error = Inconsistency>, Import>
 where
@@ -65,7 +66,7 @@ enum DataTypes {
 
 impl<F> TryInto<GeneralForm<F>> for DataTypes
 where
-    F: From<Rational64> + NonZero + Zero + One + Neg<Output = F> + Ord + Element,
+    F: From<Rational64> + NonZero + Zero + One + Neg<Output = F> + Ord + Abs + Element,
     for<'r> F: Add<&'r F, Output = F>,
     for<'r> &'r F: Neg<Output = F>,
 {

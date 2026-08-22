@@ -11,9 +11,10 @@ use std::slice::{Iter, IterMut};
 use std::vec::IntoIter;
 use std::{fmt, mem};
 
-use index_utils::{inner_product_slice_iter, remove_sparse_indices};
-use num_traits::{One, Zero};
+use index_utils::remove_sparse_indices;
+use num_traits::One;
 use relp_num::NonZero;
+use relp_num::{Field, Absorb};
 
 use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
 use crate::algorithm::two_phase::matrix_provider::column::{
@@ -104,12 +105,32 @@ where
         }
     }
 
-    fn sparse_inner_product<'a, 'b, I: ColumnIterator<'b>, O>(&'a self, column: I) -> O
+    fn sparse_inner_product<'b, I: ColumnIterator<'b>>(&self, column: I) -> F
     where
-        &'a F: Mul<&'b I::F, Output = O>,
-        O: Zero + AddAssign,
+        F: Field,
+        F: Absorb<I::F>,
     {
-        inner_product_slice_iter(&self.data, column)
+        // Both operands are sorted by index; walk them together and act on the accumulator only
+        // where both are non-zero.
+        let mut total = F::zero();
+
+        let mut i = 0;
+        for (index, value) in column {
+            while i < self.data.len() && self.data[i].0 < index {
+                i += 1;
+            }
+
+            if i < self.data.len() && self.data[i].0 == index {
+                total.add_mul_narrow(value, &self.data[i].1);
+                i += 1;
+            }
+
+            if i == self.data.len() {
+                break;
+            }
+        }
+
+        total
     }
 
     /// Append a non-zero value.
@@ -405,34 +426,43 @@ impl<F: SparseElement<C>, C: SparseComparator> Display for Sparse<F, C> {
 
 #[cfg(test)]
 mod test {
+    use relp_num::{R32, Rational32};
+
     use crate::algorithm::two_phase::matrix_provider::column::SparseSliceIterator;
     use crate::data::linear_algebra::vector::{SparseVector, Vector};
 
     #[test]
     fn test_inner_product_iter() {
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2)
-                .sparse_inner_product(std::iter::empty::<(_, &i32)>()),
-            0,
+            SparseVector::<Rational32, Rational32>::new(vec![(0, R32!(1))], 2)
+                .sparse_inner_product(std::iter::empty::<(_, &Rational32)>()),
+            R32!(0),
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2)
-                .sparse_inner_product(SparseSliceIterator::new(&[(0, 1)])),
-            1,
+            SparseVector::<Rational32, Rational32>::new(vec![(0, R32!(1))], 2)
+                .sparse_inner_product(SparseSliceIterator::new(&[(0, R32!(1))])),
+            R32!(1),
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1)], 2)
-                .sparse_inner_product(SparseSliceIterator::new(&[(2, 1)])),
-            0,
+            SparseVector::<Rational32, Rational32>::new(vec![(0, R32!(1))], 2)
+                .sparse_inner_product(SparseSliceIterator::new(&[(2, R32!(1))])),
+            R32!(0),
         );
 
         assert_eq!(
-            SparseVector::new(vec![(0, 1), (3, 1), (12, 1), (13, 1)], 15).sparse_inner_product(
-                SparseSliceIterator::new(&[(0, -1), (1, 1), (2, 1), (12, 1)]),
-            ),
-            0,
+            SparseVector::<Rational32, Rational32>::new(
+                vec![(0, R32!(1)), (3, R32!(1)), (12, R32!(1)), (13, R32!(1))],
+                15,
+            )
+            .sparse_inner_product(SparseSliceIterator::new(&[
+                (0, R32!(-1)),
+                (1, R32!(1)),
+                (2, R32!(1)),
+                (12, R32!(1)),
+            ])),
+            R32!(0),
         );
     }
 }

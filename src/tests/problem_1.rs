@@ -5,7 +5,7 @@ use std::convert::TryInto;
 
 use relp_num::R64;
 use relp_num::RB;
-use relp_num::{Rational64, RationalBig};
+use relp_num::{Rational64, RationalBig, Absorb};
 
 use crate::algorithm::OptimizationResult;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -16,7 +16,7 @@ use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, Carry};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::{phase_one, phase_two};
@@ -391,7 +391,7 @@ pub fn tableau_form<'provider, MP: MatrixProvider<Column: ColumnTrait<F = T>>>(
     provider: &'provider MP,
 ) -> Tableau<Carry<S, BasisInverseRows<S>>, NonArtificial<'provider, MP>>
 where
-    S: im_ops::Cost<MP::Cost<'provider>>,
+    S: Absorb<MP::Cost<'provider>>,
 {
     let carry = {
         let minus_objective = RB!(-58);

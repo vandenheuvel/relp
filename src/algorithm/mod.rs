@@ -1,4 +1,6 @@
 //! # Algorithms
+use relp_num::Absorb;
+
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
@@ -24,14 +26,11 @@ pub trait SolveRelaxation: MatrixProvider {
     /// Whether the problem is feasible, and if so, a solution if the problem is bounded.
     fn solve_relaxation<'provider, IM>(&'provider self) -> OptimizationResult<IM::F>
     where
-        IM: InverseMaintainer<
-            F: im_ops::FieldHR
-                   + im_ops::Column<<Self::Column as Column>::F>
-                   + im_ops::Cost<ArtificialCost>
-                   + im_ops::Cost<Self::Cost<'provider>>
-                   + im_ops::Rhs<Self::Rhs>
-                   + im_ops::Column<Self::Rhs>,
-        >;
+        IM: InverseMaintainer<F: im_ops::FieldHR>,
+        IM::F: Absorb<<Self::Column as Column>::F>,
+        IM::F: Absorb<ArtificialCost>,
+        IM::F: Absorb<Self::Cost<'provider>>,
+        IM::F: Absorb<Self::Rhs>;
 }
 
 /// A linear program is either infeasible, unbounded or has a finite optimum.

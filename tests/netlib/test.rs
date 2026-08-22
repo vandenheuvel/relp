@@ -296,7 +296,8 @@ fn test_SCTAP1() {
 }
 
 #[test]
-#[ignore = "Could be cycling."]
+#[ignore = "Too computationally intensive: only 619 pivots, but the exact values in the basis \
+inverse grow to hundreds of digits, so a pivot costs seconds rather than microseconds."]
 fn test_STAIR() {
     let result = solve("STAIR");
     let expected = -0.25126695119296330352803637106304e3; // Koch - The final Netlib-LP results

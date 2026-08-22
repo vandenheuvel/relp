@@ -9,7 +9,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::ops::Neg;
 
 use index_utils::remove_indices;
-use relp_num::{NonZero, Signed};
+use relp_num::{NonZero, Signed, Absorb};
 
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
@@ -72,7 +72,10 @@ pub struct Carry<F, BI> {
 /// Facilitating computations with the basis inverse.
 pub trait BasisInverse: Display {
     /// Results any computations are yielded in this type.
-    type F;
+    ///
+    /// Values from a matrix provider are narrow; they act on this type through
+    /// [`Absorb`](relp_num::Absorb).
+    type F: relp_num::Field;
     /// Information gathered while computing a column.
     ///
     /// Introduced to avoid recomputation of the spike during a basis change.
@@ -92,7 +95,7 @@ pub trait BasisInverse: Display {
     /// sparsity.
     fn invert<C: Column>(columns: impl ExactSizeIterator<Item = C>) -> Self
     where
-        Self::F: ops::Column<C::F>;
+        Self::F: Absorb<C::F>;
 
     /// Update the basis by replacing a basis column.
     ///
@@ -126,7 +129,7 @@ pub trait BasisInverse: Display {
         column: I,
     ) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<I::F>;
+        Self::F: Absorb<I::F>;
 
     /// Multiply a row vector with the basis inverse matrix from the right.
     ///
@@ -137,7 +140,7 @@ pub trait BasisInverse: Display {
         row: I,
     ) -> SparseVector<Self::F, Self::F>
     where
-        Self::F: ops::Column<I::F>;
+        Self::F: Absorb<I::F>;
 
     /// Generate a single element in the tableau with respect to the current basis.
     ///
@@ -153,7 +156,7 @@ pub trait BasisInverse: Display {
         original_column: I,
     ) -> Option<Self::F>
     where
-        Self::F: ops::Column<I::F>;
+        Self::F: Absorb<I::F>;
 
     /// Whether this basis inverse should be recomputed.
     ///
@@ -230,7 +233,8 @@ where
         basis: &[usize],
     ) -> DenseVector<F>
     where
-        F: ops::Column<<MP::Column as Column>::F> + ops::Cost<MP::Cost<'a>>,
+        F: Absorb<<MP::Column as Column>::F>,
+        F: Absorb<MP::Cost<'a>>,
     {
         let m = basis_inverse.m();
         debug_assert_eq!(provider.nr_rows(), m);
@@ -250,8 +254,9 @@ where
 
         let mut pi = vec![F::zero(); m];
         for (i, inverse_row) in b_inverse_rows.into_iter().enumerate() {
+            let cost = provider.cost_value(basis[i]);
             for (j, value) in inverse_row {
-                pi[j] += value * provider.cost_value(basis[i]);
+                pi[j].add_mul_narrow(&cost, &value);
             }
         }
 
@@ -274,11 +279,13 @@ where
         b: &DenseVector<F>,
     ) -> F
     where
-        F: ops::Column<<MP::Column as Column>::F> + ops::Cost<MP::Cost<'a>>,
+        F: Absorb<<MP::Column as Column>::F>,
+        F: Absorb<MP::Cost<'a>>,
     {
         let mut objective = F::zero();
         for row in 0..provider.nr_rows() {
-            objective += &b[row] * provider.cost_value(basis[row]);
+            let cost = provider.cost_value(basis[row]);
+            objective.add_mul_narrow(&cost, &b[row]);
         }
         -objective
     }
@@ -371,19 +378,19 @@ where
 
     fn create_for_fully_artificial<Rhs: Element>(b: DenseVector<Rhs>) -> Self
     where
-        Self::F: ops::Rhs<Rhs>,
+        Self::F: Absorb<Rhs>,
     {
         let m = b.len();
 
         let mut b_sum = Self::F::zero();
         for v in b.iter() {
-            b_sum += v;
+            b_sum.add_narrow(v);
         }
 
         Self {
             minus_objective: -b_sum,
             minus_pi: DenseVector::constant(-Self::F::one(), m),
-            b: DenseVector::new(b.into_iter().map(|v| v.into()).collect(), m),
+            b: DenseVector::new(b.into_iter().map(|v| <Self::F>::from_narrow(&v)).collect(), m),
             // Identity matrix
             basis_indices: (0..m).collect(),
             basis_inverse: BI::identity(m),
@@ -397,7 +404,7 @@ where
         basis_indices: Vec<usize>,
     ) -> Self
     where
-        Self::F: ops::Rhs<Rhs>,
+        Self::F: Absorb<Rhs>,
     {
         let m = b.len();
         debug_assert_eq!(artificial_rows.len() + free_basis_values.len(), m); // Correct sizes
@@ -415,7 +422,7 @@ where
         for &index in artificial_rows {
             // One because we minimize a simple sum of non-negative artificial variables in the
             // basis.
-            objective += &b[index];
+            objective.add_narrow(&b[index]);
         }
 
         // Only the artificial columns "had a cost to them" before they were added to the basis.
@@ -435,7 +442,7 @@ where
         Self {
             minus_objective: -objective,
             minus_pi: DenseVector::new(minus_pi_values, m),
-            b: DenseVector::new(b.into_iter().map(|v| v.into()).collect(), m),
+            b: DenseVector::new(b.into_iter().map(|v| <Self::F>::from_narrow(&v)).collect(), m),
             // Identity matrix
             basis_indices,
             basis_inverse: BI::identity(m),
@@ -444,11 +451,10 @@ where
 
     fn from_basis<'a, MP: MatrixProvider>(basis: &[usize], provider: &'a MP) -> Self
     where
-        Self::F: ops::Column<<MP::Column as Column>::F>
-            + ops::Rhs<MP::Rhs>
-            + ops::Cost<MP::Cost<'a>>
-            + ops::Column<MP::Rhs>,
+        Self::F: Absorb<<MP::Column as Column>::F>,
+        Self::F: Absorb<MP::Cost<'a>>,
         MP::Rhs: 'static,
+        Self::F: Absorb<MP::Rhs>,
     {
         let basis_inverse = BI::invert(basis.iter().map(|&j| provider.column(j)));
 
@@ -486,11 +492,10 @@ where
         provider: &'a MP,
     ) -> Self
     where
-        Self::F: ops::Column<<MP::Column as Column>::F>
-            + ops::Rhs<MP::Rhs>
-            + ops::Cost<MP::Cost<'a>>
-            + ops::Column<MP::Rhs>,
+        Self::F: Absorb<<MP::Column as Column>::F>,
+        Self::F: Absorb<MP::Cost<'a>>,
         MP::Rhs: 'static + ColumnNumber,
+        Self::F: Absorb<MP::Rhs>,
     {
         let mut elements = Vec::from(basis_columns);
         elements.sort_by_key(|&(row, _)| row);
@@ -507,7 +512,8 @@ where
         nr_artificial: usize,
     ) -> Self
     where
-        F: ops::Column<<MP::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>,
+        F: Absorb<<MP::Column as Column>::F>,
+        F: Absorb<MP::Cost<'provider>>,
     {
         debug_assert_eq!(artificial.m(), provider.nr_rows());
 
@@ -541,8 +547,8 @@ where
         nr_artificial: usize,
     ) -> Self
     where
-        Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F>
-            + ops::Cost<MP::Cost<'provider>>,
+        Self::F: Absorb<<<MP as MatrixProvider>::Column as Column>::F>,
+        Self::F: Absorb<MP::Cost<'provider>>,
     {
         debug_assert_eq!(
             artificial.basis_indices.len(),
@@ -593,7 +599,7 @@ where
         kind: &K,
     ) -> BasisChangeComputationInfo<Self::F>
     where
-        Self::F: ops::Column<<<K as Kind>::Column as Column>::F>,
+        Self::F: Absorb<<<K as Kind>::Column as Column>::F>,
     {
         debug_assert!(pivot_row_index < self.m());
         debug_assert_eq!(column_computation_info.column().len(), self.m());
@@ -631,14 +637,14 @@ where
 
     fn cost_difference<C: Column>(&self, original_column: &C) -> Self::F
     where
-        Self::F: ops::Column<C::F>,
+        Self::F: Absorb<C::F>,
     {
         self.minus_pi.sparse_inner_product(original_column.iter())
     }
 
     fn generate_column<C: Column>(&self, original_column: C) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<C::F>,
+        Self::F: Absorb<C::F>,
     {
         self.basis_inverse
             .left_multiply_by_basis_inverse(original_column.iter())
@@ -646,7 +652,7 @@ where
 
     fn generate_element<C: Column>(&self, i: usize, original_column: C) -> Option<Self::F>
     where
-        Self::F: ops::Column<C::F>,
+        Self::F: Absorb<C::F>,
     {
         debug_assert!(i < self.m());
 
@@ -699,8 +705,8 @@ where
         nr_artificial: usize,
     ) -> Self
     where
-        Self::F: ops::Column<<<MP as MatrixProvider>::Column as Column>::F>
-            + ops::Cost<MP::Cost<'provider>>,
+        Self::F: Absorb<<<MP as MatrixProvider>::Column as Column>::F>,
+        Self::F: Absorb<MP::Cost<'provider>>,
     {
         debug_assert_eq!(
             artificial.basis_indices.len(),

@@ -4,6 +4,7 @@
 use std::ops::Range;
 
 use num_traits::One;
+use relp_num::{Absorb, Signed};
 
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::{
@@ -22,13 +23,14 @@ use crate::data::linear_algebra::vector::Vector;
 ///
 /// Once the column has been selected for a primal pivot (or the row for a dual pivot), a row
 /// (column) needs to be found. This decision is currently made independent of the strategy.
-pub trait PivotRule<F> {
+pub trait PivotRule<F: im_ops::Field> {
     /// Create a new instance.
     fn new<IM, K>(tableau: &Tableau<IM, K>) -> Self
     where
         IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>;
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>;
 
     /// Column selection rule for the primal Simplex method.
     fn select_primal_pivot_column<IM, K>(
@@ -38,7 +40,8 @@ pub trait PivotRule<F> {
     where
         IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>;
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>;
 
     fn after_basis_update<IM, K>(
         &mut self,
@@ -47,7 +50,8 @@ pub trait PivotRule<F> {
     ) where
         IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>,
     {
     }
 }
@@ -78,7 +82,30 @@ where
     }
 }
 
+/// Entering half of Bland's rule: the profitable column with the lowest index.
+///
+/// The leaving half is implemented in
+/// [`select_primal_pivot_row`](Tableau::select_primal_pivot_row), which breaks ties in the ratio
+/// test by picking the leaving column with the lowest index. Bland's theorem states that when both
+/// halves are used, no basis is ever visited twice, so the Simplex method terminates. Applying only
+/// one of the two halves provides no such guarantee.
+fn bland_pivot_column<IM, K>(tableau: &Tableau<IM, K>) -> Option<SparseTuple<IM::F>>
+where
+    IM: InverseMaintainer,
+    K: Kind,
+    IM::F: Absorb<<K::Column as Column>::F>,
+    IM::F: Absorb<K::Cost>,
+{
+    (tableau.start_index()..tableau.nr_columns())
+        .filter(|&column| !tableau.is_in_basis(column))
+        .map(|column| (column, tableau.relative_cost(column)))
+        .find(|(_, cost)| cost.is_negative())
+}
+
 /// Simply pivot on the first column, which has a negative relative cost.
+///
+/// This is the entering half of Bland's rule; combined with the leaving rule of
+/// [`select_primal_pivot_row`](Tableau::select_primal_pivot_row), the method cannot cycle.
 ///
 /// The behavior is the same for both the primal and dual simplex method.
 pub struct FirstProfitable;
@@ -97,12 +124,113 @@ where
     where
         IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>,
     {
-        (tableau.start_index()..tableau.nr_columns())
-            .filter(|&column| !tableau.is_in_basis(column))
-            .map(|column| (column, tableau.relative_cost(column)))
-            .find(|(_, cost)| cost.is_negative())
+        bland_pivot_column(tableau)
+    }
+}
+
+/// Number of consecutive degenerate pivots after which [`BlandFallback`] switches to Bland's rule.
+///
+/// Degeneracy is common and mostly harmless, so this value is large enough that merely degenerate
+/// problems keep being solved with the wrapped rule, and small enough that a cycle is left behind
+/// quickly.
+pub const DEFAULT_MAX_DEGENERATE_PIVOTS: usize = 100;
+
+/// Fall back to Bland's rule when the Simplex method might be cycling.
+///
+/// Rules like [`SteepestDescentAlongObjective`] pick the most attractive column rather than the one
+/// with the lowest index, so they don't implement the entering half of Bland's rule and, by
+/// themselves, offer no protection against cycling. Wrapping such a rule in this type adds that
+/// protection at almost no cost: it counts the pivots that didn't change the objective value and,
+/// after `MAX_DEGENERATE_PIVOTS` of them in a row, selects the entering column with Bland's rule
+/// until the objective value improves again.
+///
+/// That is enough to guarantee termination. Suppose the method would not terminate. There are
+/// finitely many bases and the objective value never increases, so from some pivot onwards it is
+/// constant and every pivot is degenerate. The counter then never resets, so at most
+/// `MAX_DEGENERATE_PIVOTS` pivots later Bland's rule is in charge and stays in charge. From that
+/// basis onwards, both halves of Bland's rule are applied to every pivot, which by Bland's theorem
+/// terminates: a contradiction. The value of `MAX_DEGENERATE_PIVOTS` is therefore irrelevant for
+/// correctness; it only trades a longer degenerate run against pivoting by index instead of by
+/// attractiveness.
+pub struct BlandFallback<R, const MAX_DEGENERATE_PIVOTS: usize = DEFAULT_MAX_DEGENERATE_PIVOTS> {
+    /// Rule to use while the objective value still improves regularly.
+    inner: R,
+    /// Number of pivots since the last one that changed the objective value.
+    nr_degenerate_pivots: usize,
+}
+
+impl<R, const MAX_DEGENERATE_PIVOTS: usize> BlandFallback<R, MAX_DEGENERATE_PIVOTS> {
+    /// Number of pivots since the last pivot that changed the objective value.
+    ///
+    /// Once this reaches `MAX_DEGENERATE_PIVOTS`, the entering column is selected with Bland's rule
+    /// instead of with the wrapped rule.
+    pub fn nr_degenerate_pivots(&self) -> usize {
+        self.nr_degenerate_pivots
+    }
+}
+
+impl<F, R, const MAX_DEGENERATE_PIVOTS: usize> PivotRule<F>
+    for BlandFallback<R, MAX_DEGENERATE_PIVOTS>
+where
+    F: im_ops::Field,
+    R: PivotRule<F>,
+{
+    fn new<IM, K>(tableau: &Tableau<IM, K>) -> Self
+    where
+        IM: InverseMaintainer<F = F>,
+        K: Kind,
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>,
+    {
+        Self {
+            inner: R::new(tableau),
+            nr_degenerate_pivots: 0,
+        }
+    }
+
+    fn select_primal_pivot_column<IM, K>(
+        &mut self,
+        tableau: &Tableau<IM, K>,
+    ) -> Option<SparseTuple<IM::F>>
+    where
+        IM: InverseMaintainer<F = F>,
+        K: Kind,
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>,
+    {
+        if self.nr_degenerate_pivots >= MAX_DEGENERATE_PIVOTS {
+            bland_pivot_column(tableau)
+        } else {
+            self.inner.select_primal_pivot_column(tableau)
+        }
+    }
+
+    fn after_basis_update<IM, K>(
+        &mut self,
+        info: BasisChangeComputationInfo<IM::F>,
+        tableau: &Tableau<IM, K>,
+    ) where
+        IM: InverseMaintainer<F = F>,
+        K: Kind,
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>,
+    {
+        let pivot_row_index = info.pivot_row_index;
+        // The wrapped rule keeps maintaining its data, also while the fallback is active, such that
+        // it can take over again immediately.
+        self.inner.after_basis_update(info, tableau);
+
+        // The entering variable is now the basic variable of the pivot row, and its value equals the
+        // step length that was taken. The objective value changed if and only if that step was
+        // nonzero, because the relative cost of the entering column was strictly negative.
+        if tableau.constraint_value(pivot_row_index).is_not_zero() {
+            self.nr_degenerate_pivots = 0;
+        } else {
+            self.nr_degenerate_pivots += 1;
+        }
     }
 }
 
@@ -128,7 +256,8 @@ where
     where
         IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>,
     {
         let find = |to_consider: Range<usize>| {
             to_consider
@@ -167,7 +296,8 @@ where
     where
         IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>,
     {
         let mut smallest = None;
         for (j, cost) in (tableau.start_index()..tableau.nr_columns())
@@ -206,7 +336,8 @@ where
     where
         IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>,
     {
         Self {
             gamma: (0..tableau.nr_columns())
@@ -228,7 +359,8 @@ where
     where
         IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>,
     {
         (tableau.start_index()..tableau.nr_columns())
             .filter(|&j| !tableau.is_in_basis(j))
@@ -250,7 +382,8 @@ where
     ) where
         IM: InverseMaintainer<F = F>,
         K: Kind,
-        F: im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
+        F: Absorb<<K::Column as Column>::F>,
+        F: Absorb<K::Cost>,
     {
         // Update entering column gamma
         self.gamma[info.pivot_column_index] = None;
@@ -308,10 +441,10 @@ where
 
 fn initial_gamma<IM, K>(j: usize, tableau: &Tableau<IM, K>) -> IM::F
 where
-    IM: InverseMaintainer<
-        F: im_ops::FieldHR + im_ops::Column<<K::Column as Column>::F> + im_ops::Cost<K::Cost>,
-    >,
+    IM: InverseMaintainer<F: im_ops::FieldHR>,
     K: Kind,
+    IM::F: Absorb<<K::Column as Column>::F>,
+    IM::F: Absorb<K::Cost>,
 {
     IM::F::one() + tableau.generate_column(j).into_column().squared_norm()
 }

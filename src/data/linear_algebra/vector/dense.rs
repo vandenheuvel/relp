@@ -5,12 +5,12 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Debug, Display};
 use std::iter::FromIterator;
-use std::ops::{AddAssign, Deref, Index, IndexMut, Mul};
+use std::ops::{Deref, Index, IndexMut};
 use std::slice::{Iter, IterMut};
 use std::vec::IntoIter;
 
 use index_utils::remove_indices;
-use num_traits::Zero;
+use relp_num::{Field, Absorb};
 
 use crate::algorithm::two_phase::matrix_provider::column::ColumnIterator;
 use crate::data::linear_algebra::vector::Vector;
@@ -100,14 +100,14 @@ impl<F: PartialEq + Display + Debug> Vector<F> for Dense<F> {
         Self { data }
     }
 
-    fn sparse_inner_product<'a, 'b, I: ColumnIterator<'b>, O>(&'a self, column: I) -> O
+    fn sparse_inner_product<'b, I: ColumnIterator<'b>>(&self, column: I) -> F
     where
-        &'a F: Mul<&'b I::F, Output = O>,
-        O: Zero + AddAssign,
+        F: Field,
+        F: Absorb<I::F>,
     {
-        let mut total = O::zero();
+        let mut total = F::zero();
         for (i, v) in column {
-            total += &self.data[i] * v;
+            total.add_mul_narrow(v, &self.data[i]);
         }
 
         total

@@ -7,6 +7,7 @@ use std::cmp::{Ordering, max};
 use std::fmt;
 
 use index_utils::remove_indices;
+use relp_num::Absorb;
 
 use crate::algorithm::two_phase::matrix_provider::column::identity::IdentityColumn;
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnIterator, ColumnNumber};
@@ -101,7 +102,7 @@ where
 
     fn invert<C: Column>(columns: impl ExactSizeIterator<Item = C>) -> Self
     where
-        Self::F: ops::Column<C::F>,
+        Self::F: Absorb<C::F>,
     {
         let m = columns.len();
         let lower_upper = LUDecomposition::invert(columns);
@@ -146,7 +147,7 @@ where
         column: I,
     ) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<I::F>,
+        Self::F: Absorb<I::F>,
     {
         let tuples = (0..self.m())
             .map(|i| self.generate_element(i, column.clone()))
@@ -162,17 +163,18 @@ where
         mut row: I,
     ) -> SparseVector<Self::F, Self::F>
     where
-        Self::F: ops::Column<I::F>,
+        Self::F: Absorb<I::F>,
     {
         let (index, factor) = row.next().unwrap();
         let items = self.rows[index]
             .iter()
-            .map(|(j, value)| (j, value * factor))
+            .map(|(j, value)| (j, value.mul_narrow(factor)))
             .collect();
         let mut total = SparseVector::new(items, self.m());
 
         for (index, factor) in row {
-            total.add_multiple_of_row(factor, &self.rows[index]);
+            // The factor is used once per non-zero of the row, so it is widened only once.
+            total.add_multiple_of_row(&<Self::F>::from_narrow(factor), &self.rows[index]);
         }
 
         total
@@ -184,7 +186,7 @@ where
         original_column: I,
     ) -> Option<Self::F>
     where
-        Self::F: ops::Column<I::F>,
+        Self::F: Absorb<I::F>,
     {
         debug_assert!(i < self.m());
 

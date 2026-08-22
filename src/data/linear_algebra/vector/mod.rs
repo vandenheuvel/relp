@@ -4,11 +4,11 @@
 //! operations needs to be done quickly with these types.
 use std::fmt::{Debug, Display};
 use std::iter::FromIterator;
-use std::ops::{AddAssign, Deref, Mul};
+use std::ops::Deref;
 use std::slice::{Iter, IterMut};
 
-use num_traits::Zero;
 use relp_num::NonZero;
+use relp_num::{Field, Absorb};
 
 pub use dense::Dense as DenseVector;
 pub use sparse::Sparse as SparseVector;
@@ -38,11 +38,13 @@ pub trait Vector<F>:
     /// Input data wrapped inside a vector.
     fn new(data: Vec<Self::Inner>, len: usize) -> Self;
     /// Compute the inner product with a column vector from a matrix.
-    fn sparse_inner_product<'a, 'b, I: ColumnIterator<'b>, O>(&'a self, column: I) -> O
+    ///
+    /// The column stores its values in a narrow type; they act on the accumulator of this vector's
+    /// type through [`Absorb`](relp_num::Absorb).
+    fn sparse_inner_product<'b, I: ColumnIterator<'b>>(&self, column: I) -> F
     where
-        F: 'a,
-        &'a F: Mul<&'b I::F, Output = O>,
-        O: Zero + AddAssign;
+        F: Field,
+        F: Absorb<I::F>;
     /// Make a vector longer by one, by adding an extra value at the end of this vector.
     fn push_value(&mut self, value: F)
     where
@@ -88,7 +90,7 @@ pub mod test {
     use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 
     pub trait TestVector<F>: Vector<F> {
-        fn from_test_data<T: NonZero>(data: Vec<T>) -> Self
+        fn from_test_data<T>(data: Vec<T>) -> Self
         where
             F: From<T>;
     }
@@ -107,7 +109,7 @@ pub mod test {
         F: Field + FromPrimitive + NonZero,
     {
         /// Create a `SparseVector` from the provided data.
-        fn from_test_data<T: NonZero>(data: Vec<T>) -> Self
+        fn from_test_data<T>(data: Vec<T>) -> Self
         where
             F: From<T>,
         {
@@ -118,8 +120,8 @@ pub mod test {
             Self::new(
                 data.into_iter()
                     .enumerate()
-                    .filter(|(_, v)| v.is_not_zero())
                     .map(|(i, v)| (i, F::from(v)))
+                    .filter(|(_, v)| v.is_not_zero())
                     .collect(),
                 size,
             )

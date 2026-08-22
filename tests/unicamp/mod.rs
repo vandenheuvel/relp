@@ -2,12 +2,12 @@
 //!
 //! Hosted [here](https://www.cenapad.unicamp.br/parque/manuais/OSL/oslweb/features/feat24DT.htm).
 use std::convert::TryInto;
-use std::ops::{Add, AddAssign, Sub};
+use std::ops::{Add, AddAssign, Mul, Sub};
 use std::path::{Path, PathBuf};
 
 use num_traits::{One, Zero};
 use relp_num::Rational64;
-use relp_num::{OrderedField, OrderedFieldRef, Signed};
+use relp_num::{Abs, OrderedField, OrderedFieldRef, Signed, Absorb};
 
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
@@ -45,15 +45,27 @@ fn get_test_file_path(name: &str) -> PathBuf {
 }
 
 fn solve<
-    IMT: im_ops::Field + im_ops::FieldHR + im_ops::Column<GFT> + AddAssign<GFT> + PartialEq<GFT> + Ord,
-    GFT: 'static + From<Rational64> + Zero + One + Ord + Element + OrderedField,
+    IMT: im_ops::Field
+        + im_ops::FieldHR
+        + AddAssign<GFT>
+        + PartialEq<GFT>
+        + Ord
+        + Signed
+        + From<GFT>,
+    GFT: 'static + From<Rational64> + Zero + One + Ord + Abs + Element + OrderedField,
 >(
     file_name: &str,
 ) -> Solution<IMT>
 where
+    IMT: Absorb<GFT>,
+    // The matrix data hands out its cost row as optional references, and the lifts for those are
+    // written per accumulator rather than once for every one, so a generic accumulator states them.
+    for<'r> IMT: Absorb<Option<&'r GFT>>,
     for<'r> &'r GFT: OrderedFieldRef<GFT>,
-    for<'r> &'r IMT: Add<&'r GFT, Output = IMT> + Sub<&'r IMT, Output = IMT>,
-    for<'r> IMT: im_ops::Cost<Option<&'r GFT>> + im_ops::Cost<Cost> + Signed,
+    for<'r> IMT: Add<&'r GFT, Output = IMT>,
+    for<'r> &'r IMT:
+        Add<&'r GFT, Output = IMT> + Mul<&'r GFT, Output = IMT> + Sub<&'r IMT, Output = IMT>,
+    IMT: Absorb<Cost>,
 {
     let path = get_test_file_path(file_name);
     let mps = import::<GFT>(&path).unwrap();

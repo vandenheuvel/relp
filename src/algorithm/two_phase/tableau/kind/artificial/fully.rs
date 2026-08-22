@@ -2,11 +2,13 @@
 //!
 //! When no initial pivots can be derived, this module is used. It is slightly quicker than the
 //! partially artificial tableau kind.
+use relp_num::Absorb;
+
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::matrix_provider::column::identity::Identity;
 use crate::algorithm::two_phase::tableau::Tableau;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintainer, ops as im_ops};
+use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
 use crate::algorithm::two_phase::tableau::kind::Kind;
 use crate::algorithm::two_phase::tableau::kind::artificial::{Artificial, Cost};
 
@@ -70,8 +72,9 @@ where
 
 impl<'provider, IM, MP> Tableau<IM, Fully<'provider, MP>>
 where
-    IM: InverseMaintainer<F: im_ops::Rhs<MP::Rhs>>,
+    IM: InverseMaintainer,
     MP: MatrixProvider,
+    IM::F: Absorb<MP::Rhs>,
 {
     /// Create a `Tableau` augmented with artificial variables.
     ///

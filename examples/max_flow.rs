@@ -1,15 +1,14 @@
 //! # Maximum Flow Problem
-#![feature(type_alias_impl_trait)]
 #![feature(impl_trait_in_assoc_type)]
 
 use std::iter;
 use std::iter::once;
-use std::ops::{Add, Mul, Range};
+use std::ops::Range;
 
 use index_utils::remove_sparse_indices;
 use num_traits::Zero;
 use relp_num::NonZero;
-use relp_num::One;
+use relp_num::fixed::One;
 use relp_num::{Rational64, RationalBig};
 
 use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
@@ -42,11 +41,6 @@ struct Primal<F> {
     t: usize,
     /// Column indices which are arcs coming from the source.
     s_arc_range: Range<usize>,
-}
-
-enum Cost {
-    Zero,
-    MinusOne,
 }
 
 impl<F> Primal<F>
@@ -141,8 +135,16 @@ where
     F: SparseElement<F> + Zero + Eq + NonZero,
 {
     type Column = Column;
+    /// Only the capacity slacks of the arcs leaving the source have a cost; the absent value is
+    /// the zero.
+    ///
+    /// A maximum flow is a maximum, while this problem is solved as a minimization. The two meet
+    /// in the capacity bound of an arc leaving the source: the flow over that arc and the slack of
+    /// its bound sum to the capacity, which is a constant, so minimizing the unused capacity of
+    /// the source arcs maximizes the flow leaving the source. What remains is a cost row that is
+    /// nothing but ones, which is what `One` is for: it stores the coefficient in no space at all.
     type Cost<'a>
-        = Cost
+        = Option<One>
     where
         Self: 'a;
     type Rhs = F;
@@ -169,11 +171,12 @@ where
     fn cost_value(&self, j: usize) -> Self::Cost<'_> {
         debug_assert!(j < self.nr_columns());
 
-        if self.s_arc_range.contains(&j) {
-            Cost::MinusOne
-        } else {
-            Cost::Zero
-        }
+        // The columns after the arcs are the slacks of the capacity bounds, in the same order.
+        let is_source_arc_slack = j
+            .checked_sub(self.nr_edges())
+            .is_some_and(|arc| self.s_arc_range.contains(&arc));
+
+        if is_source_arc_slack { Some(One) } else { None }
     }
 
     fn right_hand_side(&self) -> DenseVector<F> {
@@ -227,39 +230,6 @@ where
 
     fn nr_initial_elements(&self) -> usize {
         self.nr_edges()
-    }
-}
-
-impl Add<Cost> for RationalBig {
-    type Output = Self;
-
-    fn add(self, rhs: Cost) -> Self::Output {
-        match rhs {
-            Cost::Zero => self,
-            Cost::MinusOne => self - One,
-        }
-    }
-}
-
-impl Mul<Cost> for &RationalBig {
-    type Output = RationalBig;
-
-    fn mul(self, rhs: Cost) -> Self::Output {
-        match rhs {
-            Cost::Zero => Self::Output::zero(),
-            Cost::MinusOne => -self,
-        }
-    }
-}
-
-impl Mul<Cost> for RationalBig {
-    type Output = RationalBig;
-
-    fn mul(self, rhs: Cost) -> Self::Output {
-        match rhs {
-            Cost::Zero => Self::Output::zero(),
-            Cost::MinusOne => -self,
-        }
     }
 }
 

@@ -10,5 +10,6 @@
 //! * `fn matrix_data_form()`
 //! * `fn artificial_tableau_form()`
 //! * `fn tableau_form()`
+pub mod cycling;
 pub mod problem_1;
 pub mod problem_2;

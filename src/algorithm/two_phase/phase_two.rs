@@ -1,4 +1,6 @@
 //! # Phase two: improving a basic feasible solution
+use relp_num::Absorb;
+
 use crate::algorithm::OptimizationResult;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::Column;
@@ -27,12 +29,10 @@ pub fn primal<'provider, IM, MP, PR>(
     tableau: &mut Tableau<IM, NonArtificial<'provider, MP>>,
 ) -> OptimizationResult<IM::F>
 where
-    IM: InverseMaintainer<
-        F: im_ops::FieldHR
-               + im_ops::Column<<MP::Column as Column>::F>
-               + im_ops::Cost<MP::Cost<'provider>>,
-    >,
+    IM: InverseMaintainer<F: im_ops::FieldHR>,
     MP: MatrixProvider,
+    IM::F: Absorb<<MP::Column as Column>::F>,
+    IM::F: Absorb<MP::Cost<'provider>>,
     PR: PivotRule<IM::F>,
 {
     let mut rule = PR::new(tableau);

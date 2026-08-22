@@ -1,7 +1,7 @@
 //! # Shortest path problem
 use std::fmt::{Display, Formatter, Result as FormatResult};
 
-use relp_num::Binary;
+use relp_num::fixed::Binary;
 use relp_num::Field;
 use relp_num::NonZero;
 use relp_num::{Rational64, RationalBig};

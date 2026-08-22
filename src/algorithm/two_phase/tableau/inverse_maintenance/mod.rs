@@ -9,6 +9,8 @@
 //! TODO(ENHANCEMENT): A better inverse maintenance algorithm. Start with factorization?
 use std::fmt::{Debug, Display};
 
+use relp_num::Absorb;
+
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::matrix_provider::column::{Column, ColumnNumber};
 use crate::algorithm::two_phase::matrix_provider::filter::Filtered;
@@ -52,7 +54,7 @@ pub trait InverseMaintainer: Display + Sized {
     /// `Carry` with a `minus_pi` equal to -1's and the standard basis.
     fn create_for_fully_artificial<Rhs: Element>(rhs: DenseVector<Rhs>) -> Self
     where
-        Self::F: ops::Rhs<Rhs>;
+        Self::F: Absorb<Rhs>;
 
     /// Create a `Carry` for a tableau with some artificial variables.
     ///
@@ -75,7 +77,7 @@ pub trait InverseMaintainer: Display + Sized {
         basis_indices: Vec<usize>,
     ) -> Self
     where
-        Self::F: ops::Rhs<G>;
+        Self::F: Absorb<G>;
 
     /// Create a basis inverse when only the basis indices are known.
     ///
@@ -89,11 +91,10 @@ pub trait InverseMaintainer: Display + Sized {
     /// * `provider`: Problem representation.
     fn from_basis<'a, MP: MatrixProvider>(basis: &[usize], provider: &'a MP) -> Self
     where
-        Self::F: ops::Column<<MP::Column as Column>::F>
-            + ops::Rhs<MP::Rhs>
-            + ops::Cost<MP::Cost<'a>>
-            + ops::Column<MP::Rhs>,
-        MP::Rhs: 'static;
+        Self::F: Absorb<<MP::Column as Column>::F>,
+        Self::F: Absorb<MP::Cost<'a>>,
+        MP::Rhs: 'static,
+        Self::F: Absorb<MP::Rhs>;
 
     /// Create a basis inverse when the basis indices and their pivot rows are known.
     ///
@@ -110,11 +111,10 @@ pub trait InverseMaintainer: Display + Sized {
         provider: &'a MP,
     ) -> Self
     where
-        Self::F: ops::Column<<MP::Column as Column>::F>
-            + ops::Rhs<MP::Rhs>
-            + ops::Cost<MP::Cost<'a>>
-            + ops::Column<MP::Rhs>,
-        MP::Rhs: 'static + ColumnNumber;
+        Self::F: Absorb<<MP::Column as Column>::F>,
+        Self::F: Absorb<MP::Cost<'a>>,
+        MP::Rhs: 'static + ColumnNumber,
+        Self::F: Absorb<MP::Rhs>;
 
     /// When a previous basis inverse representation was used to find a basic feasible solution.
     ///
@@ -132,8 +132,9 @@ pub trait InverseMaintainer: Display + Sized {
         nr_artificial: usize,
     ) -> Self
     where
-        Self::F:
-            ops::FieldHR + ops::Column<<MP::Column as Column>::F> + ops::Cost<MP::Cost<'provider>>;
+        Self::F: ops::FieldHR,
+        Self::F: Absorb<<MP::Column as Column>::F>,
+        Self::F: Absorb<MP::Cost<'provider>>;
 
     /// When a previous basis inverse representation was used to find a basic feasible solution.
     ///
@@ -150,8 +151,8 @@ pub trait InverseMaintainer: Display + Sized {
         nr_artificial: usize,
     ) -> Self
     where
-        Self::F:
-            ops::Column<<<MP as MatrixProvider>::Column as Column>::F> + ops::Cost<MP::Cost<'a>>;
+        Self::F: Absorb<<<MP as MatrixProvider>::Column as Column>::F>,
+        Self::F: Absorb<MP::Cost<'a>>;
 
     /// Update the basis by representing one row reduction operation.
     ///
@@ -181,7 +182,7 @@ pub trait InverseMaintainer: Display + Sized {
         kind: &K,
     ) -> BasisChangeComputationInfo<Self::F>
     where
-        Self::F: ops::Column<<<K as Kind>::Column as Column>::F>;
+        Self::F: Absorb<<<K as Kind>::Column as Column>::F>;
 
     /// Calculates the cost difference `c_j`.
     ///
@@ -190,7 +191,7 @@ pub trait InverseMaintainer: Display + Sized {
     //  it.
     fn cost_difference<C: Column>(&self, original_column: &C) -> Self::F
     where
-        Self::F: ops::Column<C::F>;
+        Self::F: Absorb<C::F>;
 
     /// Multiplies the submatrix consisting of `minus_pi` and B^-1 by an `original_column`.
     ///
@@ -205,7 +206,7 @@ pub trait InverseMaintainer: Display + Sized {
     ///  it.
     fn generate_column<C: Column>(&self, original_column: C) -> Self::ColumnComputationInfo
     where
-        Self::F: ops::Column<C::F>;
+        Self::F: Absorb<C::F>;
 
     /// Generate a single element in the tableau with respect to the current basis.
     ///
@@ -217,7 +218,7 @@ pub trait InverseMaintainer: Display + Sized {
     ///  it.
     fn generate_element<C: Column>(&self, i: usize, original_column: C) -> Option<Self::F>
     where
-        Self::F: ops::Column<C::F>;
+        Self::F: Absorb<C::F>;
 
     /// Extract the current basic feasible solution.
     fn current_bfs(&self) -> Vec<SparseTuple<Self::F>>;
