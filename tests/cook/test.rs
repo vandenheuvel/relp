@@ -32,6 +32,6 @@ fn small_example() {
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert!((solution.objective_value - RB!(-143, 2)).abs() < RB!(1e-5)); // glpk
         }
-        _ => assert!(false),
+        _ => panic!("Expected a finite optimum."),
     }
 }

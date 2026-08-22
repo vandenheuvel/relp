@@ -66,6 +66,6 @@ fn test(file_name: &str, objective: f64, tolerance: f64) {
             // TODO(CORRECTNESS): Make this a relative error check.
             assert!((solution.objective_value - RB!(objective)).abs() < RB!(tolerance));
         }
-        _ => assert!(false),
+        _ => panic!("Expected a finite optimum."),
     }
 }

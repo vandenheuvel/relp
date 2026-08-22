@@ -337,15 +337,14 @@ fn fill_in_default_lower_bounds<F: Zero>(
 /// * `rhss`: Right-hand sides to be converted into a `b`.
 /// * `ranges`: Ranges read (will be flattened, grouping does not matter).
 // TODO(ARCHITECTURE): Simplify these trait bounds
-fn compute_constraint_info<
-    FI: Sub<Output = FI> + Abs + Ord + Zero + Display + Clone,
-    FO: From<FI> + Zero + Ord + Abs + Element + Clone,
->(
+fn compute_constraint_info<FI, FO>(
     rows: Vec<Row>,
     rhss: Vec<Rhs<FI>>,
     ranges: Vec<Range<FI>>,
 ) -> Result<(Vec<RangedConstraintRelation<FO>>, DenseVector<FO>), Inconsistency>
 where
+    FI: Sub<Output = FI> + Abs + Ord + Zero + Display + Clone,
+    FO: From<FI> + Zero + Ord + Abs + Element + Clone,
     for<'r> FO: Add<&'r FO, Output = FO>,
     for<'r> &'r FO: Neg<Output = FO>,
 {
@@ -475,16 +474,15 @@ fn compute_constraint_types<FI: Zero + PartialEq, FO: From<FI>>(
 /// When there is a trivial infeasibility due to multiple equality bounds being specified with
 /// different values.
 #[allow(unreachable_patterns)]
-fn compute_b<
-    OFI: Sub<Output = OFI> + Abs + PartialOrd + Zero + Clone,
-    OFO: From<OFI> + Zero + Abs + PartialOrd + Element + Display,
->(
+fn compute_b<OFI, OFO>(
     rhss: Vec<Rhs<OFI>>,
     constraints: &mut [RangedConstraintRelation<OFO>],
     rows: &[Row],
     nr_rows: usize,
 ) -> Result<DenseVector<OFO>, Inconsistency>
 where
+    OFI: Sub<Output = OFI> + Abs + PartialOrd + Zero + Clone,
+    OFO: From<OFI> + Zero + Abs + PartialOrd + Element + Display,
     for<'r> OFO: Add<&'r OFO, Output = OFO>,
     for<'r> &'r OFO: Neg<Output = OFO>,
 {

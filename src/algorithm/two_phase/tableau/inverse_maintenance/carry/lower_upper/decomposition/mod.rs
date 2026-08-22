@@ -468,8 +468,8 @@ mod test {
     pub fn to_columns<const M: usize>(rows: &[[i32; M]; M]) -> VecDeque<Vec<(usize, Rational8)>> {
         let mut columns = vec![vec![]; M].into_iter().collect::<VecDeque<_>>();
 
-        for (i, row) in rows.into_iter().enumerate() {
-            for (j, v) in row.into_iter().enumerate() {
+        for (i, row) in rows.iter().enumerate() {
+            for (j, v) in row.iter().enumerate() {
                 if v.is_not_zero() {
                     columns[j].push((i, R8!(*v)));
                 }

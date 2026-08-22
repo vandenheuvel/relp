@@ -89,7 +89,7 @@ fn test_scale_cost() {
 fn test_scale_constraint() {
     let mut general_form: GeneralForm<Rational16> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, u16>(&[vec![2 * 1, 2]], 2),
+        ColumnMajor::from_test_data::<_, _, u16>(&[vec![2, 2]], 2),
         vec![RangedConstraintRelation::Equal],
         DenseVector::from_test_data::<u16>(vec![2 * 3]),
         vec![
@@ -127,7 +127,7 @@ fn test_scale_constraint() {
 fn test_scale_variable() {
     let mut general_form: GeneralForm<Rational16> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, u16>(&[vec![1 * 19, 2]], 2),
+        ColumnMajor::from_test_data::<_, _, u16>(&[vec![19, 2]], 2),
         vec![RangedConstraintRelation::Equal],
         DenseVector::from_test_data::<u16>(vec![3]),
         vec![
@@ -165,7 +165,7 @@ fn test_scale_variable() {
 fn test_scale_variable_bound_vs_constraint() {
     let mut general_form: GeneralForm<Rational16> = GeneralForm::new(
         Objective::Minimize,
-        ColumnMajor::from_test_data::<_, _, u16>(&[vec![1 * 19, 2]], 2),
+        ColumnMajor::from_test_data::<_, _, u16>(&[vec![19, 2]], 2),
         vec![RangedConstraintRelation::Equal],
         DenseVector::from_test_data::<u16>(vec![3]),
         vec![

@@ -10,13 +10,13 @@
 
 #![allow(non_snake_case)]
 
-#[cfg(all(feature = "burkardt"))]
+#[cfg(feature = "burkardt")]
 mod burkardt;
-#[cfg(all(feature = "cook"))]
+#[cfg(feature = "cook")]
 mod cook;
-#[cfg(all(feature = "miplib"))]
+#[cfg(feature = "miplib")]
 mod miplib;
-#[cfg(all(feature = "netlib"))]
+#[cfg(feature = "netlib")]
 mod netlib;
-#[cfg(all(feature = "unicamp"))]
+#[cfg(feature = "unicamp")]
 mod unicamp;

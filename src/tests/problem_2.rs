@@ -78,7 +78,7 @@ pub fn create_matrix_data_data<'a, T: Field + From<u8> + From<&'a u8> + NonZero>
     Vec<Variable<T>>,
 ) {
     let constraints = ColumnMajor::from_test_data(
-        &vec![
+        &[
             vec![3, 2, 1, 0, 0],
             vec![5, 1, 1, 1, 0],
             vec![2, 5, 1, 0, 1],
@@ -106,18 +106,9 @@ pub fn create_matrix_data_data<'a, T: Field + From<u8> + From<&'a u8> + NonZero>
 pub fn matrix_data_form<'a>(
     constraints: &'a SparseMatrix<T, T, ColumnMajor>,
     b: &'a DenseVector<T>,
-    variables: &'a Vec<Variable<T>>,
+    variables: &'a [Variable<T>],
 ) -> MatrixData<'a, T> {
-    MatrixData::new(
-        &constraints,
-        &b,
-        Vec::with_capacity(0),
-        3,
-        0,
-        0,
-        0,
-        &variables,
-    )
+    MatrixData::new(constraints, b, Vec::with_capacity(0), 3, 0, 0, 0, variables)
 }
 
 pub fn artificial_tableau_form<'a>(

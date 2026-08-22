@@ -48,12 +48,12 @@ pub trait MatrixOrder: Sized {
     ///
     /// Note that the numerics might not be exact due to intermediate casting to floats, for
     /// convenience in other places of the code base.
-    fn from_test_data<F: From<IT>, C, IT: NonZero + Clone>(
+    fn from_test_data<F, C, IT: NonZero + Clone>(
         rows: &[Vec<IT>],
         nr_columns: usize,
     ) -> SparseMatrix<F, C, Self>
     where
-        F: SparseElement<C>,
+        F: From<IT> + SparseElement<C>,
         C: SparseComparator;
 
     /// Identity matrix of specified field type with this ordering.
@@ -86,12 +86,12 @@ impl MatrixOrder for RowMajor {
         SparseMatrix::from_major_ordered_tuples(rows, nr_rows, nr_columns)
     }
 
-    fn from_test_data<F: From<IT>, C, IT: NonZero + Clone>(
+    fn from_test_data<F, C, IT: NonZero + Clone>(
         rows: &[Vec<IT>],
         nr_columns: usize,
     ) -> SparseMatrix<F, C, Self>
     where
-        F: Borrow<C>,
+        F: From<IT> + Borrow<C>,
         C: SparseComparator,
     {
         debug_assert!(rows.iter().all(|v| v.len() == nr_columns));
@@ -132,12 +132,12 @@ impl MatrixOrder for ColumnMajor {
         SparseMatrix::from_major_ordered_tuples(columns, nr_columns, nr_rows)
     }
 
-    fn from_test_data<F: From<IT>, C, IT: NonZero + Clone>(
+    fn from_test_data<F, C, IT: NonZero + Clone>(
         rows: &[Vec<IT>],
         nr_columns: usize,
     ) -> SparseMatrix<F, C, Self>
     where
-        F: SparseElement<C>,
+        F: From<IT> + SparseElement<C>,
         C: SparseComparator,
     {
         debug_assert!(rows.iter().all(|v| v.len() == nr_columns));
@@ -573,12 +573,12 @@ pub mod test {
 
     type T = Rational32;
 
-    fn get_test_matrix<F: From<u8>, C>() -> SparseMatrix<F, C, ColumnMajor>
+    fn get_test_matrix<F, C>() -> SparseMatrix<F, C, ColumnMajor>
     where
-        F: Field + SparseElement<C>,
+        F: From<u8> + Field + SparseElement<C>,
         C: SparseComparator,
     {
-        ColumnMajor::from_test_data(&vec![vec![1, 2, 0], vec![0, 5, 6]], 3)
+        ColumnMajor::from_test_data(&[vec![1, 2, 0], vec![0, 5, 6]], 3)
     }
 
     #[test]
@@ -593,7 +593,7 @@ pub mod test {
     fn column_tuples() {
         let m = get_test_matrix::<T, T>();
 
-        assert_eq!(m.iter_column(2).nth(0).unwrap(), &(1, R32!(6)),);
+        assert_eq!(m.iter_column(2).next().unwrap(), &(1, R32!(6)),);
         assert_eq!(
             m.iter_column(1).map(|&(_, value)| value).sum::<T>(),
             T::from_i32(2 + 5).unwrap(),
@@ -608,8 +608,7 @@ pub mod test {
             data.remove(remove_row);
             let expected = ColumnMajor::from_test_data::<T, T, _>(&data, 4);
 
-            let mut to_remove = Vec::new();
-            to_remove.push(remove_row);
+            let to_remove = vec![remove_row];
             m.remove_minor_indices(&to_remove);
             let result = m;
 
@@ -620,19 +619,19 @@ pub mod test {
     #[test]
     fn concatenate_horizontally() {
         let m1 = ColumnMajor::from_test_data::<T, T, _>(
-            &vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]],
+            &[vec![1, 2, 3, 4], vec![5, 6, 7, 8], vec![9, 10, 11, 12]],
             4,
         );
         let m2 = ColumnMajor::from_test_data::<T, T, _>(
-            &vec![vec![1, 3, 4], vec![5, 7, 8], vec![9, 11, 12]],
+            &[vec![1, 3, 4], vec![5, 7, 8], vec![9, 11, 12]],
             3,
         );
         let result = m1.concatenate_horizontally(m2);
         assert_eq!(result.nr_columns(), 4 + 3);
         assert_eq!(result.nr_rows(), 3);
 
-        let m1 = ColumnMajor::from_test_data::<T, T, _>(&vec![vec![1, 2], vec![9, 10]], 2);
-        let m2 = ColumnMajor::from_test_data::<T, T, _>(&vec![vec![5, 7], vec![9, 11]], 2);
+        let m1 = ColumnMajor::from_test_data::<T, T, _>(&[vec![1, 2], vec![9, 10]], 2);
+        let m2 = ColumnMajor::from_test_data::<T, T, _>(&[vec![5, 7], vec![9, 11]], 2);
         let result = m1.concatenate_horizontally(m2);
         assert_eq!(result.nr_columns(), 2 + 2);
         assert_eq!(result.nr_rows(), 2);
@@ -737,11 +736,11 @@ pub mod test {
     #[test]
     fn identity() {
         let m = ColumnMajor::identity::<T, T>(1);
-        let expected = ColumnMajor::from_test_data::<T, T, _>(&vec![vec![1]], 1);
+        let expected = ColumnMajor::from_test_data::<T, T, _>(&[vec![1]], 1);
         assert_eq!(m, expected);
 
         let m = ColumnMajor::identity::<T, T>(2);
-        let expected = ColumnMajor::from_test_data::<T, T, _>(&vec![vec![1, 0], vec![0, 1]], 2);
+        let expected = ColumnMajor::from_test_data::<T, T, _>(&[vec![1, 0], vec![0, 1]], 2);
         assert_eq!(m, expected);
     }
 }

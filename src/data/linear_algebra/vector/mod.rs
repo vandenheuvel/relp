@@ -40,7 +40,7 @@ pub trait Vector<F>:
     /// Compute the inner product with a column vector from a matrix.
     ///
     /// The column stores its values in a narrow type; they act on the accumulator of this vector's
-    /// type through [`Absorb`](relp_num::Absorb).
+    /// type through [`Absorb`].
     fn sparse_inner_product<'b, I: ColumnIterator<'b>>(&self, column: I) -> F
     where
         F: Field,
@@ -201,7 +201,7 @@ pub mod test {
     fn out_of_bounds_get<F: Field + NonZero + From<u8> + FromPrimitive, V: TestVector<F>>() {
         let v = get_test_vector::<F, V>();
 
-        &v.get(400);
+        v.get(400);
     }
 
     /// Test
@@ -276,16 +276,16 @@ pub mod test {
         #[test]
         fn remove_indices() {
             let mut v = DenseVector::<T>::from_test_data(vec![0, 1, 2]);
-            v.remove_indices(&vec![1]);
+            v.remove_indices(&[1]);
             assert_eq!(v, DenseVector::<T>::from_test_data(vec![0, 2]));
 
             let mut v = DenseVector::<T>::from_test_data(vec![3, 0, 0]);
-            v.remove_indices(&vec![0]);
+            v.remove_indices(&[0]);
             assert_eq!(v, DenseVector::<T>::from_test_data(vec![0, 0]));
 
             let vs = vec![0, 0, 2, 3, 0, 5, 0, 0, 0, 9];
             let mut v = DenseVector::<T>::from_test_data(vs);
-            v.remove_indices(&vec![3, 4, 6]);
+            v.remove_indices(&[3, 4, 6]);
             let vs = vec![0, 0, 2, 5, 0, 0, 9];
             assert_eq!(v, DenseVector::<T>::from_test_data(vs));
         }
@@ -447,43 +447,43 @@ pub mod test {
         fn add_multiple_of_row() {
             let mut v = SparseVector::<T, T>::from_test_data(vec![3]);
             let w = SparseVector::<T, T>::from_test_data(vec![5]);
-            v.add_multiple_of_row(&R32!(4), &w);
+            v.add_multiple_of_row(R32!(4), &w);
             assert_eq!(v, SparseVector::<T, T>::from_test_data(vec![23]));
 
             let mut v = SparseVector::<T, T>::from_test_data(vec![0]);
             let w = SparseVector::<T, T>::from_test_data(vec![0]);
-            v.add_multiple_of_row(&R32!(4), &w);
+            v.add_multiple_of_row(R32!(4), &w);
             assert_eq!(v, SparseVector::<T, T>::from_test_data(vec![0]));
 
             let mut v = SparseVector::<T, T>::from_test_data(vec![0, 3]);
             let w = SparseVector::<T, T>::from_test_data(vec![5, 0]);
-            v.add_multiple_of_row(&R32!(4), &w);
+            v.add_multiple_of_row(R32!(4), &w);
             assert_eq!(v, SparseVector::<T, T>::from_test_data(vec![20, 3]));
 
             let mut v = SparseVector::<T, T>::from_test_data(vec![12]);
             let w = SparseVector::<T, T>::from_test_data(vec![3]);
-            v.add_multiple_of_row(&R32!(-4), &w);
+            v.add_multiple_of_row(R32!(-4), &w);
             assert_eq!(v, SparseVector::<T, T>::from_test_data(vec![0]));
 
             let mut v = SparseVector::<T, T>::from_test_data(vec![12, 0, 0]);
             let w = SparseVector::<T, T>::from_test_data(vec![0, 0, 3]);
-            v.add_multiple_of_row(&R32!(-4), &w);
+            v.add_multiple_of_row(R32!(-4), &w);
             assert_eq!(v, SparseVector::<T, T>::from_test_data(vec![12, 0, -12]));
         }
 
         #[test]
         fn remove_indices() {
             let mut v = SparseVector::<T, T>::from_test_tuples(vec![(0, 3)], 3);
-            v.remove_indices(&vec![1]);
+            v.remove_indices(&[1]);
             assert_eq!(v, SparseVector::<T, T>::from_test_tuples(vec![(0, 3)], 2));
 
             let mut v = SparseVector::<T, T>::from_test_tuples(vec![(0, 3)], 3);
-            v.remove_indices(&vec![0]);
+            v.remove_indices(&[0]);
             assert_eq!(v, SparseVector::<T, T>::from_test_tuples::<f64>(vec![], 2));
 
             let vs = vec![(2, 2), (3, 3), (5, 5), (10, 10)];
             let mut v = SparseVector::<T, T>::from_test_tuples(vs, 11);
-            v.remove_indices(&vec![3, 4, 6]);
+            v.remove_indices(&[3, 4, 6]);
             assert_eq!(
                 v,
                 SparseVector::<T, T>::from_test_tuples(vec![(2, 2), (3, 5), (7, 10)], 8)

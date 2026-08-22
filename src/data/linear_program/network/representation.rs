@@ -17,7 +17,7 @@ use crate::data::linear_algebra::vector::{DenseVector, Vector};
 
 /// An incidence matrix describes a directed graph.
 ///
-/// See https://en.wikipedia.org/wiki/Incidence_matrix.
+/// See <https://en.wikipedia.org/wiki/Incidence_matrix>.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IncidenceMatrix {
     data: SparseMatrix<ArcDirection, ArcDirection, ColumnMajor>,

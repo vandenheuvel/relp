@@ -384,7 +384,7 @@ mod test {
     fn get_underlying_index() {
         type T = Rational32;
 
-        for (deleted, size) in vec![
+        for (deleted, size) in [
             (vec![2, 5, 7, 9, 12, 15, 16, 19, 20, 21], 25),
             (vec![2], 5),
             (vec![2, 3], 6),
@@ -392,9 +392,7 @@ mod test {
             let left_from_original = (0..size)
                 .filter(|i| !deleted.contains(i))
                 .collect::<Vec<_>>();
-            for (in_reduced, in_original) in
-                (0..left_from_original.len()).zip(left_from_original.into_iter())
-            {
+            for (in_reduced, in_original) in (0..left_from_original.len()).zip(left_from_original) {
                 assert_eq!(
                     RemoveRows::<MatrixData<T>>::get_underlying_index(&deleted, in_reduced),
                     in_original

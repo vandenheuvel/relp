@@ -2,6 +2,7 @@
 //!
 //! If a model can provide a few initial slack variables, those are used such that a basic feasible
 //! solution is found quicker. Less variables need to be driven out of the basis.
+#[cfg(test)]
 use std::collections::HashSet;
 
 use relp_num::Absorb;
@@ -220,6 +221,7 @@ where
     /// # Return value
     ///
     /// `Tableau` with for the provided problem with the provided basis.
+    #[cfg(test)]
     pub(crate) fn new_with_basis(
         provider: &'provider MP,
         inverse_maintainer: IM,

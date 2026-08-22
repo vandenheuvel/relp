@@ -35,10 +35,6 @@ struct Primal<F> {
     arc_incidence_matrix: IncidenceMatrix,
     capacity: DenseVector<F>,
 
-    /// Source
-    s: usize,
-    /// Sink
-    t: usize,
     /// Column indices which are arcs coming from the source.
     s_arc_range: Range<usize>,
 }
@@ -60,8 +56,6 @@ where
             arc_incidence_matrix,
             capacity,
 
-            s,
-            t,
             s_arc_range,
         }
     }
@@ -213,7 +207,7 @@ where
         self.nr_edges() + self.nr_edges()
     }
 
-    fn reconstruct_solution<G>(&self, column_values: SparseVector<G, G>) -> SparseVector<G, G> {
+    fn reconstruct_solution<G>(&self, _column_values: SparseVector<G, G>) -> SparseVector<G, G> {
         unimplemented!()
     }
 }
@@ -239,7 +233,7 @@ fn main() {
 
     // Example from Papadimitriou's Combinatorial Optimization.
     let data = ColumnMajor::from_test_data::<T, T, _>(
-        &vec![
+        &[
             // Directed; from is top, to is on the right
             //   s  a  b  t
             vec![0, 0, 0, 0], // s

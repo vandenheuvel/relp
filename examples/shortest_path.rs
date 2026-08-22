@@ -106,7 +106,7 @@ where
         self.nr_edges()
     }
 
-    fn reconstruct_solution<H>(&self, column_values: SparseVector<H, H>) -> SparseVector<H, H> {
+    fn reconstruct_solution<H>(&self, _column_values: SparseVector<H, H>) -> SparseVector<H, H> {
         unimplemented!()
     }
 }
@@ -158,7 +158,7 @@ fn main() {
 
     // Example from Papadimitriou's Combinatorial Optimization.
     let data = ColumnMajor::from_test_data::<T, T, _>(
-        &vec![
+        &[
             // Directed; from is top, to is on the right
             //   s  a  b  t
             vec![0, 0, 0, 0], // s

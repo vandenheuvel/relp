@@ -44,7 +44,8 @@ fn get_test_file_path(name: &str) -> PathBuf {
     problem_file_directory().join(name).with_extension("mps")
 }
 
-fn solve<
+fn solve<IMT, GFT>(file_name: &str) -> Solution<IMT>
+where
     IMT: im_ops::Field
         + im_ops::FieldHR
         + AddAssign<GFT>
@@ -53,10 +54,6 @@ fn solve<
         + Signed
         + From<GFT>,
     GFT: 'static + From<Rational64> + Zero + One + Ord + Abs + Element + OrderedField,
->(
-    file_name: &str,
-) -> Solution<IMT>
-where
     IMT: Absorb<GFT>,
     // The matrix data hands out its cost row as optional references, and the lifts for those are
     // written per accumulator rather than once for every one, so a generic accumulator states them.

@@ -4,7 +4,6 @@ use std::str::FromStr;
 
 use num_traits::{One, Zero};
 use relp_num::Abs;
-use relp_num::OrderedField;
 use relp_num::RB;
 use relp_num::{NonZero, Rational64, RationalBig};
 
@@ -20,12 +19,9 @@ use relp::io::import;
 
 use super::get_test_file_path;
 
-fn to_general_form<
-    T: From<Rational64> + Zero + NonZero + One + Ord + Abs + Element + Neg<Output = T>,
->(
-    file_name: &str,
-) -> GeneralForm<T>
+fn to_general_form<T>(file_name: &str) -> GeneralForm<T>
 where
+    T: From<Rational64> + Zero + NonZero + One + Ord + Abs + Element + Neg<Output = T>,
     for<'r> T: Add<&'r T, Output = T>,
     for<'r> &'r T: Neg<Output = T>,
 {
@@ -58,7 +54,7 @@ fn adlittle() {
                 S::from_str("24975305659811992079614961229/120651674036153428931840").unwrap()
             );
         }
-        _ => assert!(false),
+        _ => panic!("Expected a finite optimum."),
     }
 }
 
@@ -117,7 +113,7 @@ fn afiro() {
 
             assert!(expected.is_probably_equal_to(&solution, 0.1_f64));
         }
-        _ => assert!(false),
+        _ => panic!("Expected a finite optimum."),
     }
 }
 
@@ -158,7 +154,7 @@ fn maros() {
                 )
             );
         }
-        _ => assert!(false),
+        _ => panic!("Expected a finite optimum."),
     }
 }
 
@@ -202,6 +198,6 @@ fn testprob() {
                 )
             );
         }
-        _ => assert!(false),
+        _ => panic!("Expected a finite optimum."),
     }
 }

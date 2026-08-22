@@ -16,11 +16,10 @@ exclude = ["tests"]
 relp-num = "0.2.0"
 num-traits = "0.2.19"
 
-itertools = "0.14.0"
 fifo-set = "1.0.0"
 cumsum = "1.0.0"
-index-utils = { version = "2.2.3", features = ["num-traits"] }
-enum-map = "2.7.2"
+index-utils = { version = "2.3.0", features = ["num-traits"] }
+enum-map = "2.7.3"
 
 [features]
 burkardt = []

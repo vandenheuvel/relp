@@ -386,11 +386,11 @@ where
     ///
     /// The inner product.
     #[must_use]
-    pub fn inner_product_with_dense<'a, F2, O: 'a>(&'a self, other: &'a DenseVector<F2>) -> O
+    pub fn inner_product_with_dense<'a, F2, O>(&'a self, other: &'a DenseVector<F2>) -> O
     where
         F: Borrow<O>,
         F2: Borrow<O> + PartialEq + Display + Debug,
-        O: Sum,
+        O: 'a + Sum,
         &'a O: Mul<&'a O, Output = O>,
     {
         debug_assert_eq!(other.len(), self.len());

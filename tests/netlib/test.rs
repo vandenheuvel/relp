@@ -37,21 +37,21 @@ fn test_AFIRO() {
 #[test]
 fn test_AGG() {
     let result = solve("AGG");
-    let expected = -0.35991767286576506712640824319636e8; // Koch - The final Netlib-LP results
+    let expected = -3.599_176_728_657_651e7; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
 }
 
 #[test]
 fn test_AGG2() {
     let result = solve("AGG2");
-    let expected = -0.20239252355977109024317661926133e8; // Koch - The final Netlib-LP results
+    let expected = -2.023_925_235_597_711e7; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
 }
 
 #[test]
 fn test_AGG3() {
     let result = solve("AGG3");
-    let expected = 0.10312115935089225579061058796215e8; // Koch - The final Netlib-LP results
+    let expected = 1.031_211_593_508_922_5e7; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
 }
 
@@ -59,7 +59,7 @@ fn test_AGG3() {
 #[ignore = "Too computationally intensive."]
 fn test_BANDM() {
     let result = solve("BANDM");
-    let expected = -0.15862801845012064052174123768736e3; // Koch - The final Netlib-LP results
+    let expected = -1.586_280_184_501_206_3e2; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-6));
 }
 
@@ -81,7 +81,7 @@ fn test_BLEND() {
 #[ignore = "Too computationally intensive."]
 fn test_BNL1() {
     let result = solve("BNL1");
-    let expected = 0.19776295615228892439564398331821e4; // Koch - The final Netlib-LP results
+    let expected = 1.977_629_561_522_889_2e3; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-4));
 }
 
@@ -89,42 +89,42 @@ fn test_BNL1() {
 #[ignore = "Too computationally intensive."]
 fn test_BNL2() {
     let result = solve("BNL2");
-    let expected = 0.1811236540358545170448413697691e4; // Koch - The final Netlib-LP results
+    let expected = 1.811_236_540_358_545_2e3; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-4));
 }
 
 #[test]
 fn test_BOEING1() {
     let result = solve("BOEING1");
-    let expected = -0.3352135675071266218429697314682e3; // Koch - The final Netlib-LP results
+    let expected = -3.352_135_675_071_266_4e2; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-7));
 }
 
 #[test]
 fn test_BOEING2() {
     let result = solve("BOEING2");
-    let expected = -0.31501872801520287870462195913263e3; // Koch - The final Netlib-LP results
+    let expected = -3.150_187_280_152_029e2; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-7));
 }
 
 #[test]
 fn test_BORE3D() {
     let result = solve("BORE3D");
-    let expected = 0.13730803942084927215581987251301e4; // Koch - The final Netlib-LP results
+    let expected = 1.373_080_394_208_492_6e3; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-6));
 }
 
 #[test]
 fn test_BRANDY() {
     let result = solve("BRANDY");
-    let expected = 0.15185098964881283835426751550618e4; // Koch - The final Netlib-LP results
+    let expected = 1.518_509_896_488_128_3e3; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-5));
 }
 
 #[test]
 fn test_CAPRI() {
     let result = solve("CAPRI");
-    let expected = 0.26900129137681610087717280693754e4; // Koch - The final Netlib-LP results
+    let expected = 2.690_012_913_768_161e3; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-5));
 }
 
@@ -132,35 +132,35 @@ fn test_CAPRI() {
 #[ignore = "Too computationally intensive."]
 fn test_CYCLE() {
     let result = solve("CYCLE");
-    let expected = -0.52263930248941017172447233836217e1; // Koch - The final Netlib-LP results
+    let expected = -5.226_393_024_894_102; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-7));
 }
 
 #[test]
 fn test_CZPROB() {
     let result = solve("CZPROB");
-    let expected = 0.21851966988565774858951155947191e7; // Koch - The final Netlib-LP results
+    let expected = 2.185_196_698_856_577_3e6; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-2));
 }
 
 #[test]
 fn test_E226() {
     let result = solve("E226");
-    let expected = -0.18751929066370549102605687681285e2; // Koch - The final Netlib-LP results
+    let expected = -1.875_192_906_637_055e1; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-6));
 }
 
 #[test]
 fn test_ETAMACRO() {
     let result = solve("ETAMACRO");
-    let expected = -0.7557152333749133350792583667773e3; // Koch - The final Netlib-LP results
+    let expected = -7.557_152_333_749_133e2; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-4));
 }
 
 #[test]
 fn test_FINNIS() {
     let result = solve("FINNIS");
-    let expected = 0.17279106559561159432297900375543e6; // Koch - The final Netlib-LP results
+    let expected = 1.727_910_655_956_115_8e5; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
 }
 
@@ -168,7 +168,7 @@ fn test_FINNIS() {
 #[ignore = "Too computationally intensive."]
 fn test_GREENBEA() {
     let result = solve("GREENBEA");
-    let expected = -0.72555248129845987457557870574845e8; // Koch - The final Netlib-LP results
+    let expected = -7.255_524_812_984_599e7; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-2));
 }
 
@@ -176,14 +176,14 @@ fn test_GREENBEA() {
 #[ignore = "Too computationally intensive."]
 fn test_GREENBEB() {
     let result = solve("GREENBEB");
-    let expected = -0.43022602612065867539213672544432e7; // Koch - The final Netlib-LP results
+    let expected = -4.302_260_261_206_587e6; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
 }
 
 #[test]
 fn test_GFRD_PNC() {
     let result = solve("GFRD-PNC");
-    let expected = 0.69022359995488088295415596232193e7; // Koch - The final Netlib-LP results
+    let expected = 6.902_235_999_548_809e6; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
 }
 
@@ -191,14 +191,14 @@ fn test_GFRD_PNC() {
 #[ignore = "Constraint on objective is not supported."]
 fn test_GROW7() {
     let result = solve("GROW7");
-    let expected = 0.47787811814711502616766956242865e8; // Koch - The final Netlib-LP results
+    let expected = 4.778_781_181_471_15e7; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-1));
 }
 
 #[test]
 fn test_ISRAEL() {
     let result = solve("ISRAEL");
-    let expected = -0.89664482186304572966200464196045e6; // Koch - The final Netlib-LP results
+    let expected = -8.966_448_218_630_457e5; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
 }
 
@@ -220,7 +220,7 @@ fn test_LOTFI() {
 #[ignore = "Could be cycling."]
 fn test_MODSZK1() {
     let result = solve("MODSZK1");
-    let expected = 0.32061972906431580494333823530763e3; // Koch - The final Netlib-LP results
+    let expected = 3.206_197_290_643_158e2; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-6));
 }
 
@@ -262,14 +262,14 @@ fn test_SCAGR7() {
 #[test]
 fn test_SCRS8() {
     let result = solve("SCRS8");
-    let expected = 0.90429695380079143579923107948844e3; // Koch - The final Netlib-LP results
+    let expected = 9.042_969_538_007_915e2; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-7));
 }
 
 #[test]
 fn test_SCSD1() {
     let result = solve("SCSD1");
-    let expected = 0.86666666743333647292533502995263e1; // Koch - The final Netlib-LP results
+    let expected = 8.666_666_674_333_365; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-7));
 }
 
@@ -277,14 +277,14 @@ fn test_SCSD1() {
 #[ignore = "Too computationally intensive."]
 fn test_SCFXM1() {
     let result = solve("SCFXM1");
-    let expected = 0.18416759028348943683579089143655e5; // Koch - The final Netlib-LP results
+    let expected = 1.841_675_902_834_894_4e4; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
 }
 
 #[test]
 fn test_SCORPION() {
     let result = solve("SCORPION");
-    let expected = 0.18781248227381066296479411763586e4; // Koch - The final Netlib-LP results
+    let expected = 1.878_124_822_738_106_6e3; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-6));
 }
 
@@ -300,7 +300,7 @@ fn test_SCTAP1() {
 inverse grow to hundreds of digits, so a pivot costs seconds rather than microseconds."]
 fn test_STAIR() {
     let result = solve("STAIR");
-    let expected = -0.25126695119296330352803637106304e3; // Koch - The final Netlib-LP results
+    let expected = -2.512_669_511_929_633e2; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-4));
 }
 
@@ -328,7 +328,7 @@ fn test_STOCFOR1() {
 #[test]
 fn test_SHARE1B() {
     let result = solve("SHARE1B");
-    let expected = -0.7658931857918568112797274346007e5; // Koch - The final Netlib-LP results
+    let expected = -7.658_931_857_918_568e4; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-5));
 }
 
@@ -349,6 +349,6 @@ fn test_RECIPELP() {
 #[test]
 fn test_VTP_BASE() {
     let result = solve("VTP-BASE");
-    let expected = 0.1298314624613613657395984384889e6; // Koch - The final Netlib-LP results
+    let expected = 1.298_314_624_613_613_7e5; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-4));
 }

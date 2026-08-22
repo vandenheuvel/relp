@@ -74,7 +74,7 @@ pub trait BasisInverse: Display {
     /// Results any computations are yielded in this type.
     ///
     /// Values from a matrix provider are narrow; they act on this type through
-    /// [`Absorb`](relp_num::Absorb).
+    /// [`Absorb`].
     type F: relp_num::Field;
     /// Information gathered while computing a column.
     ///

@@ -574,7 +574,7 @@ mod test {
         assert_eq!(artificial_tableau.relative_cost(0), RB!(0));
 
         assert_eq!(
-            artificial_tableau.relative_cost(artificial_tableau.nr_artificial_variables() + 0),
+            artificial_tableau.relative_cost(artificial_tableau.nr_artificial_variables()),
             RB!(-10),
         );
 
@@ -590,7 +590,7 @@ mod test {
         let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
         let artificial_tableau = artificial_tableau_form(&matrix_data_form);
 
-        let index_to_test = artificial_tableau.nr_artificial_variables() + 0;
+        let index_to_test = artificial_tableau.nr_artificial_variables();
         let column = artificial_tableau.generate_column(index_to_test);
         let expected = SparseVector::from_test_data(vec![3, 5, 2]);
         assert_eq!(column.column(), &expected);
@@ -611,7 +611,7 @@ mod test {
         let (constraints, b, variables) = create_matrix_data_data();
         let matrix_data_form = matrix_data_form(&constraints, &b, &variables);
         let mut artificial_tableau = artificial_tableau_form(&matrix_data_form);
-        let column = artificial_tableau.nr_artificial_variables() + 0;
+        let column = artificial_tableau.nr_artificial_variables();
         let column_data = artificial_tableau.generate_column(column);
         let row = artificial_tableau
             .select_primal_pivot_row(&column_data)

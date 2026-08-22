@@ -329,7 +329,6 @@ where
                     constraint_values: self.constraints.iter_column(j).cloned().collect(),
                     slack: self
                         .bound_row_index(j, BoundDirection::Upper)
-                        .map(|i| i)
                         .map(|i| (i, F::one())),
                 }
             }

@@ -280,7 +280,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use relp_num::{Rational64, RationalBig};
+    use relp_num::RationalBig;
 
     use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult, primal};
     use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
@@ -292,7 +292,6 @@ mod test {
 
     #[test]
     fn finding_bfs() {
-        type T = Rational64;
         type S = RationalBig;
 
         let (constraints, b, variables) = create_matrix_data_data();

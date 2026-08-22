@@ -117,7 +117,7 @@ fn conversion_pipeline() {
                 general_form_computed.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(solution.objective_value, R64!(54));
         }
-        _ => assert!(false),
+        _ => panic!("Expected a finite optimum."),
     }
 }
 
@@ -306,7 +306,7 @@ pub fn general_form_standardized() -> GeneralForm<T> {
         b,
         variables,
         variable_names,
-        -R64!(1 * 4),
+        -R64!(4),
     )
 }
 
@@ -315,7 +315,7 @@ pub fn create_matrix_data_data() -> (
     DenseVector<T>,
     Vec<Variable<T>>,
 ) {
-    let constraints = ColumnMajor::from_test_data(&vec![vec![0, -1, 1], vec![1, 0, 1]], 3);
+    let constraints = ColumnMajor::from_test_data(&[vec![0, -1, 1], vec![1, 0, 1]], 3);
     let b = DenseVector::from_test_data(vec![6, 10]);
     let variables = vec![
         Variable {
@@ -357,7 +357,7 @@ pub fn matrix_data_form<'a>(
 
 pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F = T>, Rhs = T>>(
     provider: &MP,
-) -> Tableau<Carry<S, BasisInverseRows<S>>, Partially<MP>> {
+) -> Tableau<Carry<S, BasisInverseRows<S>>, Partially<'_, MP>> {
     let m = 4;
     let artificials = vec![0, 1];
     let carry = {

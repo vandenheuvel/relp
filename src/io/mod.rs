@@ -30,10 +30,11 @@ pub mod mps;
 ///
 /// When a file extension is unknown, a file cannot be found or read, there is an inconsistency in
 /// the problem file, etc. an error type is returned.
-pub fn import<F: From<Rational64> + Zero + One + Neg<Output = F> + Ord + Abs + Element + NonZero>(
+pub fn import<F>(
     file_path: &Path,
 ) -> Result<impl TryInto<GeneralForm<F>, Error = Inconsistency>, Import>
 where
+    F: From<Rational64> + Zero + One + Neg<Output = F> + Ord + Abs + Element + NonZero,
     for<'r> F: Add<&'r F, Output = F>,
     for<'r> &'r F: Neg<Output = F>,
 {

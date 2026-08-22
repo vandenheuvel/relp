@@ -108,8 +108,8 @@ fn main() {
     // We walk the entire matrix and check whether a `column_maximum_j + x_i >= f(i, j)` constraint
     // should be added.
     for j in 0..n {
-        for i in 0..m {
-            if let Some(value) = input_matrix[i][j] {
+        for (i, row) in input_matrix.iter().enumerate() {
+            if let Some(value) = row[j] {
                 // There is a value there, so we add a constraint.
                 row_major_constraints.push(vec![
                     (i, RB!(1)), // The "subtraction amount" variable index
@@ -142,8 +142,8 @@ fn main() {
     let mut nr_lower_bounded_constraints = 0;
     let mut had_a_max = vec![false; n];
     for j in 0..n {
-        for i in 0..m {
-            if let Some(value) = input_matrix[i][j] {
+        for (i, row) in input_matrix.iter().enumerate() {
+            if let Some(value) = row[j] {
                 row_major_constraints.push(vec![(i, RB!(1)), (m + n + j, RB!(1))]);
                 b.push(RB!(value));
                 basis_columns.push(if value == column_max[j] {
