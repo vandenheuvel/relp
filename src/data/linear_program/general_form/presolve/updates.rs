@@ -439,8 +439,8 @@ where
                 // Was initially free?
                 self.general_form.variables[variable].is_free() &&
                     // No new bounds derived?
-                    self.bounds.get(&(variable, BoundDirection::Lower)).is_none() &&
-                    self.bounds.get(&(variable, BoundDirection::Upper)).is_none()
+                    !self.bounds.contains_key(&(variable, BoundDirection::Lower)) &&
+                    !self.bounds.contains_key(&(variable, BoundDirection::Upper))
             })
             .collect::<HashSet<_>>();
         for ((variable, direction), bound_value) in self.activity_bounds {

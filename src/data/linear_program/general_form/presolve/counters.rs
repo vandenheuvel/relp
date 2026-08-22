@@ -94,7 +94,7 @@ where
     ///
     /// * `column`: Column to iter over.
     /// * `constraints`: The row major representation of the constraints of the general form for
-    /// fast iteration.
+    ///   fast iteration.
     ///
     /// # Return value
     ///

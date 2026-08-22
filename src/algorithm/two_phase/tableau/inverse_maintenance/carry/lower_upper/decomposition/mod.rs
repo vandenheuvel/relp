@@ -234,9 +234,9 @@ where
 /// * `pivot_column`: Index of column swapped with index k.
 /// * `k`: Step in the iteration and row and column index that will be swapped with.
 /// * `row_permutation`: Maps from current row index to the index the row had in the original
-/// matrix.
+///   matrix.
 /// * `row_permutation`: Maps from current column index to the index the column had in the original
-/// matrix.
+///   matrix.
 /// * `nnz_row`: Number of nonzero elements per row.
 fn swap<T>(
     pivot_row: usize,

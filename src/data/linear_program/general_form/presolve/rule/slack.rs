@@ -40,20 +40,24 @@ where
     /// We start with a constraint `<a, x> + cs (<= == >= =r=) b`
     ///
     /// When c > 0:
+    /// ```text
     ///     ||      s >= l      |      s <= u      |         l <= s <= u        | free |
     /// --------------------------------------------------------------------------------
     /// <=  || <a, x> <= b - cl |                  |      <a, x> <= b - cl      |      |
     /// ==  || <a, x> <= b - cl | <a, x> >= b - cu |   <a, x> =c(u-l)= b - cl   |      |
     /// >=  ||                  | <a, x> >= b - cu |      <a, x> >= b - cu      |      |
     /// =r= || <a, x> <= b - cl | <a, x> >= b - cu | <a, x> =r + c(u-l)= b - cl |      |
+    /// ```
     ///
     /// When c < 0:
+    /// ```text
     ///     ||      s >= l      |      s <= u      |         l <= s <= u        | free |
     /// --------------------------------------------------------------------------------
     /// <=  ||                  | <a, x> <= b - cu |      <a, x> <= b - cu      |      |
     /// ==  || <a, x> >= b - cl | <a, x> <= b - cu |   <a, x> =c(l-u)= b - cu   |      |
     /// >=  || <a, x> >= b - cl |                  |      <a, x> >= b - cl      |      |
     /// =r= || <a, x> >= b - cl | <a, x> <= b - cu | <a, x> =r + c(l-u)= b - cu |      |
+    /// ```
     ///
     /// Note that nothing changes when the constraint is of type == and s has both a lower and
     /// upper bound (regardless of the sign of c). If a bound is adapted, the column is removed
@@ -62,7 +66,7 @@ where
     /// # Arguments
     ///
     /// * `variable_index`: Index of variable that should be removed if it is a slack with suitable
-    /// bounds.
+    ///   bounds.
     pub(in crate::data::linear_program::general_form::presolve) fn presolve_slack(
         &mut self,
         variable: usize,

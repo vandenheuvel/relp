@@ -9,9 +9,9 @@
 //!
 //! * The first is the type that is stored many times in the data structure
 //! * The second is a type that can be zero (and is not a reference), ideally is small (Copy) and
-//! not stored behind a reference (like `RationalBig`).
+//!   not stored behind a reference (like `RationalBig`).
 //! * The third is the type that both can be dereferenced to. This is used to create a row-major
-//! copy of the constraint matrix using references, rather than the actual values.
+//!   copy of the constraint matrix using references, rather than the actual values.
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 

@@ -31,7 +31,7 @@ pub trait Vector<F>:
     ///
     /// * `data`: Internal data values. Will not be changed and directly used for creation.
     /// * `len`: Length of the vector represented (and not necessarily of the internal data struct
-    /// ure).
+    ///   ure).
     ///
     /// # Return value
     ///
@@ -89,7 +89,9 @@ pub mod test {
     use crate::data::linear_algebra::traits::{SparseComparator, SparseElement};
     use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 
+    /// Helper trait to easily create vectors in test code.
     pub trait TestVector<F>: Vector<F> {
+        /// Create a vector from the provided data.
         fn from_test_data<T>(data: Vec<T>) -> Self
         where
             F: From<T>;

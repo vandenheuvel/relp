@@ -137,7 +137,7 @@ trait ColumnRetriever<'a> {
     /// # Arguments
     ///
     /// * `line_after_first_column`: Rest of the line after the first column was removed. That is,
-    /// this method should essentially return the first column relative to the input.
+    ///   this method should essentially return the first column relative to the input.
     fn two_or_three(line_after_name: &str) -> ParseResult<[&str; 1]>;
 
     /// Read the first and second column.

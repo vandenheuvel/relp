@@ -84,7 +84,7 @@ where
     ///
     /// * `pivot_row`: Row index of the pivot, in range `0` until `self.nr_rows()`.
     /// * `pivot_column`: Column index of the pivot, in range `0` until `self.nr_columns()`. Is not
-    /// yet in the basis.
+    ///   yet in the basis.
     fn update_basis_indices(&mut self, pivot_column: usize, leaving_column: usize) {
         debug_assert!(pivot_column < self.nr_columns());
         debug_assert!(leaving_column < self.nr_columns());
@@ -100,7 +100,7 @@ where
     /// # Arguments
     ///
     /// * `j`: Index of column to calculate the relative cost for, in range `0` through
-    /// `self.nr_variables()`.
+    ///   `self.nr_variables()`.
     ///
     /// # Return value
     ///
@@ -150,6 +150,7 @@ where
             .generate_element(i, self.kind.original_column(j))
     }
 
+    /// Column of the problem, before application of the basis inverse.
     pub fn original_column(&self, j: usize) -> K::Column {
         debug_assert!(j < self.nr_columns());
 

@@ -25,6 +25,9 @@ pub struct IncidenceMatrix {
 }
 
 impl IncidenceMatrix {
+    /// Build an incidence matrix from an adjacency matrix, dropping the given vertices.
+    ///
+    /// Also returns the values of the arcs in the order of the columns.
     pub fn new<F: SparseElement<F> + SparseComparator>(
         adjacency_matrix: SparseMatrix<F, F, ColumnMajor>,
         mut removed: Vec<usize>,
@@ -95,6 +98,7 @@ impl IncidenceMatrix {
         )
     }
 
+    /// Column of the incidence matrix, describing a single arc.
     pub fn column(&self, j: usize) -> Vec<SparseTuple<ArcDirection>> {
         debug_assert!(j < self.nr_edges());
 
@@ -102,15 +106,18 @@ impl IncidenceMatrix {
         self.data.iter_column(j).cloned().collect()
     }
 
+    /// Number of vertices in the graph, including removed ones.
     pub fn nr_vertices(&self) -> usize {
         self.data.nr_rows() + self.removed.len()
     }
 
+    /// Number of edges in the graph.
     pub fn nr_edges(&self) -> usize {
         self.data.nr_columns()
     }
 }
 
+/// Column of an incidence matrix, describing a single arc.
 #[derive(Clone, Debug)]
 pub struct ArcIncidenceColumn(pub Vec<SparseTuple<ArcDirection>>);
 impl IntoIterator for ArcIncidenceColumn {
@@ -150,9 +157,12 @@ impl IntoFilteredColumn for ArcIncidenceColumn {
     }
 }
 
+/// Direction of an arc relative to a vertex.
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub enum ArcDirection {
+    /// The arc points towards the vertex, represented by a "1".
     Incoming,
+    /// The arc points away from the vertex, represented by a "-1".
     Outgoing,
 }
 

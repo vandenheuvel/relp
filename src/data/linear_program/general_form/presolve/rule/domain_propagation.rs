@@ -354,7 +354,7 @@ where
     ///
     /// * Direction of the bound that was changed (lower or upper).
     /// * Change that was done (any at all, and if so, by how much or was there no bound before? See
-    /// the `update_bound` method for more).
+    ///   the `update_bound` method for more).
     fn variable_part(
         &mut self,
         constraint: usize,

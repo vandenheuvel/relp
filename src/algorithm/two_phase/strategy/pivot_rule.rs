@@ -43,6 +43,7 @@ pub trait PivotRule<F: im_ops::Field> {
         F: Absorb<<K::Column as Column>::F>,
         F: Absorb<K::Cost>;
 
+    /// Update any internal state after a basis change. Does nothing by default.
     fn after_basis_update<IM, K>(
         &mut self,
         _info: BasisChangeComputationInfo<IM::F>,

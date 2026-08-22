@@ -331,11 +331,11 @@ where
     /// This involves:
     ///
     /// * Determining which rows and columns can be removed or differently represented to reduce the
-    /// problem size and increase the reading speed from a `MatrixData` structure.
+    ///   problem size and increase the reading speed from a `MatrixData` structure.
     /// * Determining which variables are implicitly fixed, such that their only feasible value can
-    /// be substituted into the problem and the column eliminated.
+    ///   be substituted into the problem and the column eliminated.
     /// * Modifying variables such that they are either free or bounded below by zero (with possibly
-    /// an upper bound).
+    ///   an upper bound).
     /// * Multiplying some rows such that the constraint value is non-negative.
     /// * Reorder the constraints by their type (equal, range, less, greater).
     ///
@@ -798,7 +798,7 @@ where
     ///
     /// * `variable`: Index of the variable for which we try to determine an explicit solution.
     /// * `new_solutions`: Collection containing solutions previously computed, that the computed
-    /// solution value will also be written in to (if it is determined).
+    ///   solution value will also be written in to (if it is determined).
     ///
     /// # Return value
     ///
@@ -864,7 +864,7 @@ where
     /// # Arguments
     ///
     /// * `reduced_solution`: Solution values for all variables that are still marked as `Active` in
-    /// the "original variables" of this problem.
+    ///   the "original variables" of this problem.
     pub fn reshift_solution<G>(&self, reduced_solution: &mut SparseVector<G, G>)
     where
         G: LinearAlgebraElement<G> + SparseComparator + PartialEq<OF> + AddAssign<OF> + From<OF>,
@@ -890,7 +890,7 @@ where
     /// # Arguments
     ///
     /// * `reduced_solution`: A value for each of the variables in this general form that are still
-    /// marked as unsolved (in the `original_variables` field).
+    ///   marked as unsolved (in the `original_variables` field).
     ///
     /// # Returns
     ///
@@ -950,9 +950,9 @@ where
     /// # Arguments
     ///
     /// * `variable`: Index of the variable for which we try to determine an explicit solution.
-    /// Relative to the original problem with variables solved and unsolved.
+    ///   Relative to the original problem with variables solved and unsolved.
     /// * `new_solutions`: Collection containing solutions previously computed, that the computed
-    /// solution value will also be written in to (if it is determined).
+    ///   solution value will also be written in to (if it is determined).
     /// * `reduced_solution`: Solution to the reduced problem (for all variables still active).
     ///
     /// # Return value
@@ -1183,7 +1183,7 @@ where
     /// * `existing_bound`: Bound that could be updated.
     /// * `new`: New bound value.
     /// * `is_better`: A predicate indicating whether the new bound is better than the old bound, or
-    /// not.
+    ///   not.
     ///
     /// # Return value
     ///

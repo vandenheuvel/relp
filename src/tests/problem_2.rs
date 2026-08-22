@@ -39,7 +39,7 @@ fn conversion_pipeline() {
 
     // Get to a basic feasible solution
     let feasibility_result =
-        phase_one::primal::<_, _, MatrixData<T>, FirstProfitable>(artificial_tableau_form_computed);
+        phase_one::primal::<_, _, FirstProfitable>(artificial_tableau_form_computed);
     let mut tableau_form_computed = match feasibility_result {
         RankedFeasibilityResult::Feasible {
             rank,

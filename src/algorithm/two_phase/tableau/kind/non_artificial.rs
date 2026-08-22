@@ -176,7 +176,7 @@ where
     ///
     /// * `artificial_tableau`: `Tableau` instance created with artificial variables.
     /// * `rows_removed`: `RemoveRows` instance containing all the **sorted** rows that should be
-    /// removed from e.g. the basis inverse matrix.
+    ///   removed from e.g. the basis inverse matrix.
     ///
     /// # Return value
     ///

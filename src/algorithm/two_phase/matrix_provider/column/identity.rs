@@ -38,6 +38,7 @@ pub struct IdentityColumn {
 }
 
 impl IdentityColumn {
+    /// Create an identity column with a "1" at the given index.
     pub fn new(index: usize) -> Self {
         Self { index }
     }

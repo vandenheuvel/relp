@@ -60,6 +60,7 @@ pub trait Column: ColumnIntoIterator<Self::F> + Debug {
 /// implemented directly; instead, implement the normal `Iterator` and `Clone` traits. There is a
 /// blanket impl for this trait.
 pub trait ColumnIterator<'a>: Iterator<Item = SparseTuple<&'a Self::F>> + Clone {
+    /// Type of the values in the column.
     type F: 'a + ColumnNumber;
 }
 impl<'a, F: 'a + ColumnNumber, T: Iterator<Item = SparseTuple<&'a F>> + Clone> ColumnIterator<'a>
@@ -68,6 +69,7 @@ impl<'a, F: 'a + ColumnNumber, T: Iterator<Item = SparseTuple<&'a F>> + Clone> C
     type F = F;
 }
 
+/// Consuming iteration over a column, yielding owned index-value tuples.
 pub trait ColumnIntoIterator<F> = IntoIterator<Item = SparseTuple<F>>;
 
 /// Basic operations that should be possible with the type of the values of the column.
@@ -82,6 +84,7 @@ pub struct SparseColumn<F> {
 }
 
 impl<F> SparseColumn<F> {
+    /// Wrap sparse tuples as a column.
     pub fn new(data: Vec<SparseTuple<F>>) -> Self {
         Self { inner: data }
     }
@@ -112,6 +115,7 @@ impl<F> IntoIterator for SparseColumn<F> {
     }
 }
 
+/// Iterator over a slice of sparse index-value tuples.
 #[derive(Clone)]
 pub struct SparseSliceIterator<'a, F> {
     creator: &'a [SparseTuple<F>],
@@ -119,6 +123,7 @@ pub struct SparseSliceIterator<'a, F> {
 }
 
 impl<'a, F: ColumnNumber> SparseSliceIterator<'a, F> {
+    /// Iterate over the given slice, which should contain no zero values.
     pub fn new(slice: &'a [SparseTuple<F>]) -> Self {
         debug_assert!(slice.iter().all(|(_, v)| v.is_not_zero()));
 
@@ -144,12 +149,14 @@ impl<'a, F> Iterator for SparseSliceIterator<'a, F> {
     }
 }
 
+/// Iterator over an optional sparse index-value tuple.
 #[derive(Clone)]
 pub struct SparseOptionIterator<'a, F> {
     creator: Option<SparseTuple<&'a F>>,
 }
 
 impl<'a, F: ColumnNumber> SparseOptionIterator<'a, F> {
+    /// Iterate over the given option, which should contain no zero value.
     pub fn new(option: &'a Option<SparseTuple<F>>) -> Self {
         debug_assert!(option.iter().all(|(_, v)| v.is_not_zero()));
 
@@ -207,6 +214,7 @@ impl<F: 'static + ColumnNumber> Column for DenseColumn<F> {
     }
 }
 
+/// Iterator over a dense slice, yielding index-value tuples while skipping zero values.
 #[derive(Clone)]
 pub struct DenseSliceIterator<'a, F> {
     creator: &'a [F],
@@ -214,6 +222,7 @@ pub struct DenseSliceIterator<'a, F> {
 }
 
 impl<'a, F> DenseSliceIterator<'a, F> {
+    /// Iterate over the given slice of values.
     pub fn new(slice: &'a [F]) -> Self {
         Self {
             creator: slice,

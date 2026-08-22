@@ -114,8 +114,8 @@ where
     /// # Arguments
     ///
     /// * `&mut self`: A `PresolveIndex` that lives across repeated calls to this function. It is
-    /// used to store which constraints and variables need to be checked for which rules. After the
-    /// application of each rule, constraints and variables might be added to queues in this struct.
+    ///   used to store which constraints and variables need to be checked for which rules. After the
+    ///   application of each rule, constraints and variables might be added to queues in this struct.
     ///
     /// # Return value
     ///
@@ -182,7 +182,7 @@ where
     /// * `variable`: Variable who's bound was changed.
     /// * `direction`: Whether the lower- or upper variable bound was updated.
     /// * `change`: Whether another bound was previously known, and the difference between the
-    /// former and current bound.
+    ///   former and current bound.
     fn after_bound_change(
         &mut self,
         variable: usize,
@@ -332,11 +332,10 @@ where
                 };
                 self.remove_variable(variable, value);
             }
-            1 => {
-                if self.general_form.variables[variable].cost.is_zero() {
+            1
+                if self.general_form.variables[variable].cost.is_zero() => {
                     self.queues.slack.push(variable);
                 }
-            }
             _ => (),
         }
 
@@ -356,7 +355,7 @@ where
     /// # Arguments
     ///
     /// * `constraint`: The constraint whos counter might have becomes sufficiently low to activate
-    /// a rule.
+    ///   a rule.
     ///
     /// # Returns
     ///
@@ -421,7 +420,7 @@ where
 ///
 /// * `right_hand_side`: Bound value.
 /// * `constraint_type`: Relation that is supposed to hold between right hand side and the inner
-/// product of the relevant matrix row with the variable (<a, x>), which in this case is zero.
+///   product of the relevant matrix row with the variable (<a, x>), which in this case is zero.
 fn is_empty_constraint_feasible<OF>(
     right_hand_side: &OF,
     constraint_type: &RangedConstraintRelation<OF>,

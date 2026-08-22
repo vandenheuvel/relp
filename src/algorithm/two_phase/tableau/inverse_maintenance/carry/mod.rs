@@ -86,7 +86,7 @@ pub trait BasisInverse: Display {
     /// # Arguments
     ///
     /// * `m`: The number of rows in the problem. The size of the `Carry` matrix that wraps the
-    /// implementor is of size `m + 1` by `m + 1`.
+    ///   implementor is of size `m + 1` by `m + 1`.
     fn identity(m: usize) -> Self;
 
     /// Invert an ordered collection of columns.
@@ -102,10 +102,10 @@ pub trait BasisInverse: Display {
     /// # Arguments
     ///
     /// * `pivot_row_index`: The row index of the pivot in the new column `column`. The column that
-    /// currently has a `1` at this index (and zeros otherwise) will be removed from the basis.
+    ///   currently has a `1` at this index (and zeros otherwise) will be removed from the basis.
     /// * `column`: To determine the pivot row index, the column was already explicitly computed
-    /// (probably by the same implementor that now accepts this method call). It is now provided
-    /// again for insertion into the basis.
+    ///   (probably by the same implementor that now accepts this method call). It is now provided
+    ///   again for insertion into the basis.
     fn change_basis(
         &mut self,
         pivot_row_index: usize,
@@ -117,7 +117,7 @@ pub trait BasisInverse: Display {
     /// # Arguments
     ///
     /// * `original_column`: Column produced by a `MatrixProvider` instance. Currently needs to
-    /// yield elements in order.
+    ///   yield elements in order.
     ///
     /// # Return value
     ///
@@ -148,8 +148,8 @@ pub trait BasisInverse: Display {
     ///
     /// * `i`: Row index
     /// * `original_column`: Column with respect to the original basis.
-    /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
-    ///  it.
+    ///   TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
+    ///   it.
     fn generate_element<'a, I: ColumnIterator<'a>>(
         &'a self,
         i: usize,
@@ -194,7 +194,7 @@ where
     ///
     /// * `b`: Constraint values of the original problem with respect to the provided basis.
     /// * `basis_inverse_rows`: Rows of the matrix B^-1, where B is the matrix of columns of the
-    /// basis.
+    ///   basis.
     ///
     /// # Return value
     ///
@@ -271,7 +271,7 @@ where
     ///
     /// * `provider`: Matrix provider.
     /// * `basis`: Basis indices (elements are already shifted, no compensation for the artificial
-    /// variables is needed).
+    ///   variables is needed).
     /// * `b`: Constraint values with respect to this basis.
     fn create_minus_obj_from_artificial<'a, MP: MatrixProvider>(
         provider: &'a MP,

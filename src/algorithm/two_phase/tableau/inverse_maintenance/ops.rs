@@ -22,6 +22,7 @@ pub trait Field = relp_num::OrderedField
 
 // TODO(ARCHITECTURE): Once HRTB are propagated like normal associated type trait bounds, remove
 //  this trait by integrating the requirements into `InverseMaintenance::F`'s trait bounds.
+/// Reference operations done by the number type within the inverse maintenance algorithm.
 #[allow(clippy::type_repetition_in_bounds)]
 pub trait FieldHR = where
     for<'r> &'r Self: Neg<Output = Self>,

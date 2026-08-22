@@ -228,7 +228,7 @@ where
     /// * `i`: Row index
     /// * `j`: Column index
     /// * `value`: Float that should not be too close to zero to avoid memory usage and numerical
-    /// imprecision.
+    ///   imprecision.
     pub fn set_value(&mut self, row: usize, column: usize, value: F) {
         debug_assert!(row < self.nr_rows());
         debug_assert!(column < self.nr_columns());
@@ -279,7 +279,7 @@ impl<F: SparseElement<C>, C: SparseComparator> SparseMatrix<F, C, ColumnMajor> {
     ///
     /// * `rows`: List of rows.
     /// * `current_nr_columns`: Amount of columns in the original matrix. Necessary, because the maximum
-    /// value in `rows` is not necessarily the last column (could have zero columns at the end).
+    ///   value in `rows` is not necessarily the last column (could have zero columns at the end).
     ///
     /// # Return value
     ///
@@ -326,7 +326,7 @@ impl<F: SparseElement<C>, C: SparseComparator> SparseMatrix<F, C, ColumnMajor> {
     /// # Arguments
     ///
     /// * `other`: A column major ordered sparse matrix with the same number of rows as this
-    /// matrix.
+    ///   matrix.
     #[must_use]
     pub fn concatenate_horizontally(self, other: Self) -> Self {
         debug_assert_eq!(self.nr_rows(), other.nr_rows());
@@ -353,7 +353,7 @@ impl<F: SparseElement<C>, C: SparseComparator> SparseMatrix<F, C, ColumnMajor> {
     /// * `i`: Row index
     /// * `j`: Column index
     /// * `value`: Float that should not be too close to zero to avoid memory usage and numerical
-    /// imprecision.
+    ///   imprecision.
     pub fn set_value(&mut self, row: usize, column: usize, value: F) {
         debug_assert!(column < self.major_dimension_size);
         debug_assert!(row < self.minor_dimension_size);
@@ -380,12 +380,12 @@ impl<F: SparseElement<C>, C: SparseComparator, MO: MatrixOrder> SparseMatrix<F, 
     /// # Arguments
     ///
     /// * `data`: Collection of `(minor_index, value)` tuples that should already be filtered for
-    /// non-zero values.
+    ///   non-zero values.
     /// * `nr_rows`: Number of rows this matrix is large. Couldn't be derived from `columns`,
-    /// because the final row(s) might be zero, so no column would have a value in that row.
+    ///   because the final row(s) might be zero, so no column would have a value in that row.
     /// * `nr_columns`: Number of columns this matrix is large. Could be derived from `columns`,
-    /// but not done for consistency. Having to fill in this number often also helps clarify what is
-    /// happening in algorithms.
+    ///   but not done for consistency. Having to fill in this number often also helps clarify what is
+    ///   happening in algorithms.
     fn from_major_ordered_tuples(
         data: Vec<SparseTupleVec<F>>,
         major_dimension_size: usize,
@@ -524,7 +524,7 @@ where
     /// * `i`: Row index
     /// * `j`: Column index
     /// * `value`: Float that should not be too close to zero to avoid memory usage and numerical
-    /// imprecision.
+    ///   imprecision.
     fn inner_set_value(&mut self, major_index: usize, minor_index: usize, value: F) {
         debug_assert!(major_index < self.major_dimension_size);
         debug_assert!(minor_index < self.minor_dimension_size);
@@ -562,6 +562,7 @@ where
 
 #[cfg(test)]
 pub mod test {
+    //! Contains also some helper methods to be used in other test modules.
     use num_traits::FromPrimitive;
     use relp_num::Field;
     use relp_num::R32;

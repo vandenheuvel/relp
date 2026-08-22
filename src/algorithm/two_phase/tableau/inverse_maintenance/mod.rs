@@ -47,7 +47,7 @@ pub trait InverseMaintainer: Display + Sized {
     /// # Arguments
     ///
     /// * `b`: Constraint values of the original problem, i.e. the original `b` with respect to the
-    /// unit basis.
+    ///   unit basis.
     ///
     /// # Return value
     ///
@@ -65,7 +65,7 @@ pub trait InverseMaintainer: Display + Sized {
     /// * `artificial`: Indices of rows where an artificial variable is needed.
     /// * `basis`: (row index, column index) tuples of given basis variables.
     /// * `b`: Constraint values of the original problem, i.e. the original `b` with respect to the
-    /// unit basis.
+    ///   unit basis.
     ///
     /// # Return value
     ///
@@ -87,7 +87,7 @@ pub trait InverseMaintainer: Display + Sized {
     /// # Arguments
     ///
     /// * `basis`: Indices of columns that are to be in the basis. Should match the number of rows
-    /// of the provider. Values should be unique, could have been a set.
+    ///   of the provider. Values should be unique, could have been a set.
     /// * `provider`: Problem representation.
     fn from_basis<'a, MP: MatrixProvider>(basis: &[usize], provider: &'a MP) -> Self
     where
@@ -104,7 +104,7 @@ pub trait InverseMaintainer: Display + Sized {
     /// # Arguments
     ///
     /// * `basis`: Indices of columns that are to be in the basis. Should match the number of rows
-    /// of the provider. Values should be unique, could have been a set.
+    ///   of the provider. Values should be unique, could have been a set.
     /// * `provider`: Problem representation.
     fn from_basis_pivots<'a, MP: MatrixProvider>(
         basis: &[(usize, usize)],
@@ -167,7 +167,7 @@ pub trait InverseMaintainer: Display + Sized {
     /// * `pivot_column_index`: Index of the pivot column.
     /// * `column`: Column relative to the current basis to be entered into that basis.
     /// * `cost`: Relative cost of that column. The objective function value will change by this
-    /// amount.
+    ///   amount.
     /// * `kind`: Provides access to the matrix being solved, can be used to retrieve columns.
     ///
     /// # Return value
@@ -214,8 +214,8 @@ pub trait InverseMaintainer: Display + Sized {
     ///
     /// * `i`: Row index
     /// * `original_column`: Column with respect to the original basis.
-    /// TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
-    ///  it.
+    ///   TODO(ENHANCEMENT): Drop the `OrderedColumn` trait bound once it is possible to specialize on
+    ///   it.
     fn generate_element<C: Column>(&self, i: usize, original_column: C) -> Option<Self::F>
     where
         Self::F: Absorb<C::F>;

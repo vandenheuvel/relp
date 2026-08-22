@@ -16,14 +16,14 @@ pub(super) trait PivotRule {
     /// # Arguments
     ///
     /// * `nnz_row`: For each row, the number of nonzeros that are left in the part of the matrix
-    /// that still is to be decomposed.
+    ///   that still is to be decomposed.
     /// * `nnz_column`: For each column, the number of nonzeros that are left in the part of the
-    /// matrix that still is to be decomposed.
+    ///   matrix that still is to be decomposed.
     /// * `rows`: Rows from the start of the decomposition, but partially modified: some values in
-    /// the lower rows (i < k) have been eliminated to move toward an upper triangular matrix.
+    ///   the lower rows (i < k) have been eliminated to move toward an upper triangular matrix.
     /// * `k`: Current row being "processed", meaning that the next pivot will be permuted to index
-    /// `(k, k)`. Items at indices lower than `k` from the other arguments should typically not be
-    /// considered.
+    ///   `(k, k)`. Items at indices lower than `k` from the other arguments should typically not be
+    ///   considered.
     fn choose_pivot<T>(
         &self,
         nnz_row: &[usize],

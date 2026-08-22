@@ -53,7 +53,7 @@ where
         let artificial_tableau = Tableau::<_, FullyArtificial<_>>::new(self);
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
-        primal::<_, _, MP, SteepestDescentAlongObjective<_>>(artificial_tableau)
+        primal::<_, _, SteepestDescentAlongObjective<_>>(artificial_tableau)
     }
 }
 
@@ -91,7 +91,7 @@ where
         let artificial_tableau = Tableau::<_, PartiallyArtificial<_>>::new(self);
         // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these strategies
         //  dynamically
-        primal::<_, _, MP, SteepestDescentAlongObjective<_>>(artificial_tableau)
+        primal::<_, _, SteepestDescentAlongObjective<_>>(artificial_tableau)
     }
 }
 
@@ -110,18 +110,17 @@ pub trait FullInitialBasis: PartialInitialBasis {}
 /// # Arguments
 ///
 /// * `tableau`: Artificial tableau with a valid basis. This basis will typically consist of only
-/// artificial variables.
+///   artificial variables.
 ///
 /// # Return value
 ///
 /// Whether the tableau might allow a basic feasible solution without artificial variables.
-pub(crate) fn primal<IM, K, MP, PR>(mut tableau: Tableau<IM, K>) -> RankedFeasibilityResult<IM>
+pub(crate) fn primal<IM, K, PR>(mut tableau: Tableau<IM, K>) -> RankedFeasibilityResult<IM>
 where
     IM: InverseMaintainer<F: im_ops::FieldHR>,
     K: Artificial,
     IM::F: Absorb<<K::Column as Column>::F>,
     IM::F: Absorb<K::Cost>,
-    MP: MatrixProvider,
     PR: PivotRule<IM::F>,
 {
     let mut rule = PR::new(&tableau);
@@ -283,7 +282,6 @@ where
 mod test {
     use relp_num::{Rational64, RationalBig};
 
-    use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
     use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult, primal};
     use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
     use crate::algorithm::two_phase::tableau::Tableau;
@@ -302,7 +300,7 @@ mod test {
         let tableau =
             Tableau::<Carry<S, BasisInverseRows<S>>, Partially<_>>::new(&matrix_data_form);
         assert!(matches!(
-            primal::<_, _, MatrixData<T>, FirstProfitable>(tableau),
+            primal::<_, _, FirstProfitable>(tableau),
             RankedFeasibilityResult::Feasible {
                 rank: Rank::Full,
                 ..

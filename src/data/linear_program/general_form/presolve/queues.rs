@@ -19,14 +19,14 @@ pub(super) struct Queues {
     ///
     /// * Start of process: Column is determined fixed.
     /// * Insertion: Column becomes fixed after a bound was adjusted, and it is equal to the other
-    /// bound.
+    ///   bound.
     /// * State: Column is fixed. When a bound gets adjusted again, the variable is infeasible, and
-    /// the solving procedure should stop, making this queue irrelevant.
+    ///   the solving procedure should stop, making this queue irrelevant.
     /// * Removal: Fixed value for the column is about to be substituted in the problem, effecting
-    /// the right-hand side.
+    ///   the right-hand side.
     /// * Causes: All rows that have a small number of elements left in them to be added to the
-    /// `empty_row` or `bound` queue, perhaps the `activity` queue if sufficient variables that are
-    /// left in the column have the relevant bound.
+    ///   `empty_row` or `bound` queue, perhaps the `activity` queue if sufficient variables that are
+    ///   left in the column have the relevant bound.
     ///
     /// This is a stack because their order of removal does not matter because they will only be in
     /// this queue only once.
@@ -37,9 +37,9 @@ pub(super) struct Queues {
     /// * Start of process: Row count is 1.
     /// * Insertion: Row count becomes 1.
     /// * State: Row count is at most one, and row could have been removed because it became empty
-    /// before it is reached in this queue.
+    ///   before it is reached in this queue.
     /// * Removal: Fixed value for the column is about to be substituted in the problem, effecting
-    /// the right-hand side.
+    ///   the right-hand side.
     /// * Causes: Row will be marked removed and the implied bound will be added to the updates.
     ///
     /// This is a stack because their order of removal does not matter because they will only be in
@@ -51,8 +51,8 @@ pub(super) struct Queues {
     /// * Start of process: Does not appear in objective and column count is 1.
     /// * Insertion: Does not appear in objective and column count becomes 1
     /// * State: Does not appear in objective. Column count is at most 1, column could have been
-    /// removed because it became empty due to the constraint being recognized as a bound (that rule
-    /// has higher priority).
+    ///   removed because it became empty due to the constraint being recognized as a bound (that rule
+    ///   has higher priority).
     /// * Removal: Just before rule is attempted to be applied.
     /// * Causes: Nothing, column gets removed, or column and row get removed.
     ///
@@ -65,14 +65,14 @@ pub(super) struct Queues {
     /// Constraints to check for activity bound tightening.
     ///
     /// * Start of process: Number of variable bounds missing to compute the activation bounds is at
-    /// most 1.
+    ///   most 1.
     /// * Insertion: Number of variable bounds missing to compute the activation bounds is at
-    /// reaches 1 or 0. Note that this rule might add this constraint to the queue again.
+    ///   reaches 1 or 0. Note that this rule might add this constraint to the queue again.
     /// * State: Number of variable bounds missing to compute the activation bounds is at most 1.
-    /// The constraint might have already been removed, so checking that it's still active is
-    /// necessary.
+    ///   The constraint might have already been removed, so checking that it's still active is
+    ///   necessary.
     /// * Removal: Just before rule is attempted to be applied (note that it might be added to the
-    /// queue again by the same rule).
+    ///   queue again by the same rule).
     /// * Causes: Nothing, a constraint to be removed, or a column to be removed.
     ///
     /// The relevant activity counters are `.0` for `Lower`, `.1` for `Upper`.

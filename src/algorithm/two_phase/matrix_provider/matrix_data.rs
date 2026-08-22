@@ -159,17 +159,17 @@ where
     /// # Arguments
     ///
     /// * `constraints`: Column major constraint matrix. These are all the equality, range, upper
-    /// and lower constraints, and they should be sorted in that order.
+    ///   and lower constraints, and they should be sorted in that order.
     /// * `b`: The problem's right hand side. Should have a value for each row in `constraints`.
     /// * `ranges`: Range values, one for each range constraint. Should be at least non negative and
-    /// preferably positive, as one extra row is introduced for each of these elements.
+    ///   preferably positive, as one extra row is introduced for each of these elements.
     /// * `nr_equality_constraints`: Number of equality (`==`) constraints.
     /// * `nr_range_constraints`: Number of range (`=r=`) constraints.
     /// * `nr_upper_bounded_constraints`: Number of upper bounded (`<=`) constraints.
     /// * `nr_lower_bounded_constraints`: Number of lower bounded(`>=`) constraints.
     /// * `variables`: All the non slack variables in the problem (ideally, all slack values are
-    /// presolved out). Lower bounds should all be equal to zero, the upper bound is optional and
-    /// will be represented by this matrix.
+    ///   presolved out). Lower bounds should all be equal to zero, the upper bound is optional and
+    ///   will be represented by this matrix.
     #[must_use]
     pub fn new(
         constraints: &'a SparseMatrix<F, F, ColumnMajor>,
@@ -525,9 +525,13 @@ where
     }
 }
 
+/// Consuming iterator for [`Column`], mirroring its variants.
 pub enum ColumnIntoIterator<F> {
+    /// Iterates over the constraint values and the optional slack value.
     Sparse(Chain<std::vec::IntoIter<SparseTuple<F>>, std::option::IntoIter<SparseTuple<F>>>),
+    /// Iterates over a single slack value.
     Slack(Once<SparseTuple<F>>),
+    /// Iterates over two slack values.
     TwoSlack(Chain<Once<SparseTuple<F>>, Once<SparseTuple<F>>>),
 }
 
@@ -592,10 +596,14 @@ impl<F> Iterator for ColumnIntoIterator<F> {
     }
 }
 
+/// Borrowing iterator for [`Column`], mirroring its variants.
 #[derive(Clone)]
 pub enum ColumnIterator<'a, F> {
+    /// Iterates over the constraint values and the optional slack value.
     Sparse(Chain<SparseSliceIterator<'a, F>, SparseOptionIterator<'a, F>>),
+    /// Iterates over a single slack value.
     Slack(Once<SparseTuple<&'a F>>),
+    /// Iterates over two slack values.
     TwoSlack(Chain<Once<SparseTuple<&'a F>>, Once<SparseTuple<&'a F>>>),
 }
 

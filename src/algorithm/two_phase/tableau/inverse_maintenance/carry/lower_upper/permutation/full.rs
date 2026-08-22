@@ -43,8 +43,8 @@ impl Full {
     /// # Arguments
     ///
     /// * `n`: Number of elements in the permutation. Sometimes, this variable is saved as a field
-    /// for debug assertions only, while sometimes, it is also necessary to determine the
-    /// permutation.
+    ///   for debug assertions only, while sometimes, it is also necessary to determine the
+    ///   permutation.
     pub fn identity(n: usize) -> Self {
         Self {
             forward: (0..n).collect(),

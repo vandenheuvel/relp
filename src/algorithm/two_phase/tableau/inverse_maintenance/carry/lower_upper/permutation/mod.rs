@@ -89,7 +89,7 @@ pub trait Permutation {
     /// # Arguments
     ///
     /// * `items`: Slice of `(index, value)` tuples that will be mutated in place. Does not need to
-    /// be sorted.
+    ///   be sorted.
     fn forward_unsorted<T>(&self, items: &mut [(usize, T)]) {
         debug_assert!(items.iter().all(|&(i, _)| i < self.len()));
 
@@ -106,7 +106,7 @@ pub trait Permutation {
     /// # Arguments
     ///
     /// * `items`: Slice of `(index, value)` tuples that will be mutated in place. Does not need to
-    /// be sorted.
+    ///   be sorted.
     fn backward_unsorted<T>(&self, items: &mut [(usize, T)]) {
         debug_assert!(items.iter().all(|&(i, _)| i < self.len()));
 

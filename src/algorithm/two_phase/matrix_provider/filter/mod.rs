@@ -27,7 +27,7 @@ pub trait ToFiltered: MatrixProvider {
     /// # Arguments
     ///
     /// * `rows_to_filter`: Indices of rows to remove from the problem. Indices are relative to the
-    /// original problem.
+    ///   original problem.
     fn to_filtered(&self, rows_to_filter: Vec<usize>) -> Self::Filtered<'_>;
 }
 
@@ -41,6 +41,6 @@ pub trait IntoFiltered: MatrixProvider {
     /// # Arguments
     ///
     /// * `rows_to_filter`: Indices of rows to remove from the problem. Indices are relative to the
-    /// original problem.
+    ///   original problem.
     fn into_filtered(self, rows_to_filter: Vec<usize>) -> Self::Filtered;
 }

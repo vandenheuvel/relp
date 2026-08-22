@@ -161,7 +161,7 @@ fn compute_variable_info<
 /// If there is a trivial infeasibility (a variable has no feasible values).
 /// TODO(CORRECTNESS): Consider changing this into an "this LP is infeasible" return type
 fn process_bounds<FI, FO: From<FI> + Zero + One + Ord + Clone>(
-    variable_info: &mut Vec<ShiftedVariable<FO>>,
+    variable_info: &mut [ShiftedVariable<FO>],
     bounds: Vec<Bound<FI>>,
 ) -> Result<(), Inconsistency> {
     // Variables should not have existing bounds in them, because a default bound will be substituted
@@ -289,7 +289,7 @@ fn process_bound<FI, FO: From<FI> + Ord + Zero + One + Clone>(
 /// * `option`: Bound value that will potentially be added or changed.
 /// * `new_value`: Candidate value.
 /// * `ordering`: Whether the new value should be smaller or larger than the existing bound value in
-/// order for the bound to be changed (new w.r.t. old).
+///   order for the bound to be changed (new w.r.t. old).
 fn replace_existing_with<OF: Ord>(option: &mut Option<OF>, new_value: OF, ordering: Ordering) {
     // Nothing would change if they would need to be equal, so this doesn't make sense.
     debug_assert_ne!(ordering, Ordering::Equal);
@@ -310,7 +310,7 @@ fn replace_existing_with<OF: Ord>(option: &mut Option<OF>, new_value: OF, orderi
 /// * `variables`: Variables with some bounds processed and default bounds not yet substituted.
 /// * `needs_lower_bound`: Whether the variable at that index needs a lower bound.
 fn fill_in_default_lower_bounds<F: Zero>(
-    variables: &mut Vec<ShiftedVariable<F>>,
+    variables: &mut [ShiftedVariable<F>],
     needs_lower_bound: Vec<bool>,
 ) {
     debug_assert_eq!(variables.len(), needs_lower_bound.len());
@@ -425,7 +425,7 @@ fn compute_ranges<F: PartialEq>(
 ///
 /// * `rows`: Contains the constraint types without ranges applied.
 /// * `ranges`: Tuples with (row index, r value) indicating where an extra range constraint should
-/// be created.
+///   be created.
 ///
 /// # Return value
 ///

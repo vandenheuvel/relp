@@ -164,7 +164,7 @@ impl<R: NonZeroFactorizable<Power = i32>> GeneralFormFactorization<R> {
     /// procedure.
     fn solve_single(
         &mut self,
-        row_major_constraint_index: &Vec<Vec<(usize, usize)>>,
+        row_major_constraint_index: &[Vec<(usize, usize)>],
     ) -> (R::Factor, ((R::Power, Vec<R::Power>), Vec<R::Power>)) {
         // The changes in power, the return values
         let mut cost_change = 0;
@@ -245,7 +245,7 @@ impl<R: NonZeroFactorizable<Power = i32>> GeneralFormFactorization<R> {
         &self,
         variable: usize,
         cost_change: &R::Power,
-        constraint_changes: &Vec<R::Power>,
+        constraint_changes: &[R::Power],
         column_change: &mut R::Power,
         row_queue: &mut FIFOSet<RowToIncrement>,
     ) {
@@ -330,9 +330,9 @@ impl<R: NonZeroFactorizable<Power = i32>> GeneralFormFactorization<R> {
         &self,
         row: usize,
         row_change: &mut R::Power,
-        column_changes: &Vec<R::Power>,
+        column_changes: &[R::Power],
         column_queue: &mut FIFOSet<usize>,
-        row_major_constraint_index: &Vec<Vec<(usize, usize)>>,
+        row_major_constraint_index: &[Vec<(usize, usize)>],
     ) {
         let (bound_weight, constraint_weight) = self.relative_column_weight();
 
@@ -424,7 +424,7 @@ impl<R: NonZeroFactorizable<Power = i32>> GeneralFormFactorization<R> {
     fn do_cost(
         &self,
         change: &mut R::Power,
-        column_changes: &Vec<R::Power>,
+        column_changes: &[R::Power],
         column_queue: &mut FIFOSet<usize>,
     ) {
         let (_, constraint_weight) = self.relative_column_weight();
@@ -507,10 +507,10 @@ impl<R: NonZeroFactorizable<Power = i32>> GeneralFormFactorization<R> {
     /// The following weighting scheme was considered, but in practice not effective:
     ///
     /// > Call the number of constraints `m`, the number of variables `n`. A typical problem has
-    /// (much) more columns than constraints, so `m << n`. Columns will on average be in the basis
-    /// in `m` out of `n` times, so we weigh the cost of having prime factors in those columns
-    /// accordingly: weight `n` for the rhs column and smaller weight `m` for the constraint
-    /// columns.
+    /// > (much) more columns than constraints, so `m << n`. Columns will on average be in the basis
+    /// > in `m` out of `n` times, so we weigh the cost of having prime factors in those columns
+    /// > accordingly: weight `n` for the rhs column and smaller weight `m` for the constraint
+    /// > columns.
     ///
     /// Instead, right-hand side and normal columns are weight equally.
     ///

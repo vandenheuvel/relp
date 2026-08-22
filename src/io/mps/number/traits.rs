@@ -7,5 +7,6 @@ use std::ops::{Neg, Sub};
 use num_traits::{One, Zero};
 use relp_num::Abs;
 
+/// Operations needed on number types while parsing and converting MPS structures.
 pub trait Field =
     Zero + One + Neg<Output = Self> + Sub<Output = Self> + Abs + Eq + Ord + Debug + Display + Clone;

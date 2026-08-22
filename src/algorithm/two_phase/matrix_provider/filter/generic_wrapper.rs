@@ -78,7 +78,7 @@ where
     /// # Arguments
     ///
     /// * `provider`: Reference to an instance implementing the `MatrixProvider` trait. Rows from
-    /// this provider will be removed.
+    ///   this provider will be removed.
     /// * `rows_to_skip`: A **sorted** list of rows that are skipped.
     ///
     /// # Return value
@@ -107,7 +107,7 @@ where
     /// # Arguments
     ///
     /// * `provider`: Reference to an instance implementing the `MatrixProvider` trait. Rows from
-    /// this provider will be removed.
+    ///   this provider will be removed.
     /// * `rows_to_skip`: A **sorted** list of rows that are skipped.
     ///
     /// # Return value
@@ -131,7 +131,7 @@ where
     /// # Arguments
     ///
     /// * `i`: Index of row in the version of the problem from which rows were removed (this
-    /// struct).
+    ///   struct).
     ///
     /// # Return value
     ///
@@ -148,7 +148,7 @@ where
     /// # Arguments
     ///
     /// * `i`: Index of row in the version of the problem from which rows were removed (this
-    /// struct).
+    ///   struct).
     pub fn delete_row(&mut self, i: usize) {
         debug_assert!(i < self.provider.nr_rows() - self.rows_to_skip.len());
 

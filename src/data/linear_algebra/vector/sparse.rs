@@ -58,6 +58,7 @@ impl<F, C> Sparse<F, C>
 where
     F: ColumnNumber,
 {
+    /// Iterate over the nonzero index-value tuples of this vector.
     pub fn iter(&self) -> SparseSliceIterator<'_, F> {
         SparseSliceIterator::new(&self.data)
     }
@@ -145,9 +146,9 @@ where
     /// # Arguments
     ///
     /// * `i`: Index of the value. New tuple will be inserted, potentially causing many values to
-    /// be shifted.
+    ///   be shifted.
     /// * `value`: Value to be taken at index `i`. Should not be very close to zero to avoid
-    /// memory usage and numerical error build-up.
+    ///   memory usage and numerical error build-up.
     fn set(&mut self, i: usize, value: F) {
         debug_assert!(i < self.len);
         debug_assert!(value.borrow().is_not_zero());
@@ -253,7 +254,7 @@ where
     /// # Arguments
     ///
     /// * `i`: Only index where there should be a 1. Note that indexing starts at zero, and runs
-    /// until (not through) `len`.
+    ///   until (not through) `len`.
     /// * `len`: Size of the `SparseVector`.
     #[must_use]
     pub fn standard_basis_vector(i: usize, len: usize) -> Self
@@ -321,7 +322,7 @@ where
     /// # Arguments
     ///
     /// * `i`: Index of the value. New tuple will be inserted, potentially causing many values to
-    /// be shifted.
+    ///   be shifted.
     /// * `value`: Value to be taken at index `i`.
     pub fn shift_value<G>(&mut self, i: usize, value: G)
     where
@@ -406,6 +407,7 @@ where
     for<'r> &'r F: Mul<&'r F, Output = F>,
     F: Sum,
 {
+    /// Inner product of this vector with itself.
     pub fn squared_norm(&self) -> F {
         self.data.iter().map(|(_, value)| value * value).sum()
     }

@@ -75,7 +75,7 @@ fn conversion_pipeline() {
 
     // Get to a basic feasible solution
     let feasibility_result =
-        phase_one::primal::<_, _, MatrixData<T>, FirstProfitable>(artificial_tableau_form_computed);
+        phase_one::primal::<_, _, FirstProfitable>(artificial_tableau_form_computed);
     let mut tableau_form_computed = match feasibility_result {
         RankedFeasibilityResult::Feasible {
             rank,
@@ -350,7 +350,7 @@ pub fn create_matrix_data_data() -> (
 pub fn matrix_data_form<'a>(
     constraints: &'a SparseMatrix<T, T, ColumnMajor>,
     b: &'a DenseVector<T>,
-    variables: &'a Vec<Variable<T>>,
+    variables: &'a [Variable<T>],
 ) -> MatrixData<'a, T> {
     MatrixData::new(constraints, b, vec![], 1, 0, 0, 1, variables)
 }

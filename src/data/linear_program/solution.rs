@@ -29,7 +29,7 @@ impl<F: PartialEq + Clone> Solution<F> {
     ///
     /// * `objective`: Objective function value
     /// * `solution_values`: Names and values of variables as they appeared in the original problem (presolved variables
-    /// included).
+    ///   included).
     pub fn new(objective: F, solution_values: Vec<(String, F)>) -> Self {
         Self {
             objective_value: objective,

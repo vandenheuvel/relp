@@ -61,7 +61,7 @@ pub trait Artificial: Kind<Column: Identity, Cost = Cost> {
 ///
 /// Most of these functions get called in the artificial simplex method, or the method that removes
 /// artificial variables from the problem at zero level.
-impl<'provider, IM, A> Tableau<IM, A>
+impl<IM, A> Tableau<IM, A>
 where
     IM: InverseMaintainer,
     A: Artificial,
@@ -115,7 +115,7 @@ where
     }
 }
 
-impl<'provider, IM, A> Tableau<IM, A>
+impl<IM, A> Tableau<IM, A>
 where
     A: Artificial,
 {
