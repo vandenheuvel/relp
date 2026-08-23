@@ -3,6 +3,7 @@
 //! Presolving needs to walk both rows and columns, and it needs to remove and occasionally change
 //! coefficients. This module provides a representation that supports all three.
 use std::mem;
+use std::ops::MulAssign;
 
 use num_traits::Zero;
 
@@ -102,6 +103,22 @@ impl<F> Matrix<F> {
         list.binary_search_by_key(&(needle as u32), |entry| entry.minor)
             .ok()
             .map(|position| &self.values[list[position].element as usize])
+    }
+}
+
+impl<F> Matrix<F>
+where
+    for<'r> F: MulAssign<&'r F>,
+{
+    /// Multiply every coefficient of a row by a value that is not zero.
+    ///
+    /// Which coefficients a row has does not change, so neither list is touched: only the values
+    /// the two of them point at.
+    pub fn scale_row(&mut self, row: usize, factor: &F) {
+        for position in 0..self.rows[row].len() {
+            let element = self.rows[row][position].element as usize;
+            self.values[element] *= factor;
+        }
     }
 }
 

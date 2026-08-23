@@ -70,6 +70,8 @@ pub struct Queues {
     pub doubleton_equation: Queue<usize>,
     /// Rows, and the activity end, worth propagating from.
     pub activity: Queue<(usize, BoundDirection)>,
+    /// Rows whose numbers changed, and so may have fractions to clear.
+    pub row_scaling: Queue<usize>,
 }
 
 impl Queues {
@@ -83,5 +85,6 @@ impl Queues {
             && self.implied_free_singleton.is_empty()
             && self.doubleton_equation.is_empty()
             && self.activity.is_empty()
+            && self.row_scaling.is_empty()
     }
 }

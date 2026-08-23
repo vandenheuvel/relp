@@ -18,7 +18,7 @@ use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
-use relp::data::linear_program::general_form::Presolved;
+use relp::data::linear_program::general_form::{Presolved, Solved};
 use relp::io::import;
 
 /// # Generation and execution
@@ -60,13 +60,12 @@ fn test(file_name: &str, objective: f64, tolerance: f64) {
         "this instance is not expected to be settled by presolving alone",
     );
     let constraint_type_counts = general.standardize();
-    let data = general.derive_matrix_data(constraint_type_counts);
-    let result = data.solve_relaxation::<Carry<S, BasisInverseRows<_>>>();
+    let narrowed = general.narrow(constraint_type_counts);
+    let result = narrowed.solve_relaxation::<Carry<S, BasisInverseRows<_>>>();
 
     match result {
-        OptimizationResult::FiniteOptimum(solution) => {
-            let reconstructed = data.reconstruct_solution(solution.primal);
-            let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
+        Solved::Optimum(optimum) => {
+            let solution = general.compute_full_solution_with_reduced_solution(optimum.primal);
 
             // TODO(CORRECTNESS): Make this a relative error check.
             assert!((solution.objective_value - RB!(objective)).abs() < RB!(tolerance));

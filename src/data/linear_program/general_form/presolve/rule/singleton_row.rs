@@ -85,8 +85,8 @@ where
         };
 
         // The row goes first, so that the bounds are not derived from a row that still claims to
-        // constrain the variable. That leaves nothing for `tighten_bound` to read the row from, but
-        // a row with one coefficient is no trouble to write down.
+        // constrain the variable. That leaves nothing for `set_bound` to read the row from, but a
+        // row with one coefficient is no trouble to write down.
         let origin = BoundOrigin::Activity {
             row,
             coefficient: coefficient.clone(),
@@ -102,14 +102,10 @@ where
             right_hand_side,
         });
 
+        // The row is gone, so these bounds are all that is left of it. There is nothing to weigh
+        // here: they are not an improvement on the row, they are the row.
         for (direction, value) in implied {
-            reducer.tighten_bound_from(
-                column,
-                direction,
-                value,
-                Origin::Given(origin.clone()),
-                Self::ID,
-            )?;
+            reducer.set_bound(column, direction, value, Origin::Given(origin.clone()), Self::ID)?;
         }
         reducer.enqueue_column(column);
 

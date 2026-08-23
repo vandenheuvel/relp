@@ -7,7 +7,7 @@ use relp::algorithm::two_phase::matrix_provider::MatrixProvider;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
-use relp::data::linear_program::general_form::{GeneralForm, Presolved};
+use relp::data::linear_program::general_form::{GeneralForm, Presolved, Solved};
 use relp::io::import;
 
 use crate::cook::get_test_file_path;
@@ -27,13 +27,12 @@ fn small_example() {
         "this instance is not expected to be settled by presolving alone",
     );
     let constraint_type_counts = general.standardize();
-    let data = general.derive_matrix_data(constraint_type_counts);
-    let result = data.solve_relaxation::<Carry<RationalBig, LUDecomposition<_>>>();
+    let narrowed = general.narrow(constraint_type_counts);
+    let result = narrowed.solve_relaxation::<Carry<RationalBig, LUDecomposition<_>>>();
 
     match result {
-        OptimizationResult::FiniteOptimum(optimum) => {
-            let reconstructed = data.reconstruct_solution(optimum.primal);
-            let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
+        Solved::Optimum(optimum) => {
+            let solution = general.compute_full_solution_with_reduced_solution(optimum.primal);
             original
                 .verify_solution(&solution)
                 .expect("the solution has to solve the problem that was read");

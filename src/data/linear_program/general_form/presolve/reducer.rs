@@ -4,6 +4,10 @@
 //! problem, the record of what has been done, the work lists and the activity bookkeeping in step
 //! with each other. Getting that bookkeeping right in one place, rather than in each rule, is what
 //! keeps the rules readable.
+//!
+//! Nothing here weighs what a rule asks for against what it costs, with the one exception of
+//! [`Reducer::weigh_bound`], which a rule calls to make up its mind and not to be overruled after
+//! it has. See the invariant in [`rule`](super::rule).
 use std::ops::Neg;
 
 use relp_num::{OrderedField, OrderedFieldRef};
@@ -24,21 +28,24 @@ use crate::data::linear_program::general_form::presolve::queues::Queues;
 use crate::data::linear_program::general_form::presolve::rule::{RuleId, Stop};
 use crate::data::linear_program::general_form::presolve::statistics::Statistics;
 
-/// What happened to a bound that a rule offered.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BoundChange<F> {
-    /// The bound already there was at least as tight.
-    None,
-    /// There was no bound in that direction before.
-    Added,
-    /// The bound moved, by this much.
-    Tightened(F),
+/// What a bound a rule is considering is worth.
+///
+/// The answer to the only question a limit is ever asked, and it is asked before the rule has
+/// touched anything. See [`Reducer::weigh_bound`].
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Worth {
+    /// Worth writing: the variable has no bound that way yet, or this one is tighter by enough.
+    Adopt,
+    /// Nothing to write: what is there is at least as tight. Not a refusal; there is no news.
+    Nothing,
+    /// Tighter, but not by enough to pay for the numbers it would bring.
+    NotEnough,
 }
 
-/// Where a rule says a bound it is offering came from.
+/// Where a rule says a bound it is writing came from.
 ///
 /// Distinct from [`BoundOrigin`], which is what ends up in the record: the row variant is resolved
-/// into a copy of the row here, and only for a bound that is actually adopted.
+/// into a copy of the row here, and only for a bound that is actually written.
 pub enum Origin<F> {
     /// Read off the activity of a row that is still part of the problem.
     Row(usize),
@@ -88,11 +95,7 @@ where
             limits,
             allow_dual_reductions,
             statistics: Statistics {
-                before: crate::data::linear_program::general_form::presolve::statistics::ProblemSize {
-                    rows: nr_rows,
-                    columns: nr_columns,
-                    nonzeros: problem.matrix.nonzeros(),
-                },
+                before: problem.size(),
                 ..Statistics::default()
             },
             unbounded_if_feasible: None,
@@ -126,6 +129,11 @@ where
         if !self.problem.rows[row].is_active {
             return;
         }
+
+        // Every path that changes a row's numbers ends here, which is what makes this the place to
+        // ask whether the row is still written the smallest way. A row that already is costs one
+        // pass over it to establish that.
+        self.queues.row_scaling.push(row);
 
         match self.problem.matrix.row_len(row) {
             0 => self.queues.empty_row.push(row),
@@ -192,83 +200,117 @@ where
         }
     }
 
-    /// Offer a bound read off the activity of a row.
+    /// Round a bound of an integer variable inwards, when that is what this is.
     ///
-    /// The row has to still be part of the problem: what makes the bound undoable on the dual side
-    /// is a copy of the row as it stands, and that copy is only taken once the bound is accepted.
-    pub fn tighten_bound(
-        &mut self,
-        column: usize,
-        direction: BoundDirection,
-        value: F,
-        implied_by: usize,
-        rule: RuleId,
-    ) -> Result<BoundChange<F>, Stop> {
-        self.tighten_bound_from(column, direction, value, Origin::Row(implied_by), rule)
+    /// `None` when nothing needs rounding, so that the continuous case costs no clone.
+    fn integral(&self, column: usize, direction: BoundDirection, value: &F) -> Option<F> {
+        if !RESPECT_INTEGRALITY
+            || self.problem.columns[column].variable_type != VariableType::Integer
+        {
+            return None;
+        }
+
+        Some(match direction {
+            BoundDirection::Lower => value.ceil(),
+            BoundDirection::Upper => value.floor(),
+        })
     }
 
-    /// Offer a bound, adopting it if it is tighter than what is there.
+    /// What a bound would be worth, asked before a rule commits to anything.
     ///
-    /// This is the single place a variable bound changes. Everything that has to happen alongside
-    /// happens here: rounding for integer variables, the check that the two bounds have not
-    /// crossed, the record for postsolve, invalidating the activity of every row the variable is
-    /// in, and putting those rows back on the work lists.
-    pub fn tighten_bound_from(
+    /// This is the only place a limit may say no, and the only rule that asks is one whose whole
+    /// reduction *is* the bound: the row it read the bound off stays in the problem, so declining
+    /// costs a reduction and nothing else. A rule that is removing the row or the column the bound
+    /// stands in for does not ask, because for it the bound is not an improvement to weigh but the
+    /// place what is being removed now lives. See [`Reducer::set_bound`].
+    pub fn weigh_bound(&self, column: usize, direction: BoundDirection, value: &F) -> Worth {
+        let rounded = self.integral(column, direction, value);
+        let value = rounded.as_ref().unwrap_or(value);
+
+        let Some(existing) = self.problem.columns[column].bound(direction) else {
+            // A variable that was unbounded that way is not: news of a kind no threshold has a
+            // scale to weigh, and not a link in a chain of ever smaller improvements.
+            return Worth::Adopt;
+        };
+
+        let is_tighter = match direction {
+            BoundDirection::Lower => value > existing,
+            BoundDirection::Upper => value < existing,
+        };
+        if !is_tighter {
+            return Worth::Nothing;
+        }
+
+        // A chain of ever smaller improvements converges without terminating, and every link makes
+        // the numbers bigger. Both limits below cut such a chain off: one by its length, one by
+        // how little each link buys.
+        let links = match direction {
+            BoundDirection::Lower => self.tightenings[column].0,
+            BoundDirection::Upper => self.tightenings[column].1,
+        };
+        if links >= self.limits.max_bound_tightenings {
+            return Worth::NotEnough;
+        }
+
+        if !self.is_worth_adopting(column, &(value - existing)) {
+            return Worth::NotEnough;
+        }
+
+        Worth::Adopt
+    }
+
+    /// Write a bound, because a rule has decided to.
+    ///
+    /// This is the single place a variable bound changes, and it weighs nothing: whether the rule
+    /// was worth running was settled before it touched the problem, and a rule that has started is
+    /// a rule that finishes. What happens here is everything that has to happen alongside a bound
+    /// that moves: rounding for integer variables, the check that the two bounds have not crossed,
+    /// the record for postsolve, invalidating the activity of every row the variable is in, and
+    /// putting those rows back on the work lists.
+    ///
+    /// A bound no tighter than the one already there is not written. That is not a refusal: what
+    /// the rule is saying is already being said, and more strongly, by what is there.
+    pub fn set_bound(
         &mut self,
         column: usize,
         direction: BoundDirection,
         value: F,
         origin: Origin<F>,
         rule: RuleId,
-    ) -> Result<BoundChange<F>, Stop> {
+    ) -> Result<(), Stop> {
         debug_assert!(self.problem.columns[column].is_active);
 
-        let value = if RESPECT_INTEGRALITY
-            && self.problem.columns[column].variable_type == VariableType::Integer
-        {
-            match direction {
-                BoundDirection::Lower => value.ceil(),
-                BoundDirection::Upper => value.floor(),
-            }
-        } else {
-            value
+        let value = match self.integral(column, direction, &value) {
+            Some(rounded) => rounded,
+            None => value,
         };
 
-        let existing = self.problem.columns[column].bound(direction);
-        let change = match existing {
-            None => BoundChange::Added,
+        let old = self.problem.columns[column].bound(direction).cloned();
+        let was_added = match &old {
+            None => true,
             Some(existing) => {
                 let is_tighter = match direction {
                     BoundDirection::Lower => &value > existing,
                     BoundDirection::Upper => &value < existing,
                 };
                 if !is_tighter {
-                    return Ok(BoundChange::None);
+                    return Ok(());
                 }
-
-                let difference = &value - existing;
-                if !self.is_worth_adopting(column, &difference) {
-                    return Ok(BoundChange::None);
-                }
-                BoundChange::Tightened(difference)
+                false
             }
         };
 
-        // A chain of ever smaller improvements converges without terminating, and every link makes
-        // the numbers bigger. Count the links and stop.
-        if matches!(change, BoundChange::Tightened(_)) {
-            let counter = match direction {
-                BoundDirection::Lower => &mut self.tightenings[column].0,
-                BoundDirection::Upper => &mut self.tightenings[column].1,
-            };
-            if *counter >= self.limits.max_bound_tightenings {
-                self.statistics.per_rule[rule].budget_refusals += 1;
-                return Ok(BoundChange::None);
+        // The length of the chain [`Reducer::weigh_bound`] cuts off. A bound written for a rule
+        // that removed a row or a column is counted like any other, but it is not a link in such a
+        // chain: there are at most as many of those as the problem has rows and columns.
+        if !was_added {
+            match direction {
+                BoundDirection::Lower => self.tightenings[column].0 += 1,
+                BoundDirection::Upper => self.tightenings[column].1 += 1,
             }
-            *counter += 1;
         }
 
-        // Only now that the bound is going to be adopted is the row worth copying.
+        // Only now that the bound is going to be written is the row worth copying.
         let origin = match origin {
             Origin::Substitution => BoundOrigin::Substitution,
             Origin::Row(row) => BoundOrigin::Activity {
@@ -289,7 +331,6 @@ where
             Origin::Given(origin) => origin,
         };
 
-        let old = self.problem.columns[column].bound(direction).cloned();
         *self.problem.columns[column].bound_mut(direction) = Some(value.clone());
         self.postsolve.push(Reduction::BoundTightened {
             column,
@@ -307,8 +348,8 @@ where
             return Err(Stop::Infeasible);
         }
 
-        self.after_bound_change(column, direction, matches!(change, BoundChange::Added));
-        Ok(change)
+        self.after_bound_change(column, direction, was_added);
+        Ok(())
     }
 
     /// Whether a tightening buys enough to be worth the bigger numbers it costs.
@@ -388,6 +429,33 @@ where
         self.statistics.per_rule[rule].rows_changed += 1;
 
         // The relation changed, so what the activity has to be compared against changed with it.
+        self.activity.invalidate(row);
+        self.enqueue_row(row);
+    }
+
+    /// Multiply a row through by a positive factor.
+    ///
+    /// The row admits exactly the points it did before, so no rule has to reconsider anything and
+    /// no primal value changes. What changes is the size of the numbers, and what a multiplier for
+    /// the row means, which is what the record is for.
+    pub fn scale_row(&mut self, row: usize, factor: F, rule: RuleId) {
+        debug_assert!(self.problem.rows[row].is_active);
+        debug_assert!(factor > F::zero(), "a row may only be scaled by a positive factor");
+        debug_assert!(!factor.is_one(), "scaling a row by one is not a reduction");
+
+        self.problem.matrix.scale_row(row, &factor);
+
+        let constraint = &mut self.problem.rows[row];
+        constraint.right_hand_side *= &factor;
+        if let RangedConstraintRelation::Range(range) = &mut constraint.relation {
+            *range *= &factor;
+        }
+
+        self.postsolve.push(Reduction::RowScaled { row, factor });
+        self.statistics.per_rule[rule].rows_scaled += 1;
+
+        // The activity of this row moved by the same factor, but what is cached is a value rather
+        // than a formula, so it is dropped instead of scaled.
         self.activity.invalidate(row);
         self.enqueue_row(row);
     }

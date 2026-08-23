@@ -164,6 +164,20 @@ fn test_FINNIS() {
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-3));
 }
 
+/// The bounds of a variable substituted away by a doubleton equation.
+///
+/// The equality that removes a variable leaves its bounds behind on the one it was written in
+/// terms of. That transplanted bound is the only thing still holding the removed variable inside
+/// its own bounds, so a run that drops it answers a weaker problem than the one it was given.
+#[test]
+fn test_GANGES() {
+    let result = solve("GANGES");
+    // The value the netlib README tabulates, -1.0958636356E+05, is contradicted by both solvers
+    // in its own comparison table, and is 6.3e-1 away from the optimum certified here.
+    let expected = -1.095_857_361_292_781_2e5; // Certified exactly; cf. netlib README line 326
+    assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-6));
+}
+
 #[test]
 #[ignore = "Too computationally intensive."]
 fn test_GREENBEA() {

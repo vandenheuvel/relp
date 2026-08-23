@@ -25,8 +25,15 @@ use crate::data::linear_program::general_form::presolve::{
 };
 use crate::data::linear_program::solution::Solution;
 
-pub use presolve::{BoundOrigin, Limits, Postsolve, Presolved, Reduction, RuleId, Statistics};
+pub use narrow::{
+    Narrowable, Narrowed, Reads, ReadsNarrowed, Solved, StandardizedSolution, Width,
+};
+pub use presolve::{
+    BoundOrigin, Limits, Postsolve, Presolved, ProblemSize, Reduction, RuleId, RuleStatistics,
+    Statistics,
+};
 
+mod narrow;
 mod presolve;
 
 /// A linear program in general form.
@@ -548,9 +555,11 @@ where
         let PresolveReducer {
             problem,
             mut postsolve,
-            statistics,
+            mut statistics,
             ..
         } = reducer;
+
+        statistics.after = problem.size();
 
         let surviving_rows = (0..problem.rows.len())
             .filter(|&row| problem.rows[row].is_active)

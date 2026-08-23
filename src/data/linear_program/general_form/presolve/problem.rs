@@ -11,6 +11,8 @@ use crate::data::linear_program::elements::{
 };
 use crate::data::linear_program::general_form::GeneralForm;
 use crate::data::linear_program::general_form::presolve::matrix::Matrix;
+use crate::data::linear_program::general_form::presolve::simplify::Simplify;
+use crate::data::linear_program::general_form::presolve::statistics::ProblemSize;
 
 /// A constraint, without its coefficients.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,6 +121,57 @@ where
                 .collect(),
             objective: general_form.objective,
             fixed_cost: general_form.fixed_cost.clone(),
+        }
+    }
+
+    /// How large the problem is, as it stands.
+    ///
+    /// The encoding size covers everything a solver would have to be handed: the coefficients, the
+    /// right hand sides and ranges, the costs and the bounds. `None` when the number type cannot
+    /// measure itself, in which case the counts are all there is to compare.
+    pub fn size(&self) -> ProblemSize {
+        let rows = self.rows.iter().filter(|row| row.is_active).count();
+        let columns = self
+            .columns
+            .iter()
+            .filter(|column| column.is_active)
+            .count();
+
+        let mut bits = Some(0_u64);
+        let mut add = |value: &F| {
+            if let Some(total) = bits {
+                bits = Simplify::encoding_bits(value).map(|value| total + value);
+            }
+        };
+
+        add(&self.fixed_cost);
+        for row in 0..self.matrix.nr_rows() {
+            if !self.rows[row].is_active {
+                continue;
+            }
+            for (_, coefficient) in self.matrix.row(row) {
+                add(coefficient);
+            }
+            add(&self.rows[row].right_hand_side);
+            if let RangedConstraintRelation::Range(range) = &self.rows[row].relation {
+                add(range);
+            }
+        }
+        for column in self.columns.iter().filter(|column| column.is_active) {
+            add(&column.cost);
+            if let Some(bound) = &column.lower_bound {
+                add(bound);
+            }
+            if let Some(bound) = &column.upper_bound {
+                add(bound);
+            }
+        }
+
+        ProblemSize {
+            rows,
+            columns,
+            nonzeros: self.matrix.nonzeros(),
+            encoding_bits: bits,
         }
     }
 

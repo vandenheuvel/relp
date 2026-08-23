@@ -21,13 +21,20 @@ pub struct RuleStatistics {
     pub misses: u64,
     /// Places the rule changed something.
     pub applications: u64,
-    /// Places the rule was not allowed to try, because a limit was reached.
+    /// Places the rule decided against, because a limit said the reduction was not worth what it
+    /// costs. Always a decision taken before anything was changed.
     pub budget_refusals: u64,
 
+    /// Rows the rule took out of the problem.
     pub rows_removed: u64,
+    /// Columns the rule took out of the problem.
     pub columns_removed: u64,
+    /// Variable bounds the rule moved inwards.
     pub bounds_tightened: u64,
+    /// Rows whose relation or right hand side the rule changed.
     pub rows_changed: u64,
+    /// Rows the rule wrote over a common denominator.
+    pub rows_scaled: u64,
     /// Coefficients the rule created. The cost side of a substitution.
     pub nonzeros_created: u64,
 }
@@ -48,6 +55,12 @@ pub struct ProblemSize {
     pub columns: usize,
     /// Number of coefficients in the constraint matrix.
     pub nonzeros: usize,
+    /// Bits the constraint matrix, right hand sides and costs take to write down.
+    ///
+    /// `None` when the number type cannot say. This is the number that decides whether a reduction
+    /// earns its place in exact arithmetic: removing coefficients is not progress if the ones left
+    /// grew by more.
+    pub encoding_bits: Option<u64>,
 }
 
 /// What a presolve run did.

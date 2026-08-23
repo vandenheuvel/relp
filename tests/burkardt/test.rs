@@ -13,7 +13,7 @@ use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inver
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::data::linear_algebra::traits::Element;
-use relp::data::linear_program::general_form::{GeneralForm, Presolved};
+use relp::data::linear_program::general_form::{GeneralForm, Presolved, Solved};
 use relp::data::linear_program::solution::Solution;
 use relp::io::import;
 
@@ -46,13 +46,12 @@ fn adlittle() {
         "this instance is not expected to be settled by presolving alone",
     );
     let constraint_type_counts = general.standardize();
-    let data = general.derive_matrix_data(constraint_type_counts);
-    let result = data.solve_relaxation::<Carry<S, BasisInverseRows<_>>>();
+    let narrowed = general.narrow(constraint_type_counts);
+    let result = narrowed.solve_relaxation::<Carry<S, BasisInverseRows<_>>>();
 
     match result {
-        OptimizationResult::FiniteOptimum(solution) => {
-            let reconstructed = data.reconstruct_solution(solution.primal);
-            let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
+        Solved::Optimum(optimum) => {
+            let solution = general.compute_full_solution_with_reduced_solution(optimum.primal);
             assert_eq!(
                 solution.objective_value,
                 S::from_str("24975305659811992079614961229/120651674036153428931840").unwrap()

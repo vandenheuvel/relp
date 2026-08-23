@@ -6,17 +6,15 @@
 //! is no tolerance to hide a discrepancy behind.
 use relp_num::RationalBig;
 
-use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-use crate::algorithm::{OptimizationResult, SolveRelaxation};
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
 use crate::data::linear_algebra::vector::{DenseVector, Vector};
 use crate::data::linear_program::elements::{
     Objective, RangedConstraintRelation, VariableType,
 };
 use crate::data::linear_program::general_form::{
-    GeneralForm, Limits, Presolved, RuleId, Variable,
+    GeneralForm, Limits, Presolved, RuleId, Solved, Variable,
 };
 use crate::data::linear_program::solution::Solution;
 
@@ -26,7 +24,7 @@ type T = RationalBig;
 ///
 /// The values themselves are compared separately where that is meaningful; an optimal solution is
 /// not generally unique, but the optimal value is.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 enum Outcome {
     Optimum(T),
     Infeasible,
@@ -102,14 +100,17 @@ fn solve_with(mut general: GeneralForm<T>, limits: Option<Limits<T>>) -> Outcome
 }
 
 /// Solve a problem that has already been presolved, or that is not being presolved at all.
+///
+/// Through the narrowed problem rather than the wide one, so that every case this harness
+/// generates goes through the width choice and the scaling it does on the way in.
 fn solve_reduced(mut general: GeneralForm<T>) -> Outcome {
     let constraint_type_counts = general.standardize();
     let reduced = {
-        let data = general.derive_matrix_data(constraint_type_counts);
-        match data.solve_relaxation::<Carry<T, BasisInverseRows<_>>>() {
-            OptimizationResult::FiniteOptimum(solution) => data.reconstruct_solution(solution.primal),
-            OptimizationResult::Infeasible => return Outcome::Infeasible,
-            OptimizationResult::Unbounded => return Outcome::Unbounded,
+        let narrowed = general.narrow(constraint_type_counts);
+        match narrowed.solve_relaxation::<Carry<T, BasisInverseRows<_>>>() {
+            Solved::Optimum(solution) => solution.primal,
+            Solved::Infeasible => return Outcome::Infeasible,
+            Solved::Unbounded => return Outcome::Unbounded,
         }
     };
 
@@ -140,6 +141,19 @@ impl Rng {
     fn between(&mut self, lower: i64, upper: i64) -> i64 {
         lower + self.below((upper - lower + 1) as u64) as i64
     }
+    /// A value in `lower..=upper`, a quarter of the time over a small denominator.
+    ///
+    /// Data that is not integral is what several things here only have to deal with once it turns
+    /// up: `standardize` shifts by a variable's bound and puts the denominator into the right hand
+    /// side, and clearing the fractions of a row is a reduction of its own.
+    fn fraction(&mut self, lower: i64, upper: i64) -> T {
+        let numerator = self.between(lower, upper);
+        match self.below(4) {
+            0 => T::from((numerator, 2_i64)),
+            1 => T::from((numerator, 3_i64)),
+            _ => T::from(numerator),
+        }
+    }
 }
 
 /// Build a small linear program.
@@ -152,9 +166,19 @@ fn random_problem(rng: &mut Rng) -> GeneralForm<T> {
 
     let rows = (0..nr_constraints)
         .map(|_| {
-            (0..nr_variables)
-                .map(|_| rng.between(-2, 2))
-                .collect::<Vec<_>>()
+            let mut row = (0..nr_variables)
+                .map(|_| rng.fraction(-2, 2))
+                .collect::<Vec<_>>();
+
+            // A row of nothing but zeros is not a constraint, and handing one to the solver
+            // without presolving first reaches a defect of its own: a constraint matrix of rank
+            // zero leaves it with no rows at all, which it does not support. That is worth fixing
+            // and is nothing to do with presolving, which drops such a row on sight.
+            if row.iter().all(num_traits::Zero::is_zero) {
+                row[rng.below(nr_variables as u64) as usize] = T::from(1);
+            }
+
+            row
         })
         .collect::<Vec<_>>();
     let constraints = ColumnMajor::from_test_data::<T, T, _>(&rows, nr_variables);
@@ -164,14 +188,12 @@ fn random_problem(rng: &mut Rng) -> GeneralForm<T> {
             0 => RangedConstraintRelation::Equal,
             1 => RangedConstraintRelation::Less,
             2 => RangedConstraintRelation::Greater,
-            _ => RangedConstraintRelation::Range(T::from(rng.between(1, 3))),
+            _ => RangedConstraintRelation::Range(rng.fraction(1, 3)),
         })
         .collect();
 
     let b = DenseVector::new(
-        (0..nr_constraints)
-            .map(|_| T::from(rng.between(-4, 4)))
-            .collect(),
+        (0..nr_constraints).map(|_| rng.fraction(-4, 4)).collect(),
         nr_constraints,
     );
 
@@ -182,19 +204,20 @@ fn random_problem(rng: &mut Rng) -> GeneralForm<T> {
             // presolve ever sees it, so generating one would only test the reader.
             let (lower_bound, upper_bound) = match rng.below(4) {
                 0 => (None, None),
-                1 => (Some(rng.between(-3, 3)), None),
-                2 => (None, Some(rng.between(-3, 3))),
+                1 => (Some(rng.fraction(-3, 3)), None),
+                2 => (None, Some(rng.fraction(-3, 3))),
                 _ => {
-                    let lower = rng.between(-3, 3);
-                    (Some(lower), Some(lower + rng.between(0, 3)))
+                    let lower = rng.fraction(-3, 3);
+                    let upper = &lower + &rng.fraction(0, 3);
+                    (Some(lower), Some(upper))
                 }
             };
 
             Variable {
                 variable_type: VariableType::Continuous,
-                cost: T::from(rng.between(-3, 3)),
-                lower_bound: lower_bound.map(T::from),
-                upper_bound: upper_bound.map(T::from),
+                cost: rng.fraction(-3, 3),
+                lower_bound,
+                upper_bound,
                 shift: T::from(0),
                 flipped: false,
             }
@@ -291,6 +314,83 @@ fn presolve_respecting_integrality_preserves_the_outcome() {
     );
 }
 
+/// No limit may change the answer, only how much of it presolve got round to working out.
+///
+/// A limit says that a reduction is not worth what it costs. For that to be a statement about
+/// effort rather than about the problem, a rule it stops has to be stopped before it has begun:
+/// one cut off partway would leave a row removed and the bound that took its place unwritten,
+/// which is a problem that admits points the one that came in does not.
+///
+/// The settings below are chosen to be awkward rather than sensible. Each turns something down
+/// far enough that rules run into it constantly, so that a rule which can be interrupted is
+/// interrupted here.
+#[test]
+fn limits_do_not_change_the_outcome() {
+    const NR_PROBLEMS: u64 = 500;
+
+    let settings: Vec<(&str, Limits<T>)> = vec![
+        ("default", Limits::default()),
+        ("no tightening at all", Limits {
+            max_bound_tightenings: 0,
+            ..Limits::default()
+        }),
+        ("one tightening per bound", Limits {
+            max_bound_tightenings: 1,
+            ..Limits::default()
+        }),
+        ("every tightening is worth it", Limits {
+            min_relative_tightening: T::from(0),
+            ..Limits::default()
+        }),
+        // Nothing short of the whole domain counts as an improvement, so every bound a row implies
+        // is declined.
+        ("no tightening is worth it", Limits {
+            min_relative_tightening: T::from(1),
+            ..Limits::default()
+        }),
+        ("no substitution may create a coefficient", Limits {
+            max_fill_in: 0,
+            ..Limits::default()
+        }),
+        ("one round", Limits {
+            max_rounds: 1,
+            ..Limits::default()
+        }),
+    ];
+
+    let mut mismatches = Vec::new();
+    for seed in 0..NR_PROBLEMS {
+        let problem = random_problem(&mut Rng(seed));
+        let truth = solve(problem.clone(), false);
+
+        for (name, limits) in &settings {
+            let outcome = solve_with(problem.clone(), Some(limits.clone()));
+
+            // An objective value that matches while the values themselves are infeasible is
+            // exactly what comparing two answers with each other cannot see.
+            if let Outcome::Optimum(_) = &outcome
+                && let Some(solution) = LAST_SOLUTION.with(|last| last.borrow_mut().take())
+                && let Err(invalid) = problem.verify_solution(&solution)
+            {
+                panic!("seed {seed}, {name}: the solution recovered does not solve the problem \
+                        that was given: {invalid:?}");
+            }
+
+            if !outcome.agrees_with(&truth) {
+                mismatches.push((seed, *name, outcome, truth.clone()));
+            }
+        }
+    }
+
+    assert!(
+        mismatches.is_empty(),
+        "{} runs under a limit disagreed with the unpresolved answer. \
+         First few (seed, limits, under the limit, truth): {:?}",
+        mismatches.len(),
+        &mismatches[..mismatches.len().min(5)],
+    );
+}
+
 /// Eliminating a slack from a ranged row must account for the width of the range.
 ///
 /// `min x0 + x2` subject to `0 <= -2 x0 + 2 x1 + x2 <= 2`, `x0 in [-1, 2]`, `x1 <= -3`,
@@ -324,13 +424,14 @@ fn eliminating_a_slack_from_a_ranged_row_keeps_the_range_width() {
 }
 
 /// Every reduction, so that a test can insist it reached all of them.
-const ALL_REDUCTIONS: [&str; 13] = [
+const ALL_REDUCTIONS: [&str; 14] = [
     "empty column",
     "empty row",
     "fixed column",
     "singleton row",
     "bound tightened",
     "row changed",
+    "row scaled",
     "redundant row",
     "column singleton",
     "implied free singleton",
@@ -350,6 +451,7 @@ fn reduction_name(reduction: &crate::data::linear_program::general_form::Reducti
         SingletonRow { .. } => "singleton row",
         BoundTightened { .. } => "bound tightened",
         RowChanged { .. } => "row changed",
+        RowScaled { .. } => "row scaled",
         RedundantRow { .. } => "redundant row",
         ColumnSingleton { .. } => "column singleton",
         ImpliedFreeColumnSingleton { .. } => "implied free singleton",
@@ -628,12 +730,9 @@ fn recovered_duals_certify_optimality() {
 fn solve_with_duals(mut general: GeneralForm<T>) -> Option<Solution<T>> {
     let constraint_type_counts = general.standardize();
     let (reduced, duals) = {
-        let data = general.derive_matrix_data(constraint_type_counts);
-        match data.solve_relaxation::<Carry<T, BasisInverseRows<_>>>() {
-            OptimizationResult::FiniteOptimum(optimum) => (
-                data.reconstruct_solution(optimum.primal),
-                data.constraint_duals(&optimum.dual),
-            ),
+        let narrowed = general.narrow(constraint_type_counts);
+        match narrowed.solve_relaxation::<Carry<T, BasisInverseRows<_>>>() {
+            Solved::Optimum(solution) => (solution.primal, solution.duals),
             _ => return None,
         }
     };
@@ -658,11 +757,17 @@ fn duals_survive_dual_preserving_presolve() {
     let mut covered: BTreeMap<&str, usize> = BTreeMap::new();
     let mut failures = Vec::new();
 
+    // Writing the rows over a common denominator is off by default, for what it costs the
+    // algorithm rather than for anything to do with the multipliers. Its own is undone like every
+    // other, and asking for it here is what keeps that covered.
+    let mut limits = Limits::preserving_duals();
+    limits.disabled[RuleId::RowScaling] = false;
+
     for seed in 0..NR_PROBLEMS {
         let mut problem = random_problem(&mut Rng(seed));
         let original = problem.clone();
 
-        if problem.presolve_with::<false>(&Limits::preserving_duals(), false) != Presolved::Reduced {
+        if problem.presolve_with::<false>(&limits, false) != Presolved::Reduced {
             continue;
         }
         let kinds = problem
@@ -708,3 +813,36 @@ fn duals_survive_dual_preserving_presolve() {
         );
     }
 }
+/// Which seeds panic, and whether presolving is what does it.
+///
+/// A panic on the path that does not presolve is not presolve's, and this is what says so. It is
+/// how the four seeds that reach the solver's handling of a rank zero constraint matrix were
+/// separated from the presolve defects this file otherwise records.
+#[test]
+#[ignore = "Diagnostic helper, not an assertion."]
+fn find_panics() {
+    const NR_PROBLEMS: u64 = 2_000;
+
+    let mut without = Vec::new();
+    let mut with = Vec::new();
+    for seed in 0..NR_PROBLEMS {
+        let problem = random_problem(&mut Rng(seed));
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            solve_with(problem.clone(), None)
+        }))
+        .is_err()
+        {
+            without.push(seed);
+        }
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            solve_with(problem, Some(Limits::default()))
+        }))
+        .is_err()
+        {
+            with.push(seed);
+        }
+    }
+    println!("no presolve: {} panics {:?}", without.len(), &without[..without.len().min(10)]);
+    println!("presolve:    {} panics {:?}", with.len(), &with[..with.len().min(10)]);
+}
+

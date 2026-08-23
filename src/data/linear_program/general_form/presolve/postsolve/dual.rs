@@ -193,6 +193,14 @@ where
                 self.duals[*row] = G::zero();
             }
 
+            // The row was multiplied by a positive factor, so a multiplier for it as it stands
+            // stands for `factor` times as much of the row as it was. Every reduced cost is
+            // untouched: what the row contributes to one is the multiplier times the coefficient,
+            // and the two changed by inverse amounts.
+            Reduction::RowScaled { row, factor } => {
+                self.duals[*row] = &self.duals[*row] * &G::from(factor.clone());
+            }
+
             // The relation and right hand side moved, but the coefficients did not, so no reduced
             // cost changes. Every relation that can be restored here admits the multiplier that is
             // already on the row: a shifted right hand side leaves which side is tight alone, and
@@ -523,6 +531,10 @@ fn reduction_preserves_duals<F>(reduction: &Reduction<F>) -> bool {
         // A row that was weakened keeps its multiplier: the side that was dropped was one the
         // bounds already implied, so no multiplier was ever going to sit on it.
         Reduction::RowChanged { .. } => true,
+
+        // The same row written differently. Its multiplier changes by the factor and its sign does
+        // not, the factor being positive.
+        Reduction::RowScaled { .. } => true,
 
         // A zero cost column that took up the slack of its row. The row keeps its multiplier and
         // the column's reduced cost follows from it.

@@ -4,8 +4,9 @@
 use relp_num::R32;
 
 use crate::data::linear_program::elements::Objective;
+use crate::data::linear_program::elements::RangedConstraintRelation;
 use crate::data::linear_program::general_form::presolve::test::{
-    equal, greater, integer, less, problem, range, variable,
+    equal, exact_problem, greater, integer, less, problem, range, variable,
 };
 use crate::data::linear_program::general_form::{Limits, Presolved, RuleId};
 
@@ -425,4 +426,121 @@ fn the_one_variable_without_a_bound_still_gets_one() {
     // `x1` is no lower than 0, so `x0 <= 10`.
     assert_eq!(initial.variable_for_test(0).upper_bound, Some(R32!(10)));
     assert_eq!(initial.variable_for_test(0).lower_bound, None);
+}
+
+/// A row of fractions is written over their common denominator.
+#[test]
+fn a_row_of_fractions_is_cleared() {
+    // `1/2 x0 + 1/3 x1 <= 1`  ->  `3 x0 + 2 x1 <= 6`.
+    let mut initial = exact_problem(
+        Objective::Minimize,
+        &[vec![R32!(1, 2), R32!(1, 3)]],
+        vec![less()],
+        vec![R32!(1)],
+        vec![variable(1, Some(0), Some(1)), variable(1, Some(0), Some(1))],
+    );
+
+    let outcome = initial.presolve_with::<false>(&Limits::only(RuleId::RowScaling), true);
+    assert_eq!(outcome, Presolved::Reduced);
+    assert_eq!(initial.coefficient_for_test(0, 0), Some(&R32!(3)));
+    assert_eq!(initial.coefficient_for_test(0, 1), Some(&R32!(2)));
+    assert_eq!(initial.b_for_test()[0], R32!(6));
+}
+
+/// A row of integers that share a factor is divided by it.
+#[test]
+fn a_row_with_a_common_factor_is_divided_by_it() {
+    let mut initial = problem(
+        Objective::Minimize,
+        &[vec![4, 6]],
+        vec![less()],
+        vec![10],
+        vec![variable(1, Some(0), Some(1)), variable(1, Some(0), Some(1))],
+    );
+
+    let outcome = initial.presolve_with::<false>(&Limits::only(RuleId::RowScaling), true);
+    assert_eq!(outcome, Presolved::Reduced);
+    assert_eq!(initial.coefficient_for_test(0, 0), Some(&R32!(2)));
+    assert_eq!(initial.coefficient_for_test(0, 1), Some(&R32!(3)));
+    assert_eq!(initial.b_for_test()[0], R32!(5));
+}
+
+/// A row that is already written the smallest way is left exactly as it is.
+#[test]
+fn a_row_that_is_already_smallest_is_left_alone() {
+    let start = problem(
+        Objective::Minimize,
+        &[vec![2, 3]],
+        vec![less()],
+        vec![5],
+        vec![variable(1, Some(0), Some(1)), variable(1, Some(0), Some(1))],
+    );
+
+    let mut initial = start.clone();
+    let outcome = initial.presolve_with::<false>(&Limits::only(RuleId::RowScaling), true);
+    assert_eq!(outcome, Presolved::Reduced);
+    assert_eq!(initial, start);
+    assert!(initial.postsolve().reductions().is_empty());
+}
+
+/// The width of a range is part of the row and moves with it.
+#[test]
+fn a_range_is_scaled_with_the_row_it_belongs_to() {
+    // `1 <= 1/2 x0 + 1/2 x1 <= 2`, written as an upper bound of 2 with a width of 1.
+    let mut initial = exact_problem(
+        Objective::Minimize,
+        &[vec![R32!(1, 2), R32!(1, 2)]],
+        vec![RangedConstraintRelation::Range(R32!(1))],
+        vec![R32!(2)],
+        vec![variable(1, Some(0), Some(4)), variable(1, Some(0), Some(4))],
+    );
+
+    let outcome = initial.presolve_with::<false>(&Limits::only(RuleId::RowScaling), true);
+    assert_eq!(outcome, Presolved::Reduced);
+    assert_eq!(initial.coefficient_for_test(0, 0), Some(&R32!(1)));
+    assert_eq!(initial.coefficient_for_test(0, 1), Some(&R32!(1)));
+    assert_eq!(initial.b_for_test()[0], R32!(4));
+    assert_eq!(
+        initial.constraint_types_for_test()[0],
+        RangedConstraintRelation::Range(R32!(2)),
+    );
+}
+
+/// Clearing fractions can make a row larger, and then it is not done.
+///
+/// Denominators that share nothing all end up in every numerator. Four coefficients over four
+/// coprime denominators cost less as fractions than the integers they clear to.
+#[test]
+fn a_row_that_would_grow_is_left_alone() {
+    let start = exact_problem(
+        Objective::Minimize,
+        &[vec![R32!(1, 2), R32!(1, 3), R32!(1, 5), R32!(1, 7)]],
+        vec![less()],
+        vec![R32!(1)],
+        vec![
+            variable(1, Some(0), Some(1)),
+            variable(1, Some(0), Some(1)),
+            variable(1, Some(0), Some(1)),
+            variable(1, Some(0), Some(1)),
+        ],
+    );
+
+    // As fractions the row takes 16 bits; the integers it clears to take 38, which is more than
+    // the default allowance of twice, so it is left as it was.
+    let mut refused = start.clone();
+    assert_eq!(
+        refused.presolve_with::<false>(&Limits::only(RuleId::RowScaling), true),
+        Presolved::Reduced,
+    );
+    assert_eq!(refused, start);
+    assert!(refused.postsolve().reductions().is_empty());
+
+    // Told that any growth is acceptable, this is what it would have cost.
+    let mut cleared = start;
+    let mut limits = Limits::only(RuleId::RowScaling);
+    limits.max_scaling_growth = (u32::MAX, 1);
+    assert_eq!(cleared.presolve_with::<false>(&limits, true), Presolved::Reduced);
+    assert_eq!(cleared.coefficient_for_test(0, 0), Some(&R32!(105)));
+    assert_eq!(cleared.coefficient_for_test(0, 3), Some(&R32!(30)));
+    assert_eq!(cleared.b_for_test()[0], R32!(210));
 }

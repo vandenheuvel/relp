@@ -9,6 +9,17 @@
 //! A [`SweepRule`] has no such place to be offered. Recognising that two rows are multiples of
 //! each other means comparing rows with each other, so the rule sorts or hashes the whole problem
 //! and runs once per round.
+//!
+//! # Whether a rule runs is decided before it runs
+//!
+//! Every rule hands back a problem with the same answer as the one it was given. That is the
+//! invariant, and it holds of each application on its own and not merely of a run as a whole: the
+//! problem halfway through presolving is worth exactly what the problem that came in is worth.
+//!
+//! What a limit may decide is that a reduction is not worth what it costs, and it has to decide
+//! that before the rule has touched anything. After that the rule runs to the end, writing
+//! everything it has to write. A rule that could be stopped partway would leave a row removed and
+//! the bound that took its place unwritten, and that is not a smaller problem but a different one.
 use std::hash::Hash;
 use std::ops::Neg;
 
@@ -20,6 +31,7 @@ use crate::data::linear_program::general_form::presolve::integrality::Roundable;
 use crate::data::linear_program::general_form::presolve::problem::Problem;
 use crate::data::linear_program::general_form::presolve::queues::{Queue, Queues};
 use crate::data::linear_program::general_form::presolve::reducer::Reducer;
+use crate::data::linear_program::general_form::presolve::simplify::Simplify;
 
 pub mod dominated_column;
 pub mod domain_propagation;
@@ -29,6 +41,7 @@ pub mod duplicate_row;
 pub mod empty;
 pub mod fixed_column;
 pub mod implied_free_singleton;
+pub mod row_scaling;
 pub mod singleton_column;
 pub mod singleton_row;
 
@@ -49,6 +62,8 @@ pub enum RuleId {
     SingletonColumn,
     /// Reasoning from what a row's activity can reach.
     DomainPropagation,
+    /// A row written over a common denominator, with nothing left in common.
+    RowScaling,
     /// A variable in one equality row that already confines it, and in the objective.
     ImpliedFreeColumnSingleton,
     /// An equality with two coefficients.
@@ -71,6 +86,7 @@ impl RuleId {
             RuleId::SingletonRow => "singleton row",
             RuleId::SingletonColumn => "singleton column",
             RuleId::DomainPropagation => "domain propagation",
+            RuleId::RowScaling => "row scaling",
             RuleId::ImpliedFreeColumnSingleton => "implied free singleton",
             RuleId::DoubletonEquation => "doubleton equation",
             RuleId::DuplicateRow => "duplicate row",
@@ -105,11 +121,14 @@ pub enum Stop {
 
 /// The bounds every rule needs of its number type.
 pub trait RuleField:
-    OrderedField + SparseElement<Self> + SparseComparator + Roundable
+    OrderedField + SparseElement<Self> + SparseComparator + Roundable + Simplify
 {
 }
 
-impl<F> RuleField for F where F: OrderedField + SparseElement<F> + SparseComparator + Roundable {}
+impl<F> RuleField for F where
+    F: OrderedField + SparseElement<F> + SparseComparator + Roundable + Simplify
+{
+}
 
 /// A rule that fires at a place in the problem.
 ///

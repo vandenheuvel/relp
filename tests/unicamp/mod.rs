@@ -17,7 +17,9 @@ use relp::algorithm::two_phase::tableau::kind::artificial::Cost;
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::data::linear_algebra::traits::Element;
 use relp::data::linear_program::solution::Solution;
-use relp::data::linear_program::general_form::Presolved;
+use relp::data::linear_program::general_form::{
+    Narrowable, Presolved, ReadsNarrowed, Solved,
+};
 use relp::io::import;
 
 /// # Generation and execution
@@ -67,6 +69,10 @@ where
     for<'r> &'r IMT:
         Add<&'r GFT, Output = IMT> + Mul<&'r GFT, Output = IMT> + Sub<&'r IMT, Output = IMT>,
     IMT: Absorb<Cost>,
+    // Storing the problem in the narrowest type that holds it, and reading it back out of
+    // whichever that turned out to be.
+    GFT: Narrowable,
+    IMT: ReadsNarrowed<GFT>,
 {
     let path = get_test_file_path(file_name);
     let mps = import::<GFT>(&path).unwrap();
@@ -90,13 +96,12 @@ where
         other => panic!("this instance has a finite optimum, got {:?}", other),
     }
     let constraint_type_counts = general.standardize();
-    let data = general.derive_matrix_data(constraint_type_counts);
-    let result = data.solve_relaxation::<Carry<IMT, LUDecomposition<_>>>();
+    let narrowed = general.narrow(constraint_type_counts);
+    let result = narrowed.solve_relaxation::<Carry<IMT, LUDecomposition<_>>>();
 
     match result {
-        OptimizationResult::FiniteOptimum(solution) => {
-            let reconstructed = data.reconstruct_solution(solution.primal);
-            general.compute_full_solution_with_reduced_solution::<IMT>(reconstructed)
+        Solved::Optimum(optimum) => {
+            general.compute_full_solution_with_reduced_solution::<IMT>(optimum.primal)
         }
         _ => panic!(),
     }

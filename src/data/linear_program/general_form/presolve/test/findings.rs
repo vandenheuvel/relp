@@ -5,7 +5,7 @@
 use relp_num::R32;
 
 use crate::data::linear_program::elements::Objective;
-use crate::data::linear_program::general_form::Presolved;
+use crate::data::linear_program::general_form::{Limits, Presolved};
 use crate::data::linear_program::general_form::presolve::test::{
     equal, greater, less, problem, range, variable,
 };
@@ -158,6 +158,74 @@ fn fixing_a_dominated_variable_moves_the_right_hand_side() {
     assert_eq!(solution.objective_value, R32!(-6));
     assert_eq!(solution.solution_values[0].1, R32!(-1));
     assert_eq!(solution.solution_values[1].1, R32!(-1));
+}
+
+/// A bound that carries a column that is gone is not weighed against what it costs.
+///
+/// `min -x` subject to `x - y == 0` and `x + u == 5000`, with `x <= 2048`, `y <= 2047` and
+/// `u <= 5000`. The first equality writes `y` as `x`, so `y <= 2047` has to become `x <= 2047`:
+/// with the row and the column gone, that bound is the only thing left saying what `y` may be.
+/// It is one tighter than the bound `x` already has, on a domain 2048 wide, so a threshold that
+/// asks whether a tightening is worth its denominator would decline it — and the answer would
+/// become `-2048`, at which `y` is 2048 and outside the bounds it was given. Whether the
+/// substitution was worth doing is a question that has already been answered by the time this
+/// bound is written.
+#[test]
+fn a_bound_that_carries_a_removed_column_is_not_weighed() {
+    let mut initial = problem(
+        Objective::Minimize,
+        &[vec![1, -1, 0], vec![1, 0, 1]],
+        vec![equal(), equal()],
+        vec![0, 5000],
+        vec![
+            variable(-1, Some(0), Some(2048)),
+            variable(0, Some(0), Some(2047)),
+            variable(0, Some(0), Some(5000)),
+        ],
+    );
+
+    let Presolved::Solved(solution) = initial.presolve::<false>() else {
+        panic!("presolve determines every variable here");
+    };
+
+    assert_eq!(solution.objective_value, R32!(-2047));
+    assert_eq!(
+        solution.solution_values[1].1,
+        R32!(2047),
+        "`y` is what the substituted bound was protecting",
+    );
+}
+
+/// A row that pins every variable it has is not gone until those bounds are there.
+///
+/// `min x + y` subject to `x + y >= 4` with `x <= 2` and `y <= 2`. The row can reach 4 and no
+/// further, so it holds both variables at 2 and has nothing left to say afterwards. What it says
+/// has to end up in the bounds, and a rule that removed the row and then let a limit decline them
+/// one at a time would leave two variables the objective sends to 0.
+#[test]
+fn a_forcing_row_is_only_gone_once_it_has_been_written_into_the_bounds() {
+    let mut initial = problem(
+        Objective::Minimize,
+        &[vec![1, 1]],
+        vec![greater()],
+        vec![4],
+        vec![variable(1, Some(0), Some(2)), variable(1, Some(0), Some(2))],
+    );
+
+    // No bound a row implies may be tightened at all, which is the sharpest form of the question:
+    // whatever the rule decides to do, what is left has to be worth the same.
+    let limits = Limits {
+        max_bound_tightenings: 0,
+        ..Limits::default()
+    };
+
+    let Presolved::Solved(solution) = initial.presolve_with::<false>(&limits, true) else {
+        panic!("presolve determines every variable here");
+    };
+
+    assert_eq!(solution.objective_value, R32!(4));
+    assert_eq!(solution.solution_values[0].1, R32!(2));
+    assert_eq!(solution.solution_values[1].1, R32!(2));
 }
 
 /// Bounds that cross leave the variable with no value, which is infeasibility.

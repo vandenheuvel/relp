@@ -399,3 +399,54 @@ fn what_cannot_be_recovered_is_declined() {
         None,
     );
 }
+
+/// A row written over a common denominator hands its multiplier back at the scale it was.
+///
+/// Multiplying a row by three and its multiplier by a third leaves what the row contributes to
+/// every reduced cost exactly as it was, so the walk back only has to undo the one division.
+#[test]
+fn a_scaled_row_gives_its_multiplier_back_at_the_original_scale() {
+    let mut postsolve = Postsolve::<T>::new(1, 1);
+    postsolve.push(Reduction::RowScaled {
+        row: 0,
+        factor: R32!(3),
+    });
+    postsolve.set_survivors(vec![0], vec![0]);
+
+    assert_eq!(
+        postsolve.recover_dual(true, &[R32!(2)], &[R32!(0)], &[R32!(1)]),
+        Some(vec![R32!(6)]),
+    );
+}
+
+/// Scaling a row does not move any variable, so the primal walk has nothing to do.
+#[test]
+fn scaling_a_row_leaves_the_primal_solution_alone() {
+    let mut postsolve = Postsolve::<T>::new(1, 2);
+    postsolve.push(Reduction::RowScaled {
+        row: 0,
+        factor: R32!(1, 7),
+    });
+    postsolve.set_survivors(vec![0], vec![0, 1]);
+
+    assert_eq!(
+        postsolve.recover_primal(&[R32!(3), R32!(4)]),
+        vec![R32!(3), R32!(4)],
+    );
+}
+
+/// A negated objective negates the multiplier, and the factor multiplies whatever is there.
+#[test]
+fn the_factor_applies_whichever_way_the_objective_points() {
+    let mut postsolve = Postsolve::<T>::new(1, 1);
+    postsolve.push(Reduction::RowScaled {
+        row: 0,
+        factor: R32!(3),
+    });
+    postsolve.set_survivors(vec![0], vec![0]);
+
+    assert_eq!(
+        postsolve.recover_dual(false, &[R32!(2)], &[R32!(0)], &[R32!(1)]),
+        Some(vec![R32!(6)]),
+    );
+}

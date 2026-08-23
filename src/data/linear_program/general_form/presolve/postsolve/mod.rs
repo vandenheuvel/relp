@@ -120,6 +120,17 @@ pub enum Reduction<F> {
         old_right_hand_side: F,
     },
 
+    /// A row was multiplied by a positive factor.
+    ///
+    /// Nothing about the problem changed: the same points satisfy the row before and after. What
+    /// did change is what a multiplier for it means, which is why this is recorded at all.
+    RowScaled {
+        /// Which row.
+        row: usize,
+        /// What it was multiplied by. Positive, so the relation is the one it always was.
+        factor: F,
+    },
+
     /// A row that the variable bounds already imply was dropped.
     RedundantRow {
         /// Which row.

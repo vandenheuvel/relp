@@ -97,6 +97,7 @@ where
         | Reduction::RowChanged { .. }
         | Reduction::BoundTightened { .. }
         | Reduction::DuplicateRow { .. }
+        | Reduction::RowScaled { .. }
         | Reduction::SingletonRow { .. } => {}
 
         Reduction::EmptyColumn { column, value, .. }

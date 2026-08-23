@@ -63,6 +63,26 @@ fn problem(
     right_hand_sides: Vec<i32>,
     variables: Vec<Variable<T>>,
 ) -> GeneralForm<T> {
+    let rows = rows
+        .iter()
+        .map(|row| row.iter().map(|&value| R32!(value)).collect())
+        .collect::<Vec<_>>();
+    let right_hand_sides = right_hand_sides.into_iter().map(|value| R32!(value)).collect();
+
+    exact_problem(objective, &rows, relations, right_hand_sides, variables)
+}
+
+/// Build a problem whose data need not be integral.
+///
+/// Everything is given in the number type itself, which a test about what the numbers look like
+/// rather than about what they say needs.
+fn exact_problem(
+    objective: Objective,
+    rows: &[Vec<T>],
+    relations: Vec<RangedConstraintRelation<T>>,
+    right_hand_sides: Vec<T>,
+    variables: Vec<Variable<T>>,
+) -> GeneralForm<T> {
     let nr_variables = variables.len();
     let names = (0..nr_variables).map(|j| format!("x{}", j)).collect();
 

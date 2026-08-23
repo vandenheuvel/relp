@@ -29,7 +29,7 @@ use crate::data::linear_program::general_form::presolve::activity::contributes_t
 use crate::data::linear_program::general_form::presolve::postsolve::Reduction;
 use crate::data::linear_program::general_form::presolve::problem::Problem;
 use crate::data::linear_program::general_form::presolve::queues::{Queue, Queues};
-use crate::data::linear_program::general_form::presolve::reducer::Reducer;
+use crate::data::linear_program::general_form::presolve::reducer::{Origin, Reducer, Worth};
 use crate::data::linear_program::general_form::presolve::rule::{
     Effect, LocalRule, RuleField, RuleId, Stop,
 };
@@ -190,8 +190,12 @@ where
         .collect::<Vec<_>>();
 
     for (column, direction, value) in pinned {
-        // Bring the other bound in to meet the one the activity used.
-        reducer.tighten_bound(column, !direction, value, row, RuleId::DomainPropagation)?;
+        // Bring the other bound in to meet the one the activity used. The row goes at the end of
+        // this function, and then these bounds are all that is left of it: what the row said is
+        // exactly that every one of its variables sits at the end the activity used. So there is
+        // nothing to weigh, and by the time the loop is over there is no longer anything that
+        // could be asked.
+        reducer.set_bound(column, !direction, value, Origin::Row(row), RuleId::DomainPropagation)?;
     }
 
     let relation = reducer.problem.rows[row].relation.clone();
@@ -302,15 +306,7 @@ where
         // Dividing by the coefficient turns the direction around when it is negative.
         let direction = contributes_to(!activity_direction, sign);
 
-        let change = reducer.tighten_bound(
-            column,
-            direction,
-            value,
-            row,
-            RuleId::DomainPropagation,
-        )?;
-        if change != crate::data::linear_program::general_form::presolve::reducer::BoundChange::None
-        {
+        if offer(reducer, column, direction, value, row)? == Effect::Tightened {
             effect = Effect::Tightened;
         }
     }
@@ -351,20 +347,34 @@ where
     let value = &(&near - &partial) / &coefficient;
     let direction = contributes_to(!activity_direction, sign);
 
-    let change = reducer.tighten_bound(
-        column,
-        direction,
-        value,
-        row,
-        RuleId::DomainPropagation,
-    )?;
+    offer(reducer, column, direction, value, row)
+}
 
-    Ok(
-        if change == crate::data::linear_program::general_form::presolve::reducer::BoundChange::None
-        {
-            Effect::None
-        } else {
-            Effect::Tightened
-        },
-    )
+/// Decide whether a bound this row implies is worth what it costs, and write it if it is.
+///
+/// The row stays in the problem either way. What it says about the variable it goes on saying, so
+/// a bound declined here is a reduction not made and nothing more: the problem left behind is the
+/// one that came in, with one fewer thing already worked out about it.
+fn offer<F: RuleField, const I: bool>(
+    reducer: &mut Reducer<'_, F, I>,
+    column: usize,
+    direction: BoundDirection,
+    value: F,
+    row: usize,
+) -> Result<Effect, Stop>
+where
+    for<'r> &'r F: OrderedFieldRef<F> + Neg<Output = F>,
+{
+    match reducer.weigh_bound(column, direction, &value) {
+        Worth::Adopt => {
+            let origin = Origin::Row(row);
+            reducer.set_bound(column, direction, value, origin, RuleId::DomainPropagation)?;
+            Ok(Effect::Tightened)
+        }
+        Worth::Nothing => Ok(Effect::None),
+        Worth::NotEnough => {
+            reducer.statistics.per_rule[RuleId::DomainPropagation].budget_refusals += 1;
+            Ok(Effect::None)
+        }
+    }
 }

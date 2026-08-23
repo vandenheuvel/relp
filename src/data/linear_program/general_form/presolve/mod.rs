@@ -38,6 +38,7 @@ use crate::data::linear_program::general_form::presolve::rule::duplicate_row::Du
 use crate::data::linear_program::general_form::presolve::rule::empty::{EmptyColumn, EmptyRow};
 use crate::data::linear_program::general_form::presolve::rule::fixed_column::FixedColumn;
 use crate::data::linear_program::general_form::presolve::rule::implied_free_singleton::ImpliedFreeColumnSingleton;
+use crate::data::linear_program::general_form::presolve::rule::row_scaling::RowScaling;
 use crate::data::linear_program::general_form::presolve::rule::singleton_column::SingletonColumn;
 use crate::data::linear_program::general_form::presolve::rule::singleton_row::SingletonRow;
 use crate::data::linear_program::general_form::presolve::rule::{
@@ -54,13 +55,14 @@ mod queues;
 mod reducer;
 mod rule;
 pub(super) mod scale;
+pub(super) mod simplify;
 mod statistics;
 
 pub use limits::Limits;
 pub use postsolve::{BoundOrigin, Postsolve, Reduction};
 pub(super) use problem::Problem;
 pub use rule::RuleId;
-pub use statistics::Statistics;
+pub use statistics::{ProblemSize, RuleStatistics, Statistics};
 
 #[cfg(test)]
 mod test;
@@ -156,6 +158,12 @@ where
             continue;
         }
         if drain::<F, I, DoubletonEquation>(reducer)? {
+            continue;
+        }
+        // After every rule that changes a row, and before the one that reads every row from end to
+        // end: propagation is the expensive rule, and it is cheapest on rows written over a common
+        // denominator.
+        if drain::<F, I, RowScaling>(reducer)? {
             continue;
         }
         if drain::<F, I, DomainPropagation>(reducer)? {

@@ -138,14 +138,10 @@ where
 
         for (direction, value) in transplanted {
             // Not a bound any row's activity implies: it is this substitution, and the record just
-            // pushed is what undoes it.
-            reducer.tighten_bound_from(
-                kept,
-                direction,
-                value,
-                Origin::Substitution,
-                Self::ID,
-            )?;
+            // pushed is what undoes it. With the row and the column gone, it is the only thing
+            // that still holds the eliminated variable inside its own bounds. Whether that was
+            // worth doing was settled by `is_allowed`, above and before any of this.
+            reducer.set_bound(kept, direction, value, Origin::Substitution, Self::ID)?;
         }
         reducer.enqueue_column(kept);
 
@@ -154,6 +150,11 @@ where
 }
 
 /// Whether the substitution is worth doing, and allowed to be done.
+///
+/// The whole decision, taken before anything is written. What follows a `true` here happens in
+/// full: the column is substituted out, the row is removed, and the bounds of the eliminated
+/// variable are written onto the kept one. Weighing any of those separately, once the row and the
+/// column are gone, would leave a problem that says less than the one that came in.
 fn is_allowed<F: RuleField, const I: bool>(
     reducer: &Reducer<'_, F, I>,
     eliminated: usize,
