@@ -20,6 +20,7 @@ use crate::algorithm::two_phase::tableau::inverse_maintenance::{InverseMaintaine
 use crate::algorithm::two_phase::tableau::kind::artificial::Cost as ArtificialCost;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::{OptimizationResult, SolveRelaxation};
+use crate::data::linear_algebra::vector::{DenseVector, Vector};
 
 pub mod phase_one;
 pub mod phase_two;
@@ -27,6 +28,31 @@ pub mod phase_two;
 pub mod matrix_provider;
 pub mod strategy;
 pub mod tableau;
+
+/// Spread a vector indexed by the kept rows over all rows, putting a zero at each removed one.
+fn restore_removed_rows<F: crate::data::linear_algebra::traits::Element + num_traits::Zero>(
+    kept: &DenseVector<F>,
+    removed: &[usize],
+    nr_rows: usize,
+) -> DenseVector<F> {
+    debug_assert!(removed.is_sorted());
+    debug_assert_eq!(kept.len() + removed.len(), nr_rows);
+
+    let mut values = Vec::with_capacity(nr_rows);
+    let mut next_removed = 0;
+    let mut next_kept = 0;
+    for row in 0..nr_rows {
+        if next_removed < removed.len() && removed[next_removed] == row {
+            next_removed += 1;
+            values.push(F::zero());
+        } else {
+            values.push(kept[next_kept].clone());
+            next_kept += 1;
+        }
+    }
+
+    DenseVector::new(values, nr_rows)
+}
 
 impl<MP> SolveRelaxation for MP
 where
@@ -59,7 +85,27 @@ where
                         );
                     // TODO(ENHANCEMENT): Consider implementing a heuristic to decide these
                     //  strategies dynamically
-                    phase_two::primal::<_, _, SteepestDescentAlongObjective<_>>(&mut non_artificial)
+                    let result = phase_two::primal::<_, _, SteepestDescentAlongObjective<_>>(
+                        &mut non_artificial,
+                    );
+
+                    // The tableau was looking at a problem with rows missing, so its dual vector
+                    // is indexed by the rows that were kept. Putting a zero where each removed row
+                    // was gives a dual for the problem as it stands: a removed row is a
+                    // combination of the kept ones, and asks nothing of the solution that they do
+                    // not already ask.
+                    match result {
+                        OptimizationResult::FiniteOptimum(mut solution) => {
+                            solution.dual = restore_removed_rows(
+                                &solution.dual,
+                                &rows_removed.rows_to_skip,
+                                self.nr_rows(),
+                            );
+                            solution.redundant_rows = rows_removed.rows_to_skip.to_vec();
+                            OptimizationResult::FiniteOptimum(solution)
+                        }
+                        other => other,
+                    }
                 }
                 _ => {
                     let mut non_artificial_tableau =

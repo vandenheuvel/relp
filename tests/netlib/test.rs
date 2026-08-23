@@ -352,3 +352,50 @@ fn test_VTP_BASE() {
     let expected = 1.298_314_624_613_613_7e5; // Koch - The final Netlib-LP results
     assert!((result.objective_value - RB!(expected)).abs() < RB!(1e-4));
 }
+
+/// The multipliers of a real instance have to certify that its solution is optimal.
+///
+/// One instance rather than all of them: this is about the path from the simplex back to the rows
+/// that were read, which is the same path for every instance.
+#[test]
+fn certificate_for_afiro() {
+    crate::netlib::certify("AFIRO");
+}
+
+#[test]
+fn certificate_for_sc50a() {
+    crate::netlib::certify("SC50A");
+}
+
+/// Instances where the default configuration fixes a dominated column, and so cannot produce a
+/// certificate. Running them again with only the reductions that keep one is what stops those
+/// instances from being the ones nobody checks.
+#[test]
+fn certificate_for_sctap1() {
+    crate::netlib::certify("SCTAP1");
+}
+
+#[test]
+fn certificate_for_adlittle() {
+    crate::netlib::certify("ADLITTLE");
+}
+
+#[test]
+fn certificate_for_scorpion() {
+    crate::netlib::certify("SCORPION");
+}
+
+#[test]
+fn certificate_for_finnis() {
+    crate::netlib::certify("FINNIS");
+}
+
+#[test]
+fn certificate_for_scrs8() {
+    crate::netlib::certify("SCRS8");
+}
+
+#[test]
+fn certificate_for_czprob() {
+    crate::netlib::certify("CZPROB");
+}

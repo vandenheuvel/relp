@@ -209,6 +209,26 @@ where
     /// # Return value
     ///
     /// `SparseVector<T>` of the solution.
+    /// The primal solution, the dual solution and the basis, as they now stand.
+    ///
+    /// Rows here are the rows of whatever the tableau is looking at, which after a rank deficiency
+    /// was found is a filtered view of the provider rather than the provider itself. Mapping back
+    /// is the caller's to do, because only the caller knows which view this is.
+    pub fn current_solution(&self) -> crate::algorithm::TableauSolution<IM::F> {
+        let mut basic = vec![false; self.nr_columns()];
+        for &column in self.inverse_maintainer.basis_indices() {
+            basic[column] = true;
+        }
+
+        crate::algorithm::TableauSolution {
+            primal: self.current_bfs(),
+            dual: self.inverse_maintainer.pi(),
+            basic,
+            redundant_rows: Vec::new(),
+        }
+    }
+
+    /// The value of each column of the provider under the current basis.
     pub fn current_bfs(&self) -> SparseVector<IM::F, IM::F> {
         let tuples = self.inverse_maintainer.current_bfs();
         SparseVector::new(tuples, self.nr_columns())

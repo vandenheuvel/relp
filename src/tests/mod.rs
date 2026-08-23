@@ -11,5 +11,6 @@
 //! * `fn artificial_tableau_form()`
 //! * `fn tableau_form()`
 pub mod cycling;
+pub mod presolve_differential;
 pub mod problem_1;
 pub mod problem_2;

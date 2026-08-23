@@ -59,7 +59,7 @@ where
                     None => break OptimizationResult::Unbounded,
                 }
             }
-            None => break OptimizationResult::FiniteOptimum(tableau.current_bfs()),
+            None => break OptimizationResult::FiniteOptimum(tableau.current_solution()),
         }
     }
 }

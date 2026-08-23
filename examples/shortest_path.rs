@@ -169,13 +169,16 @@ fn main() {
         4,
     );
     let problem = Primal::new(data, 0, 3);
+    let OptimizationResult::FiniteOptimum(optimum) =
+        problem.solve_relaxation::<Carry<S, BasisInverseRows<S>>>()
+    else {
+        panic!("this problem has a finite optimum");
+    };
     assert_eq!(
-        problem.solve_relaxation::<Carry<S, BasisInverseRows<S>>>(),
-        OptimizationResult::FiniteOptimum(
-            [0_u8, 1, 0, 0, 1]
-                .iter()
-                .map(|&v| RationalBig::from(v))
-                .collect()
-        ),
+        optimum.primal,
+        [0_u8, 1, 0, 0, 1]
+            .iter()
+            .map(|&v| RationalBig::from(v))
+            .collect(),
     );
 }

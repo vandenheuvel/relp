@@ -2,7 +2,7 @@
 //!
 //! Hosted [here](https://www.cenapad.unicamp.br/parque/manuais/OSL/oslweb/features/feat24DT.htm).
 use std::convert::TryInto;
-use std::ops::{Add, AddAssign, Mul, Sub};
+use std::ops::{Add, AddAssign, Mul, Neg, Sub};
 use std::path::{Path, PathBuf};
 
 use num_traits::{One, Zero};
@@ -16,8 +16,8 @@ use relp::algorithm::two_phase::tableau::inverse_maintenance::ops as im_ops;
 use relp::algorithm::two_phase::tableau::kind::artificial::Cost;
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::data::linear_algebra::traits::Element;
-use relp::data::linear_program::elements::LinearProgramType;
 use relp::data::linear_program::solution::Solution;
+use relp::data::linear_program::general_form::Presolved;
 use relp::io::import;
 
 /// # Generation and execution
@@ -59,6 +59,10 @@ where
     // written per accumulator rather than once for every one, so a generic accumulator states them.
     for<'r> IMT: Absorb<Option<&'r GFT>>,
     for<'r> &'r GFT: OrderedFieldRef<GFT>,
+    // Recovering the solution evaluates the record presolve left behind, in the accumulator's
+    // number type rather than the problem's.
+    IMT: OrderedField,
+    for<'r> &'r IMT: OrderedFieldRef<IMT> + Neg<Output = IMT>,
     for<'r> IMT: Add<&'r GFT, Output = IMT>,
     for<'r> &'r IMT:
         Add<&'r GFT, Output = IMT> + Mul<&'r GFT, Output = IMT> + Sub<&'r IMT, Output = IMT>,
@@ -68,29 +72,30 @@ where
     let mps = import::<GFT>(&path).unwrap();
 
     let mut general = mps.try_into().unwrap();
-    match general.presolve() {
-        Ok(data) => data,
-        Err(LinearProgramType::FiniteOptimum(Solution {
+    match general.presolve::<false>() {
+        Presolved::Reduced => {}
+        Presolved::Solved(Solution {
             objective_value,
             solution_values,
-        })) => {
-            return Solution {
-                objective_value: objective_value.into(),
-                solution_values: solution_values
+            ..
+        }) => {
+            return Solution::new(
+                objective_value.into(),
+                solution_values
                     .into_iter()
                     .map(|(name, value)| (name, value.into()))
                     .collect(),
-            };
+            );
         }
-        _ => panic!(),
+        other => panic!("this instance has a finite optimum, got {:?}", other),
     }
     let constraint_type_counts = general.standardize();
     let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<IMT, LUDecomposition<_>>>();
 
     match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let reconstructed = data.reconstruct_solution(vector);
+        OptimizationResult::FiniteOptimum(solution) => {
+            let reconstructed = data.reconstruct_solution(solution.primal);
             general.compute_full_solution_with_reduced_solution::<IMT>(reconstructed)
         }
         _ => panic!(),

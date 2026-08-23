@@ -7,3 +7,4 @@ pub mod elements;
 pub mod general_form;
 pub mod network;
 pub mod solution;
+pub mod verify;

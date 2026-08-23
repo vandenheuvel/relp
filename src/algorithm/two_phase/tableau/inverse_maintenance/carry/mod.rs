@@ -673,6 +673,21 @@ where
         tuples
     }
 
+    fn minus_pi(&self) -> &DenseVector<Self::F> {
+        &self.minus_pi
+    }
+
+    fn pi(&self) -> DenseVector<Self::F> {
+        DenseVector::new(
+            self.minus_pi.iter().map(|value| -value).collect(),
+            self.minus_pi.len(),
+        )
+    }
+
+    fn basis_indices(&self) -> &[usize] {
+        &self.basis_indices
+    }
+
     fn basis_column_index_for_row(&self, row: usize) -> usize {
         let nr_rows = self.basis_indices.len();
         debug_assert!(row < nr_rows);

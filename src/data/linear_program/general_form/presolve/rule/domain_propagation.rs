@@ -1,504 +1,370 @@
-//! # Domain propagation
+//! # Reasoning from row activities
 //!
-//! Use variable bounds to see whether constraints can be dropped or simplified. Use bounds on
-//! constraints to derive variable bounds.
+//! The activity of a row is the interval `[L, U]` that `<a, x>` can cover given the variable
+//! bounds. The row itself admits an interval `[lo, hi]`. Comparing the two is what this rule does.
+//!
+//! Reading a relation as an interval is what keeps the case analysis short. An equality admits
+//! `[b, b]`, a range `[b - r, b]`, a `<=` row `(-inf, b]` and a `>=` row `[b, +inf)`. Then, for
+//! each end independently:
+//!
+//! * the activity cannot reach the interval at all, and the problem is infeasible;
+//! * the activity can only just reach it, so every variable is pinned to the bound that gets it
+//!   there, and the row is forcing;
+//! * the activity is entirely inside on that side, so that side of the row is implied by the
+//!   bounds and can be dropped, taking the whole row with it when both sides go;
+//! * or the row genuinely constrains the variables, and the slack between the two intervals gives
+//!   each variable in turn a bound.
+//!
+//! Treating the two ends separately is what makes ranged rows ordinary rather than special. A
+//! ranged row can be redundant on one side and forcing on the other, and the lowest activity of a
+//! ranged row coinciding with the *upper* end of its range is a perfectly normal forcing row, not
+//! a contradiction.
 use std::cmp::Ordering;
+use std::ops::Neg;
 
-use relp_num::{OrderedField, OrderedFieldRef};
+use relp_num::OrderedFieldRef;
 
-use crate::data::linear_algebra::traits::SparseElement;
-use crate::data::linear_program::elements::RangedConstraintRelation;
-use crate::data::linear_program::elements::{
-    BoundDirection, InequalityRelation, LinearProgramType,
+use crate::data::linear_program::elements::{BoundDirection, RangedConstraintRelation};
+use crate::data::linear_program::general_form::presolve::activity::contributes_to;
+use crate::data::linear_program::general_form::presolve::postsolve::Reduction;
+use crate::data::linear_program::general_form::presolve::problem::Problem;
+use crate::data::linear_program::general_form::presolve::queues::{Queue, Queues};
+use crate::data::linear_program::general_form::presolve::reducer::Reducer;
+use crate::data::linear_program::general_form::presolve::rule::{
+    Effect, LocalRule, RuleField, RuleId, Stop,
 };
-use crate::data::linear_program::general_form::presolve::updates::BoundChange;
-use crate::data::linear_program::general_form::presolve::{Change, Index};
 
-impl<'a, OF> Index<'a, OF>
+pub struct DomainPropagation;
+
+/// The end of the interval a relation admits, in one direction.
+///
+/// `None` means the relation says nothing on that side.
+fn admissible_end<F: RuleField>(
+    relation: &RangedConstraintRelation<F>,
+    right_hand_side: &F,
+    direction: BoundDirection,
+) -> Option<F>
 where
-    OF: OrderedField + SparseElement<OF>,
-    for<'r> &'r OF: OrderedFieldRef<OF>,
+    for<'r> &'r F: OrderedFieldRef<F>,
 {
-    /// Attempt to tighten bounds using activity bounds.
-    ///
-    /// As described in Achterberg (2007), algorithm 7.1.
-    ///
-    /// TODO(ENHANCEMENT): Variable bounds might be derived without a constraint eventually being
-    ///  removed. Should these variable bounds be tracked, and perhaps not emitted in the end?
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint`: Index of the constraint under consideration.
-    /// * `direction`: Whether the activity lower- or upperbound should be used.
-    ///
-    /// # Return value
-    ///
-    /// `Result::Err` if the problem was determined to be infeasible.
-    pub(in crate::data::linear_program::general_form::presolve) fn presolve_domain_propagation(
-        &mut self,
-        constraint: usize,
-        direction: BoundDirection,
-    ) -> Result<Change, LinearProgramType<OF>> {
-        let counter = match direction {
-            BoundDirection::Lower => self.counters.activity[constraint].0,
-            BoundDirection::Upper => self.counters.activity[constraint].1,
-        };
-        let nr_bounds_missing_in_row = self
-            .counters
-            .iter_active_row(constraint)
-            .filter(|&(j, c)| {
-                let bound_direction = direction * c.non_zero_signum();
-                self.updates.variable_bound(j, bound_direction).is_none()
-            })
-            .count();
-        debug_assert_eq!(nr_bounds_missing_in_row, counter);
-
-        match counter {
-            0 => self.for_entire_constraint(constraint, direction),
-            1 => Ok(self.create_variable_bound(constraint, direction)),
-            _ => unreachable!(
-                "Constraint should not be added to the activity queue before the counter is 0 or 1."
-            ),
+    match (relation, direction) {
+        (RangedConstraintRelation::Equal, _) => Some(right_hand_side.clone()),
+        (RangedConstraintRelation::Range(range), BoundDirection::Lower) => {
+            Some(right_hand_side - range)
         }
+        (RangedConstraintRelation::Range(_), BoundDirection::Upper) => {
+            Some(right_hand_side.clone())
+        }
+        (RangedConstraintRelation::Less, BoundDirection::Lower) => None,
+        (RangedConstraintRelation::Less, BoundDirection::Upper) => Some(right_hand_side.clone()),
+        (RangedConstraintRelation::Greater, BoundDirection::Lower) => {
+            Some(right_hand_side.clone())
+        }
+        (RangedConstraintRelation::Greater, BoundDirection::Upper) => None,
+    }
+}
+
+impl<F: RuleField, const I: bool> LocalRule<F, I> for DomainPropagation
+where
+    for<'r> &'r F: OrderedFieldRef<F> + Neg<Output = F>,
+{
+    type Trigger = (usize, BoundDirection);
+    const ID: RuleId = RuleId::DomainPropagation;
+
+    fn queue(queues: &mut Queues) -> &mut Queue<(usize, BoundDirection)> {
+        &mut queues.activity
     }
 
-    /// Apply domain propagation through activation bounds for a constraint where all relevant
-    /// variable bounds are known.
-    ///
-    /// Attempts to both prove infeasibility and removal of the entire constraint. Afterwards, it
-    /// attempts to add any missing "opposite" bounds.
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint`: Index of the constraint under consideration.
-    /// * `direction`: Whether the activity lower- or upperbound should be used.
-    fn for_entire_constraint(
-        &mut self,
-        constraint: usize,
-        direction: BoundDirection, // Activity bound that can be calculated
-    ) -> Result<Change, LinearProgramType<OF>> {
-        debug_assert_eq!(
-            match direction {
-                BoundDirection::Lower => self.counters.activity[constraint].0,
-                BoundDirection::Upper => self.counters.activity[constraint].1,
-            },
-            0,
-        );
-        // In this variable we collect the most change made by the function, upgrading when needed.
-        let mut most_meaningful_change = Change::None;
-
-        // TODO(ARCHITECTURE): Try to avoid this clone
-        let activity_bound = self
-            .compute_activity_bound_if_needed(constraint, direction)
-            .clone();
-
-        let (remove_constraint, apply_variable_part) = self.constraint_part(
-            constraint,
-            &activity_bound,
-            direction,
-            &mut most_meaningful_change,
-        )?;
-
-        if apply_variable_part
-            && let Some(right_hand_side) = self.can_variable_rule_be_applied(constraint, direction)
-        {
-            self.variable_part(
-                constraint,
-                right_hand_side,
-                &activity_bound,
-                direction,
-                &mut most_meaningful_change,
-            );
-        }
-
-        if remove_constraint {
-            self.remove_constraint_values(constraint)?;
-            self.remove_constraint(constraint);
-        }
-
-        Ok(most_meaningful_change)
+    fn is_applicable((row, _): (usize, BoundDirection), problem: &Problem<F>) -> bool {
+        // A row with a single coefficient is a bound, and the rule that says so is both cheaper
+        // and more complete.
+        problem.rows[row].is_active && problem.matrix.row_len(row) > 1
     }
 
-    /// If no value is known for one of the activity bounds, compute them.
-    ///
-    /// This is a helper method for `presolve_constraint_by_domain_propagation`.
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint`: Index of the constrain being checked.
-    ///
-    /// # Return value
-    ///
-    /// A tuple with a (lower, upper) activity bound. Can be `None` if not all of the relevant
-    /// lower or upper bounds are known.
-    fn compute_activity_bound_if_needed(
-        &mut self,
-        constraint: usize,
-        direction: BoundDirection,
-    ) -> &OF {
-        debug_assert_eq!(
-            match direction {
-                BoundDirection::Lower => self.counters.activity[constraint].0,
-                BoundDirection::Upper => self.counters.activity[constraint].1,
-            },
-            0
-        );
-
-        // Relevant activity counter.
-        let bound = match direction {
-            BoundDirection::Lower => &mut self.activity_bounds[constraint].0,
-            BoundDirection::Upper => &mut self.activity_bounds[constraint].1,
-        };
-
-        // If there is no bound, compute it.
-        if bound.is_none() {
-            let updates = &self.updates;
-            *bound = Some(
-                self.counters
-                    .iter_active_row(constraint)
-                    .map(|(variable, coefficient)| {
-                        let bound_direction = direction * coefficient.non_zero_signum();
-                        let bound = updates.variable_bound(variable, bound_direction).unwrap();
-                        coefficient * bound
-                    })
-                    .sum(),
-            );
-        }
-
-        // We unwrap because we just computed it.
-        bound.as_ref().unwrap()
-    }
-
-    fn constraint_part(
-        &mut self,
-        constraint: usize,
-        bound: &OF,
-        direction: BoundDirection,
-        made_change: &mut Change,
-    ) -> Result<(bool, bool), LinearProgramType<OF>> {
-        let constraint_update = self.constraint_update(constraint, bound, direction)?;
-        if let Some(change) = constraint_update {
-            let (remove_constraint, apply_variable_part) = match change {
-                ConstraintUpdate::Remove => (true, true), // TODO(CORRECTNESS): Should the second value be changed to `false`?
-                ConstraintUpdate::Replace(new_inequality, right_hand_side_shift) => {
-                    self.updates
-                        .constraints
-                        .insert(constraint, new_inequality.into());
-                    self.updates.change_b(constraint, right_hand_side_shift);
-
-                    (false, true)
-                }
-                ConstraintUpdate::SetVariablesToBound => {
-                    let mut activity_counters_to_update = Vec::new();
-                    for (variable, coefficient) in self.counters.iter_active_row(constraint) {
-                        let variable_direction = direction * coefficient.non_zero_signum();
-                        let bound = self
-                            .updates
-                            .variable_bound(variable, variable_direction)
-                            // This value exists because the activity bound we're working with is based on it.
-                            .unwrap()
-                            // TODO(ARCHITECTURE): Try to avoid this clone.
-                            .clone();
-
-                        // Move the bound over to the "permanent" bound changes
-                        if let Some(bound_value) = self
-                            .updates
-                            .activity_bounds
-                            .remove(&(variable, variable_direction))
-                        {
-                            self.updates
-                                .bounds
-                                .insert((variable, variable_direction), bound_value);
-                        }
-                        // Update the other bound to be the same
-                        let change =
-                            self.updates
-                                .update_bound(variable, !variable_direction, bound.clone());
-                        if change == BoundChange::NewBound {
-                            activity_counters_to_update.push((variable, !variable_direction));
-                        }
-                        debug_assert!(self.updates.is_variable_fixed(variable).is_some());
-
-                        self.queues.substitution.push(variable);
-                    }
-
-                    for (variable, direction) in activity_counters_to_update {
-                        self.update_activity_counters(variable, direction);
-                    }
-
-                    (true, false)
-                }
-            };
-            *made_change = Change::Meaningful;
-            // Constraint gets removed outside this function
-            Ok((remove_constraint, apply_variable_part))
-        } else {
-            Ok((false, true))
-        }
-    }
-
-    /// Whether a constraint can be removed.
-    ///
-    /// We start with `<a, x> (== =r= <= >=) b`, `l <= <a, x>` or `<a, x> <= u` and `a (= < >) b`
-    /// where `a` is one of `l` and `u`. This results in `4x2x3 = 24` combinations, all of which
-    /// are cases below.
-    ///
-    /// Note that always `l < u`, because otherwise there there would be fixed variables (and they
-    /// are presolved in a rule with higher priority). This is not directly relevant though, as we
-    /// treat only one side at the time.
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint`: Index of the constraint under consideration.
-    /// * `bound_value`: Value of the activity lower- or upperbound.
-    /// * `direction`: Whether it's the activity lower- or upperbound.
-    ///
-    /// # Return value
-    ///
-    /// Whether a change needs to be made, and if so, which one.
-    ///
-    /// # Errors
-    ///
-    /// If the constraint can't be satisfied anymore.
-    fn constraint_update(
-        &self,
-        constraint: usize,
-        bound_value: &OF,
-        direction: BoundDirection,
-    ) -> Result<Option<ConstraintUpdate<OF>>, LinearProgramType<OF>> {
-        use RangedConstraintRelation::{Equal, Greater, Less, Range};
-
-        let rhs = self.updates.b(constraint);
-        let constraint_type = self.updates.constraint_type(constraint);
-
-        match (direction, constraint_type, rhs.cmp(bound_value)) {
-            // `<a, x> (== =r= <=) b < l`
-            (BoundDirection::Lower, Equal | Range(_) | Less, Ordering::Less) |
-            // `<a, x> (== =r= >=) b > u`
-            (BoundDirection::Upper, Equal | Greater, Ordering::Greater) => {
-                Err(LinearProgramType::Infeasible)
-            },
-
-            // `l <= <a, x> (== <=) b == l`
-            (BoundDirection::Lower, Equal | Less, Ordering::Equal) |
-            // `u >= <a, x> (== >=) b = u`
-            (BoundDirection::Upper, Equal | Greater, Ordering::Equal) => {
-                Ok(Some(ConstraintUpdate::SetVariablesToBound))
-            },
-
-            // `<a, x> <= u (= <) b`
-            (BoundDirection::Upper, Less, Ordering::Equal | Ordering::Greater) |
-            // `<a, x> >= l (= >) b`
-            (BoundDirection::Lower, Greater, Ordering::Less | Ordering::Equal) => {
-                Ok(Some(ConstraintUpdate::Remove))
-            },
-
-            // `b - r <= <a, x> <= b = u`
-            (BoundDirection::Upper, Range(range), Ordering::Equal) => {
-                Ok(Some(ConstraintUpdate::Replace(InequalityRelation::Greater, -range)))
-            },
-
-            (BoundDirection::Lower, Range(range), Ordering::Greater) => {
-                let lower_bound = rhs - range;
-                Ok(match bound_value.cmp(&lower_bound) {
-                    // `l < b - r <= <a, x> <= b`
-                    Ordering::Less => None,
-                    // `b - r <= l <= <a, x> <= b`
-                    Ordering::Equal | Ordering::Greater => {
-                        Some(ConstraintUpdate::Replace(InequalityRelation::Less, OF::zero()))
-                    },
-                })
-            },
-            (BoundDirection::Upper, Range(range), Ordering::Greater) => {
-                let lower_bound = rhs - range;
-                match bound_value.cmp(&lower_bound) {
-                    Ordering::Less => Err(LinearProgramType::Infeasible),
-                    // `u >= <a, x> <= b == u`
-                    Ordering::Equal => Ok(Some(ConstraintUpdate::SetVariablesToBound)),
-                    // `b - r <= <a, x> <= u < b`
-                    Ordering::Greater => {
-                        // Keep only lower bound
-                        Ok(Some(ConstraintUpdate::Replace(InequalityRelation::Greater, -range)))
-                    }
-                }
-            },
-
-            // `<a, x> (== <= >=) b > l`
-            (BoundDirection::Lower, Equal | Less | Greater, Ordering::Greater) |
-            // `<a, x> (== =r= <= >=) b < u`
-            (BoundDirection::Upper, Equal | Range(_) | Less | Greater, Ordering::Less) => {
-                Ok(None)
-            },
-
-            // `l <= <a, x> =r= b == l`
-            (BoundDirection::Lower, Range(_), Ordering::Equal) => {
-                unreachable!("Would require the range to be zero, in which case it should be an \
-                              equality bound instead.")
-            },
-        }
-    }
-
-    /// Apply domain propagation through activation bounds for a constraint where all of the
-    /// relevant variable bounds are known.
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint`: Index of the constraint under consideration.
-    /// * `right_hand_side`: Nonzero coefficient of the variable in the constraint.
-    /// * `activity_bound`: Value of the activity lower- or upperbound.
-    /// * `activity_direction`: Whether the activity lower- or upperbound should be used.
-    ///
-    /// # Return value
-    ///
-    /// Tuple of:
-    ///
-    /// * Direction of the bound that was changed (lower or upper).
-    /// * Change that was done (any at all, and if so, by how much or was there no bound before? See
-    ///   the `update_bound` method for more).
-    fn variable_part(
-        &mut self,
-        constraint: usize,
-        right_hand_side: OF,
-        activity_bound: &OF,
-        activity_direction: BoundDirection,
-        made_change: &mut Change,
-    ) {
-        let targets = self
-            .counters
-            .iter_active_row(constraint)
-            .map(|(i, v)| (i, v.clone())) // TODO(ARCHITECTURE): Avoid this clone
-            .collect::<Vec<_>>();
-        for (variable, coefficient) in targets {
-            let coefficient_sign = coefficient.non_zero_signum();
-            let new_variable_bound_direction = !activity_direction * coefficient_sign;
-
-            let variable_bound_value = self
-                .updates
-                .variable_bound(variable, activity_direction * coefficient_sign)
-                .unwrap(); // Was used to compute the activity bound
-            let residual_activity_bound = activity_bound - &coefficient * variable_bound_value;
-
-            let new_variable_bound_value =
-                (&right_hand_side - residual_activity_bound) / coefficient;
-
-            let change = self.updates.update_activity_variable_bound(
-                variable,
-                new_variable_bound_direction,
-                new_variable_bound_value.clone(),
-            );
-
-            match change {
-                BoundChange::None => {}
-                BoundChange::NewBound => {
-                    self.after_bound_change(variable, new_variable_bound_direction, None);
-                    *made_change = Change::Meaningful;
-                }
-                BoundChange::BoundShift(change) => {
-                    self.after_bound_change(variable, new_variable_bound_direction, Some(change));
-                    if *made_change != Change::Meaningful {
-                        *made_change = Change::NotMeaningful;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Apply domain propagation through activation bounds for a constraint where all but one of the
-    /// relevant variable bounds are known.
-    ///
-    /// # Arguments
-    ///
-    /// * `constraint`: Index of the constraint under consideration.
-    /// * `direction`: Whether the activity lower- or upperbound should be used.
-    fn create_variable_bound(
-        &mut self,
-        constraint: usize,
-        activity_direction: BoundDirection,
-    ) -> Change {
-        // We should be exactly one variable bound away from being able to compute an activity
-        // bound, otherwise, a different rule should be applied.
-        debug_assert_eq!(
-            match activity_direction {
-                BoundDirection::Lower => self.counters.activity[constraint].0,
-                BoundDirection::Upper => self.counters.activity[constraint].1,
-            },
-            1,
-        );
-
-        let right_hand_side =
-            match self.can_variable_rule_be_applied(constraint, activity_direction) {
-                None => return Change::None,
-                Some(value) => value,
-            };
-
-        // Compute the activity bound and notice to which variable it can be applied (because it
-        // is the only one that doesn't have the relevant bound yet).
-        let total_activity = self
-            .counters
-            .iter_active_row(constraint)
-            .filter_map(|(variable, coefficient)| {
-                let bound_direction = activity_direction * coefficient.non_zero_signum();
-                self.updates
-                    .variable_bound(variable, bound_direction)
-                    .map(|bound| coefficient * bound)
-            })
-            .sum::<OF>();
-        let (target_column, target_coefficient) = self
-            .counters
-            .iter_active_row(constraint)
-            .find(|&(variable, coefficient)| {
-                let bound_direction = activity_direction * coefficient.non_zero_signum();
-                self.updates
-                    .variable_bound(variable, bound_direction)
-                    .is_none()
-            })
-            .unwrap();
-
-        // Compute the variable bound and apply the change.
-        let value = (right_hand_side - total_activity) / target_coefficient;
-        let bound_direction = !activity_direction * target_coefficient.non_zero_signum();
-        match self
-            .updates
-            .update_activity_variable_bound(target_column, bound_direction, value)
-        {
-            BoundChange::None => Change::None,
-            BoundChange::NewBound => {
-                self.after_bound_change(target_column, bound_direction, None);
-                Change::Meaningful
-            }
-            BoundChange::BoundShift(shift) => {
-                self.after_bound_change(target_column, bound_direction, Some(shift));
-                Change::NotMeaningful
-            }
-        }
-    }
-
-    fn can_variable_rule_be_applied(
-        &self,
-        constraint: usize,
-        activity_direction: BoundDirection,
-    ) -> Option<OF> {
-        let right_hand_side = self.updates.b(constraint).clone();
-        match self.updates.constraint_type(constraint) {
-            RangedConstraintRelation::Equal => Some(right_hand_side),
-            RangedConstraintRelation::Range(range) => match activity_direction {
-                BoundDirection::Lower => Some(right_hand_side),
-                BoundDirection::Upper => Some(right_hand_side - range),
-            },
-            RangedConstraintRelation::Less => match activity_direction {
-                BoundDirection::Lower => Some(right_hand_side),
-                BoundDirection::Upper => None,
-            },
-            RangedConstraintRelation::Greater => match activity_direction {
-                BoundDirection::Lower => None,
-                BoundDirection::Upper => Some(right_hand_side),
-            },
+    fn apply(
+        (row, activity_direction): (usize, BoundDirection),
+        reducer: &mut Reducer<'_, F, I>,
+    ) -> Result<Effect, Stop> {
+        match reducer.activity.missing(row, activity_direction) {
+            0 => complete(row, activity_direction, reducer),
+            1 => single_missing_bound(row, activity_direction, reducer),
+            // The trigger is stale: a bound was lost since it was enqueued.
+            _ => Ok(Effect::None),
         }
     }
 }
 
-enum ConstraintUpdate<F> {
-    Remove,
-    Replace(InequalityRelation, F),
-    SetVariablesToBound,
+/// Both ends of the row's own interval, and the activity end we know.
+fn complete<F: RuleField, const I: bool>(
+    row: usize,
+    activity_direction: BoundDirection,
+    reducer: &mut Reducer<'_, F, I>,
+) -> Result<Effect, Stop>
+where
+    for<'r> &'r F: OrderedFieldRef<F> + Neg<Output = F>,
+{
+    let activity = reducer
+        .activity
+        .value(&reducer.problem, row, activity_direction)
+        .clone();
+
+    debug_assert_eq!(
+        activity,
+        crate::data::linear_program::general_form::presolve::activity::Activity::recompute(
+            &reducer.problem,
+            row,
+            activity_direction,
+        ),
+        "a cached activity that no longer matches its row is a silent wrong answer",
+    );
+
+    let relation = reducer.problem.rows[row].relation.clone();
+    let right_hand_side = reducer.problem.rows[row].right_hand_side.clone();
+
+    // The end of the row's interval that this activity end can run into, and the one it runs away
+    // from. A lower activity is compared against the upper end of the interval, and the other way
+    // round.
+    let near = admissible_end(&relation, &right_hand_side, !activity_direction);
+    let far = admissible_end(&relation, &right_hand_side, activity_direction);
+
+    if let Some(near) = &near {
+        let comparison = match activity_direction {
+            // `L` against `hi`: the lowest the row can be, against the highest it may be.
+            BoundDirection::Lower => activity.cmp(near),
+            // `U` against `lo`.
+            BoundDirection::Upper => near.cmp(&activity),
+        };
+
+        match comparison {
+            // The row cannot be satisfied at all.
+            Ordering::Greater => return Err(Stop::Infeasible),
+            // It can be satisfied in exactly one way: every variable at the bound that gets the
+            // activity here.
+            Ordering::Equal => return force(row, activity_direction, reducer),
+            Ordering::Less => {}
+        }
+    }
+
+    // Is the side the activity runs away from already implied by the bounds?
+    //
+    // A side the relation does not have is not an implied side. A `<=` row says nothing about how
+    // small its activity may be, and reading that silence as "implied" would drop the row on the
+    // strength of the one thing it never claimed.
+    let far_is_implied = match &far {
+        None => false,
+        Some(far) => match activity_direction {
+            BoundDirection::Lower => &activity >= far,
+            BoundDirection::Upper => &activity <= far,
+        },
+    };
+
+    if far_is_implied {
+        return drop_far_side(row, activity_direction, &relation, &right_hand_side, near, reducer);
+    }
+
+    // The row constrains its variables. Give each of them a bound.
+    derive_bounds(row, activity_direction, &activity, near, reducer)
+}
+
+/// The activity can only just reach the row: pin every variable to the bound that gets it there.
+fn force<F: RuleField, const I: bool>(
+    row: usize,
+    activity_direction: BoundDirection,
+    reducer: &mut Reducer<'_, F, I>,
+) -> Result<Effect, Stop>
+where
+    for<'r> &'r F: OrderedFieldRef<F> + Neg<Output = F>,
+{
+    let pinned = reducer
+        .problem
+        .matrix
+        .row(row)
+        .map(|(column, coefficient)| {
+            let direction = contributes_to(activity_direction, coefficient.non_zero_signum());
+            let value = reducer.problem.columns[column]
+                .bound(direction)
+                .expect("the activity was computed from this bound")
+                .clone();
+            (column, direction, value)
+        })
+        .collect::<Vec<_>>();
+
+    for (column, direction, value) in pinned {
+        // Bring the other bound in to meet the one the activity used.
+        reducer.tighten_bound(column, !direction, value, row, RuleId::DomainPropagation)?;
+    }
+
+    let relation = reducer.problem.rows[row].relation.clone();
+    let right_hand_side = reducer.problem.rows[row].right_hand_side.clone();
+    let coefficients = reducer.remove_row(row, RuleId::DomainPropagation);
+    reducer.postsolve.push(Reduction::RedundantRow {
+        row,
+        relation,
+        right_hand_side,
+        coefficients,
+    });
+
+    Ok(Effect::Reduced)
+}
+
+/// One side of the row is implied by the variable bounds: drop it, and the row with it if nothing
+/// is left.
+fn drop_far_side<F: RuleField, const I: bool>(
+    row: usize,
+    activity_direction: BoundDirection,
+    relation: &RangedConstraintRelation<F>,
+    right_hand_side: &F,
+    near: Option<F>,
+    reducer: &mut Reducer<'_, F, I>,
+) -> Result<Effect, Stop>
+where
+    for<'r> &'r F: OrderedFieldRef<F> + Neg<Output = F>,
+{
+    // What is left once the side the activity ran away from is dropped.
+    //
+    // Only a range has another side to keep. An inequality has just the one, so having it implied
+    // leaves nothing; an equality cannot get here, because an activity reaching one of its two
+    // coinciding ends is forcing, and going past it is infeasible.
+    let remaining = match (relation, activity_direction) {
+        (RangedConstraintRelation::Range(_), BoundDirection::Lower) => {
+            Some((RangedConstraintRelation::Less, right_hand_side.clone()))
+        }
+        (RangedConstraintRelation::Range(range), BoundDirection::Upper) => {
+            Some((RangedConstraintRelation::Greater, right_hand_side - range))
+        }
+        _ => None,
+    };
+
+    match remaining {
+        Some((relation, right_hand_side)) => {
+            reducer.change_row(row, relation, right_hand_side, RuleId::DomainPropagation);
+            // The row still constrains its variables from the side that is left.
+            let activity = reducer
+                .activity
+                .value(&reducer.problem, row, activity_direction)
+                .clone();
+            derive_bounds(row, activity_direction, &activity, near, reducer)?;
+            Ok(Effect::Tightened)
+        }
+        None => {
+            let relation = relation.clone();
+            let right_hand_side = right_hand_side.clone();
+            let coefficients = reducer.remove_row(row, RuleId::DomainPropagation);
+            reducer.postsolve.push(Reduction::RedundantRow {
+                row,
+                relation,
+                right_hand_side,
+                coefficients,
+            });
+            Ok(Effect::Reduced)
+        }
+    }
+}
+
+/// Give every variable in the row the bound the row's slack allows it.
+///
+/// With the activity end `activity` known and the row admitting up to `near` on the other side,
+/// each variable may use whatever the others leave: `a_j x_j (rel) near - (activity - a_j b_j)`.
+fn derive_bounds<F: RuleField, const I: bool>(
+    row: usize,
+    activity_direction: BoundDirection,
+    activity: &F,
+    near: Option<F>,
+    reducer: &mut Reducer<'_, F, I>,
+) -> Result<Effect, Stop>
+where
+    for<'r> &'r F: OrderedFieldRef<F> + Neg<Output = F>,
+{
+    let Some(near) = near else {
+        // The row does not limit the activity on that side, so there is nothing to share out.
+        return Ok(Effect::None);
+    };
+
+    let candidates = reducer
+        .problem
+        .matrix
+        .row(row)
+        .map(|(column, coefficient)| {
+            let sign = coefficient.non_zero_signum();
+            let used = contributes_to(activity_direction, sign);
+            let bound = reducer.problem.columns[column]
+                .bound(used)
+                .expect("the activity was computed from this bound")
+                .clone();
+            (column, coefficient.clone(), sign, bound)
+        })
+        .collect::<Vec<_>>();
+
+    let mut effect = Effect::None;
+    for (column, coefficient, sign, used_bound) in candidates {
+        let residual = activity - &(&coefficient * &used_bound);
+        let value = &(&near - &residual) / &coefficient;
+        // Dividing by the coefficient turns the direction around when it is negative.
+        let direction = contributes_to(!activity_direction, sign);
+
+        let change = reducer.tighten_bound(
+            column,
+            direction,
+            value,
+            row,
+            RuleId::DomainPropagation,
+        )?;
+        if change != crate::data::linear_program::general_form::presolve::reducer::BoundChange::None
+        {
+            effect = Effect::Tightened;
+        }
+    }
+
+    Ok(effect)
+}
+
+/// Exactly one variable in the row lacks the bound the activity end needs: give it one.
+fn single_missing_bound<F: RuleField, const I: bool>(
+    row: usize,
+    activity_direction: BoundDirection,
+    reducer: &mut Reducer<'_, F, I>,
+) -> Result<Effect, Stop>
+where
+    for<'r> &'r F: OrderedFieldRef<F> + Neg<Output = F>,
+{
+    let relation = reducer.problem.rows[row].relation.clone();
+    let right_hand_side = reducer.problem.rows[row].right_hand_side.clone();
+    let Some(near) = admissible_end(&relation, &right_hand_side, !activity_direction) else {
+        return Ok(Effect::None);
+    };
+
+    // Everything except the one variable without a bound.
+    let mut partial = F::zero();
+    let mut target = None;
+    for (column, coefficient) in reducer.problem.matrix.row(row) {
+        let sign = coefficient.non_zero_signum();
+        match reducer.problem.columns[column].bound(contributes_to(activity_direction, sign)) {
+            Some(bound) => partial += coefficient * bound,
+            None => {
+                debug_assert!(target.is_none(), "the caller checked there is exactly one");
+                target = Some((column, coefficient.clone(), sign));
+            }
+        }
+    }
+
+    let (column, coefficient, sign) = target.expect("the caller checked there is exactly one");
+    let value = &(&near - &partial) / &coefficient;
+    let direction = contributes_to(!activity_direction, sign);
+
+    let change = reducer.tighten_bound(
+        column,
+        direction,
+        value,
+        row,
+        RuleId::DomainPropagation,
+    )?;
+
+    Ok(
+        if change == crate::data::linear_program::general_form::presolve::reducer::BoundChange::None
+        {
+            Effect::None
+        } else {
+            Effect::Tightened
+        },
+    )
 }

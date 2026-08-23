@@ -63,12 +63,12 @@ fn conversion_pipeline() {
 
     // Get to a basic feasible solution
     let result = phase_two::primal::<_, _, FirstProfitable>(&mut tableau_form_computed);
+    let OptimizationResult::FiniteOptimum(optimum) = result else {
+        panic!("this problem has a finite optimum");
+    };
     assert_eq!(
-        result,
-        OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(
-            vec![(1, 0.5f64), (3, 2.5f64), (4, 1.5f64),],
-            5
-        ))
+        optimum.primal,
+        SparseVector::from_test_tuples(vec![(1, 0.5f64), (3, 2.5f64), (4, 1.5f64)], 5),
     );
 }
 

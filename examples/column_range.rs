@@ -205,8 +205,8 @@ fn main() {
     // We apply primal simplex to improve the solution.
     let result = phase_two::primal::<_, _, FirstProfitable>(&mut tableau);
     match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let solution = matrix.reconstruct_solution(vector);
+        OptimizationResult::FiniteOptimum(solution) => {
+            let solution = matrix.reconstruct_solution(solution.primal);
             let shifts = (0..m)
                 .map(|i| match solution.get(i) {
                     None => Zero::zero(),

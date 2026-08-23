@@ -5,29 +5,27 @@ use std::convert::TryInto;
 
 use relp_num::R64;
 use relp_num::RB;
-use relp_num::{Rational64, RationalBig, Absorb};
+use relp_num::{Rational64, RationalBig};
 
 use crate::algorithm::OptimizationResult;
 use crate::algorithm::two_phase::matrix_provider::MatrixProvider;
-use crate::algorithm::two_phase::matrix_provider::column::Column as ColumnTrait;
 use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
 use crate::algorithm::two_phase::phase_one::{Rank, RankedFeasibilityResult};
 use crate::algorithm::two_phase::strategy::pivot_rule::FirstProfitable;
 use crate::algorithm::two_phase::tableau::Tableau;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inverse_rows::BasisInverseRows;
-use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::{BasisInverse, Carry};
-use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
+use crate::algorithm::two_phase::tableau::inverse_maintenance::carry::Carry;
 use crate::algorithm::two_phase::tableau::kind::artificial::partially::Partially;
 use crate::algorithm::two_phase::tableau::kind::non_artificial::NonArtificial;
 use crate::algorithm::two_phase::{phase_one, phase_two};
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder, SparseMatrix};
 use crate::data::linear_algebra::vector::test::TestVector;
-use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
+use crate::data::linear_algebra::vector::DenseVector;
 use crate::data::linear_program::elements::{
     ConstraintRelation, Objective, RangedConstraintRelation, VariableType,
 };
 use crate::data::linear_program::general_form::Variable as GeneralFormVariable;
-use crate::data::linear_program::general_form::{GeneralForm, Variable};
+use crate::data::linear_program::general_form::{GeneralForm, Presolved, Variable};
 use crate::io::mps::parse;
 use crate::io::mps::{Bound, BoundType, Column, MPS, Rhs, Row};
 
@@ -50,30 +48,20 @@ fn conversion_pipeline() {
     let mut general_form_computed: GeneralForm<T> = result.unwrap();
     assert_eq!(general_form_computed, general_form());
 
-    let result = general_form_computed.presolve();
-    assert!(result.is_ok());
+    assert_eq!(general_form_computed.presolve::<false>(), Presolved::Reduced);
 
+    // The stages between here and the solution used to be pinned to hand written fixtures. They
+    // described one particular reduced problem, so every improvement to presolve broke them
+    // without saying anything about whether the answer was still right. What matters at this
+    // point is that the pipeline still produces the solution to the problem that was read, which
+    // is what is checked below; the plumbing itself is exercised by `problem_2` and the instance
+    // suites.
     let constraint_type_counts = general_form_computed.standardize();
-    // General form, standardized
-    assert_eq!(general_form_computed, general_form_standardized());
-
-    // Matrix data form
     let matrix_data_form_computed =
         general_form_computed.derive_matrix_data(constraint_type_counts);
 
-    let (constraints, b, variables) = create_matrix_data_data();
-    let matrix_data_form_expected = matrix_data_form(&constraints, &b, &variables);
-    assert_eq!(matrix_data_form_computed, matrix_data_form_expected);
-
-    // Artificial tableau form
     let artificial_tableau_form_computed =
-        Tableau::<_, Partially<_>>::new(&matrix_data_form_computed);
-    assert_eq!(
-        artificial_tableau_form_computed,
-        artificial_tableau_form(&matrix_data_form_expected)
-    );
-
-    // Get to a basic feasible solution
+        Tableau::<Carry<S, BasisInverseRows<S>>, Partially<_>>::new(&matrix_data_form_computed);
     let feasibility_result =
         phase_one::primal::<_, _, FirstProfitable>(artificial_tableau_form_computed);
     let mut tableau_form_computed = match feasibility_result {
@@ -91,31 +79,25 @@ fn conversion_pipeline() {
                 &matrix_data_form_computed,
             )
         }
-        _ => panic!(),
+        _ => panic!("The problem is feasible."),
     };
 
-    // Non-artificial tableau form
-    assert_eq!(
-        tableau_form_computed,
-        tableau_form(&matrix_data_form_expected)
-    );
-
-    // Get to a basic feasible solution
     let result = phase_two::primal::<_, _, FirstProfitable>(&mut tableau_form_computed);
-    assert_eq!(
-        result,
-        OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(
-            vec![(0, 4), (2, 6), (5, 2),],
-            6
-        ))
-    );
-
     match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let reconstructed = matrix_data_form_computed.reconstruct_solution(vector);
+        OptimizationResult::FiniteOptimum(solution) => {
+            let reconstructed = matrix_data_form_computed.reconstruct_solution(solution.primal);
             let solution =
                 general_form_computed.compute_full_solution_with_reduced_solution(reconstructed);
-            assert_eq!(solution.objective_value, R64!(54));
+
+            assert_eq!(solution.objective_value, RB!(54));
+            assert_eq!(
+                solution.solution_values,
+                vec![
+                    ("XONE".to_string(), RB!(4)),
+                    ("YTWO".to_string(), RB!(-1)),
+                    ("ZTHREE".to_string(), RB!(6)),
+                ],
+            );
         }
         _ => panic!("Expected a finite optimum."),
     }
@@ -248,65 +230,17 @@ pub fn general_form() -> GeneralForm<T> {
         },
     ];
     let variable_names = vec!["XONE".to_string(), "YTWO".to_string(), "ZTHREE".to_string()];
+    let constraint_names = vec!["LIM1".to_string(), "LIM2".to_string(), "MYEQN".to_string()];
 
-    GeneralForm::new(
+    GeneralForm::new_named(
         Objective::Minimize,
         rows,
         constraints,
         b,
         variables,
         variable_names,
+        constraint_names,
         R64!(0),
-    )
-}
-
-pub fn general_form_standardized() -> GeneralForm<T> {
-    let data = vec![vec![0, -1, 1], vec![1, 0, 1]];
-    let constraints = ColumnMajor::from_test_data(&data, 3);
-
-    let constraint_types = vec![
-        RangedConstraintRelation::Equal,
-        RangedConstraintRelation::Greater,
-    ];
-
-    let b = DenseVector::from_test_data(vec![6, 10]);
-
-    let variables = vec![
-        GeneralFormVariable {
-            variable_type: VariableType::Continuous,
-            cost: R64!(1),
-            lower_bound: Some(R64!(0)),
-            upper_bound: Some(R64!(4)),
-            shift: R64!(0),
-            flipped: false,
-        },
-        GeneralFormVariable {
-            variable_type: VariableType::Integer,
-            cost: R64!(4),
-            lower_bound: Some(R64!(0)),
-            upper_bound: Some(R64!(2)),
-            shift: R64!(1),
-            flipped: false,
-        },
-        GeneralFormVariable {
-            variable_type: VariableType::Continuous,
-            cost: R64!(9),
-            lower_bound: Some(R64!(0)),
-            upper_bound: None,
-            shift: R64!(0),
-            flipped: false,
-        },
-    ];
-    let variable_names = vec!["XONE".to_string(), "YTWO".to_string(), "ZTHREE".to_string()];
-
-    GeneralForm::new(
-        Objective::Minimize,
-        constraints,
-        constraint_types,
-        b,
-        variables,
-        variable_names,
-        -R64!(4),
     )
 }
 
@@ -353,68 +287,4 @@ pub fn matrix_data_form<'a>(
     variables: &'a [Variable<T>],
 ) -> MatrixData<'a, T> {
     MatrixData::new(constraints, b, vec![], 1, 0, 0, 1, variables)
-}
-
-pub fn artificial_tableau_form<MP: MatrixProvider<Column: ColumnTrait<F = T>, Rhs = T>>(
-    provider: &MP,
-) -> Tableau<Carry<S, BasisInverseRows<S>>, Partially<'_, MP>> {
-    let m = 4;
-    let artificials = vec![0, 1];
-    let carry = {
-        let minus_objective = RB!(-16);
-
-        let minus_pi = DenseVector::from_test_data(vec![-1, -1, 0, 0]);
-
-        let b = DenseVector::from_test_data(vec![6, 10, 4, 2]);
-
-        let mut basis_indices = artificials.clone();
-        basis_indices.extend(vec![2 + 4, 2 + 5]);
-
-        let basis_inverse_rows = BasisInverseRows::identity(m);
-
-        Carry::new(
-            minus_objective,
-            minus_pi,
-            b,
-            basis_indices,
-            basis_inverse_rows,
-        )
-    };
-    let basis_columns = (0..m)
-        .map(|i| carry.basis_column_index_for_row(i))
-        .collect();
-
-    Tableau::<_, Partially<_>>::new_with_basis(provider, carry, basis_columns, artificials)
-}
-
-pub fn tableau_form<'provider, MP: MatrixProvider<Column: ColumnTrait<F = T>>>(
-    provider: &'provider MP,
-) -> Tableau<Carry<S, BasisInverseRows<S>>, NonArtificial<'provider, MP>>
-where
-    S: Absorb<MP::Cost<'provider>>,
-{
-    let carry = {
-        let minus_objective = RB!(-58);
-        let minus_pi = DenseVector::from_test_data(vec![4, -13, 12, 0]);
-        let b = DenseVector::from_test_data(vec![6, 0, 4, 2]);
-        let basis_indices = vec![2, 1, 0, 5];
-        let basis_inverse_rows = BasisInverseRows::new(vec![
-            SparseVector::from_test_data(vec![0, 1, -1, 0]),
-            SparseVector::from_test_data(vec![-1, 1, -1, 0]),
-            SparseVector::from_test_data(vec![0, 0, 1, 0]),
-            SparseVector::from_test_data(vec![1, -1, 1, 1]),
-        ]);
-        Carry::new(
-            minus_objective,
-            minus_pi,
-            b,
-            basis_indices,
-            basis_inverse_rows,
-        )
-    };
-    let basis_columns = (0..4)
-        .map(|i| carry.basis_column_index_for_row(i))
-        .collect();
-
-    Tableau::<_, NonArtificial<_>>::new_with_inverse_maintainer(provider, carry, basis_columns)
 }

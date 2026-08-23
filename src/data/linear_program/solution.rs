@@ -18,6 +18,14 @@ pub struct Solution<F> {
     pub objective_value: F,
     /// (variable name, solution value) tuples for all variables, named as in the original problem.
     pub solution_values: Vec<(String, F)>,
+    /// (constraint name, multiplier) tuples for all constraints, when they were recovered.
+    ///
+    /// `dual_value[i]` is how much the objective value would move per unit of movement in the
+    /// right hand side of constraint `i`. Its admissible sign follows from the relation and the
+    /// direction of optimization; see [`crate::data::linear_program::verify`].
+    ///
+    /// `None` when the pipeline that produced this solution did not recover them.
+    pub dual_values: Option<Vec<(String, F)>>,
 }
 
 impl<F: PartialEq + Clone> Solution<F> {
@@ -34,6 +42,20 @@ impl<F: PartialEq + Clone> Solution<F> {
         Self {
             objective_value: objective,
             solution_values,
+            dual_values: None,
+        }
+    }
+
+    /// Create a `Solution` that also carries the multipliers of the constraints.
+    pub fn with_duals(
+        objective: F,
+        solution_values: Vec<(String, F)>,
+        dual_values: Vec<(String, F)>,
+    ) -> Self {
+        Self {
+            objective_value: objective,
+            solution_values,
+            dual_values: Some(dual_values),
         }
     }
 

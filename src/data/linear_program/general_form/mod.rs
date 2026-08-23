@@ -2,21 +2,15 @@
 //!
 //! Data structure for manipulation of linear programs.
 use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::iter::Sum;
 use std::mem;
-use std::ops::{Add, AddAssign, Mul, Neg, Sub};
+use std::ops::Neg;
 
 use cumsum::cumsum_array;
-use index_utils::remove_indices;
-use num_traits::Zero;
-use relp_num::NonZero;
 use relp_num::{OrderedField, OrderedFieldRef};
 
 pub use presolve::scale::{Scalable, Scaling};
 
 use crate::algorithm::two_phase::matrix_provider::matrix_data::MatrixData;
-use crate::data::linear_algebra::SparseTupleVec;
 use crate::data::linear_algebra::matrix::SparseMatrix;
 use crate::data::linear_algebra::matrix::{ColumnMajor, MatrixOrder};
 use crate::data::linear_algebra::traits::{
@@ -24,13 +18,14 @@ use crate::data::linear_algebra::traits::{
 };
 use crate::data::linear_algebra::vector::{DenseVector, SparseVector, Vector};
 use crate::data::linear_program::elements::{
-    BoundDirection, LinearProgramType, Objective, RangedConstraintRelation,
-    RangedConstraintRelationKind, VariableType,
+    Objective, RangedConstraintRelation, RangedConstraintRelationKind, VariableType,
 };
-use crate::data::linear_program::general_form::RemovedVariable::{FunctionOfOthers, Solved};
-use crate::data::linear_program::general_form::presolve::updates::Changes;
-use crate::data::linear_program::general_form::presolve::{Change, Index as PresolveIndex};
+use crate::data::linear_program::general_form::presolve::{
+    PresolveReducer, PresolveStop, Problem,
+};
 use crate::data::linear_program::solution::Solution;
+
+pub use presolve::{BoundOrigin, Limits, Postsolve, Presolved, Reduction, RuleId, Statistics};
 
 mod presolve;
 
@@ -41,7 +36,7 @@ mod presolve;
 ///
 /// Can be checked for consistency by the `is_consistent` method in this module. That method can be
 /// viewed as documentation for the requirements on the variables in this data structure.
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct GeneralForm<F> {
     /// Which direction does the objective function go?
     objective: Objective,
@@ -69,70 +64,87 @@ pub struct GeneralForm<F> {
     // Variable related
     /// Information about all *active* variables, that is, variables that are not yet presolved.
     variables: Vec<Variable<F>>,
-    /// For all variables, presolved or not, a placeholder with a potential solution or method to
-    /// derive the solution once the other active variables are solved.
+    /// Names of the variables of the problem as it was read, in that order.
     ///
-    /// It can be that a single original variable is represented in two active variables because it
-    /// is free. See the `OriginalVariable::ActiveFree` variant for more info.
-    original_variables: Vec<(String, OriginalVariable<F>)>,
-    /// Mapping indices of unsolved variables to their index in the original problem.
+    /// Never shrinks: a variable that presolving removes still has to be named in the solution.
+    variable_names: Vec<String>,
+    /// Names of the constraints of the problem as it was read, in that order.
     ///
-    /// Generally, only a single active variable points to an original variable. In the special case
-    /// of a free original variable, two active variables might point to the original variable.
-    from_active_to_original: Vec<usize>,
+    /// Never shrinks either: a dual value has to be reported against a row that can be named.
+    constraint_names: Vec<String>,
+
+    /// What presolving did, and which of the original columns are still here.
+    ///
+    /// Before presolving this says that nothing was done and every column survived.
+    postsolve: Postsolve<F>,
+
+    /// Where the value of each of the current columns is found in the standardized problem.
+    ///
+    /// The identity until `standardize` has run.
+    standardization: Vec<StandardizedColumn>,
+
+    /// Whether `standardize` turned a maximization problem into a minimization one.
+    ///
+    /// The costs and the constant were negated to do that, so the objective value of the
+    /// standardized problem is the negation of the one asked for.
+    objective_was_flipped: bool,
+
+    /// Where each row of the presolved problem ended up once `standardize` sorted them by type.
+    ///
+    /// The identity until then.
+    row_destination: Vec<usize>,
+    /// Which rows `standardize` multiplied by `-1` to make their right hand side non negative.
+    negated_rows: Vec<bool>,
 }
 
-/// Whether a variable from the original problem has been eliminated.
-#[derive(Eq, PartialEq, Debug, Clone)]
-enum OriginalVariable<F> {
-    /// The variable is still active.
-    ///
-    /// Either presolve has not yet been attempted, or was unsuccessful in eliminating the variable
-    /// from the problem.
-    ///
-    /// Contains the index of the variable in the active part of the problem. This index is used to
-    /// index into `GeneralForm.variables`.
-    Active(usize),
-
-    /// The variable free, active and split up in two bounded variables.
-    ///
-    /// If a variable is free (not bounded below, not bounded above), it is unclear how to directly
-    /// treat it with the simplex method. So we split the variable up: `x = x+ - x-` with both
-    /// `x+ >= 0` and `x- >= 0`. The first field of this variant refers to the index of `x+`, the
-    /// latter to the index of `x-`.
-    ActiveFree(usize, usize),
-
-    /// Variable was removed.
-    ///
-    /// Probably by a presolve operation. An explicit value might not be known.
-    Removed(RemovedVariable<F>),
+/// Whether a row with no coefficients left is satisfied.
+///
+/// Its activity is zero, so this asks where zero sits relative to what the relation admits.
+fn empty_row_holds<F>(relation: &RangedConstraintRelation<F>, right_hand_side: &F) -> bool
+where
+    F: OrderedField,
+    for<'r> &'r F: OrderedFieldRef<F>,
+{
+    let zero = F::zero();
+    match relation {
+        RangedConstraintRelation::Equal => right_hand_side == &zero,
+        RangedConstraintRelation::Less => right_hand_side >= &zero,
+        RangedConstraintRelation::Greater => right_hand_side <= &zero,
+        RangedConstraintRelation::Range(range) => {
+            right_hand_side >= &zero && right_hand_side - range <= zero
+        }
+    }
 }
 
-/// A variable from the original problem that was removed.
-#[derive(Eq, PartialEq, Debug, Clone)]
-pub enum RemovedVariable<F> {
-    /// Variable was determined to an explicit value.
-    Solved(F),
-    /// Variable was determined as a function of other variables.
+/// Two problems are the same when they describe the same thing.
+///
+/// The record of how this problem came to be is deliberately not part of that: two problems that
+/// pose the same question are equal however each of them was arrived at.
+impl<F: PartialEq> PartialEq for GeneralForm<F> {
+    fn eq(&self, other: &Self) -> bool {
+        self.objective == other.objective
+            && self.fixed_cost == other.fixed_cost
+            && self.constraints == other.constraints
+            && self.constraint_types == other.constraint_types
+            && self.b == other.b
+            && self.variables == other.variables
+            && self.variable_names == other.variable_names
+            && self.constraint_names == other.constraint_names
+    }
+}
+
+impl<F: Eq> Eq for GeneralForm<F> {}
+
+/// Where the value of a column of the presolved problem is found in the standardized problem.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum StandardizedColumn {
+    /// One column, at this index.
+    Single(usize),
+    /// Two columns, `positive - negative`.
     ///
-    /// Affine function of the form `constant - <coefficients, x>` where some of the `x` might be
-    /// unknown (or at least not explicitly known) at this point in the solution process.
-    // TODO(PERFORMANCE): Storing the coefficient of this slack instead of normalizing the
-    //  constraint before saving it here.
-    FunctionOfOthers {
-        /// Value of the constraint the slack was removed from.
-        ///
-        /// This value was normalized by the coefficient the slack variable had in the objective
-        /// function.
-        ///
-        /// The slack will be chosen such that the equation, as it looked like when this variable
-        /// was removed, "activates" to this value (up to normalization).
-        constant: F,
-        /// Coefficients of the constraint the slack was removed from.
-        ///
-        /// These coefficients were normalized by the coefficient of the slack in the constraint.
-        coefficients: SparseTupleVec<F>,
-    },
+    /// The simplex implementation works with variables that are bounded below, so a variable with
+    /// no bounds at all is split into a difference of two that are.
+    Split { positive: usize, negative: usize },
 }
 
 /// Check whether the dimensions of the `GeneralForm` are consistent.
@@ -142,86 +154,46 @@ pub enum RemovedVariable<F> {
 fn is_consistent<F: LinearAlgebraElement<F> + SparseComparator>(
     general_form: &GeneralForm<F>,
 ) -> bool {
-    // Reference values
-    let nr_active_constraints = general_form.nr_active_constraints();
-    let nr_active_variables = general_form.nr_active_variables();
-    let nr_free_variables = general_form
-        .original_variables
-        .iter()
-        .filter(|(_, variable)| matches!(variable, OriginalVariable::ActiveFree(_, _)))
-        .count();
+    let nr_rows = general_form.constraints.nr_rows();
+    let nr_columns = general_form.constraints.nr_columns();
 
-    let b = general_form.b.len() == nr_active_constraints;
-    let constraints = general_form.constraint_types.len() == nr_active_constraints;
-    let rows = general_form.constraints.nr_rows() == nr_active_constraints;
+    let rows = general_form.b.len() == nr_rows && general_form.constraint_types.len() == nr_rows;
+    let columns = general_form.variables.len() == nr_columns;
 
-    let variables = general_form.variables.len() == nr_active_variables;
-    let columns = general_form.constraints.nr_columns() == nr_active_variables;
-    let original_variables = {
-        let nr_original_variables = general_form.original_variables.len();
-        let size = nr_original_variables >= nr_active_variables - nr_free_variables;
-        let kept_increasing = general_form
-            .original_variables
+    // Every column of the presolved problem says where its value is to be found, and every index
+    // it names is a column of the problem as it now stands.
+    let standardization = general_form.standardization.len()
+        == general_form.postsolve.surviving_columns().len()
+        && general_form.standardization.iter().all(|entry| match entry {
+            StandardizedColumn::Single(index) => *index < nr_columns,
+            StandardizedColumn::Split { positive, negative } => {
+                *positive < nr_columns && *negative < nr_columns
+            }
+        });
+
+    // The permutation `standardize` recorded has to be one.
+    let permutation = {
+        let mut seen = vec![false; general_form.row_destination.len()];
+        general_form.row_destination.iter().all(|&destination| {
+            destination < seen.len() && !std::mem::replace(&mut seen[destination], true)
+        })
+    };
+    let negations = general_form.negated_rows.len() == general_form.row_destination.len();
+
+    // Every original variable is named, and every surviving column refers to one of them.
+    let names = general_form.variable_names.len() == general_form.postsolve.nr_columns();
+    let survivors = general_form.postsolve.surviving_columns().is_sorted()
+        && general_form
+            .postsolve
+            .surviving_columns()
             .iter()
-            .filter_map(|(_, variable)| match variable {
-                OriginalVariable::Active(index) => Some(*index),
-                OriginalVariable::ActiveFree(positive, _) => Some(*positive),
-                _ => None,
-            })
-            .is_sorted();
-        let no_cycles = {
-            // let nodes = repeat_n(Element::Node { weight: (), }, nr_original_variables);
-            // let edges = general_form.original_variables
-            //     .iter().enumerate()
-            //     .filter_map(|(target, (_, variable))| match variable {
-            //         OriginalVariable::Removed(FunctionOfOthers{ constant: _, coefficients: els, }) => Some((els, target)),
-            //         _ => None,
-            //     })
-            //     .flat_map(|(els, target)| {
-            //         els.iter().map(move |&(j, _)| Element::<(), ()>::Edge { source: j, target, weight: (), })
-            //     });
-            //
-            // !matches!(Dag::<(), (), usize>::from_elements(nodes.chain(edges)), Err(WouldCycle(_)))
-            true
-        };
+            .all(|&column| column < general_form.postsolve.nr_columns());
 
-        [size, kept_increasing, no_cycles].iter().all(|v| *v)
-    };
-    let from_active_to_original = {
-        let size = general_form.from_active_to_original.len() == nr_active_variables;
-        let sorted_non_free = general_form.from_active_to_original
-            [..(nr_active_variables - nr_free_variables)]
-            .is_sorted();
-        let sorted_free = general_form.from_active_to_original
-            [(nr_active_variables - nr_free_variables)..]
-            .is_sorted();
-        let max = if nr_active_variables > 0 {
-            general_form.from_active_to_original[nr_active_variables - 1]
-                < general_form.nr_original_variables()
-        } else {
-            true
-        };
-
-        [size, sorted_non_free, sorted_free, max].iter().all(|v| *v)
-    };
-
-    [
-        b,
-        constraints,
-        rows,
-        variables,
-        columns,
-        original_variables,
-        from_active_to_original,
-    ]
-    .iter()
-    .all(|v| *v)
+    rows && columns && standardization && names && survivors && permutation && negations
 }
 
 impl<F: LinearAlgebraElement<F> + SparseComparator> GeneralForm<F> {
     /// Create a new linear program in general form.
-    ///
-    /// Simple constructor except for two indices that get created.
     pub fn new(
         objective: Objective,
         constraints: SparseMatrix<F, F, ColumnMajor>,
@@ -231,7 +203,40 @@ impl<F: LinearAlgebraElement<F> + SparseComparator> GeneralForm<F> {
         variable_names: Vec<String>,
         fixed_cost: F,
     ) -> Self {
-        let nr_active_variables = variables.len();
+        let constraint_names = (0..constraints.nr_rows())
+            .map(|row| format!("r{}", row))
+            .collect();
+        Self::new_named(
+            objective,
+            constraints,
+            constraint_types,
+            b,
+            variables,
+            variable_names,
+            constraint_names,
+            fixed_cost,
+        )
+    }
+
+    /// Create a new linear program in general form, naming the constraints as well.
+    ///
+    /// A dual value belongs to a row, so a row has to be nameable for one to be reported.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_named(
+        objective: Objective,
+        constraints: SparseMatrix<F, F, ColumnMajor>,
+        constraint_types: Vec<RangedConstraintRelation<F>>,
+        b: DenseVector<F>,
+        variables: Vec<Variable<F>>,
+        variable_names: Vec<String>,
+        constraint_names: Vec<String>,
+        fixed_cost: F,
+    ) -> Self {
+        let nr_rows = constraints.nr_rows();
+        let nr_columns = variables.len();
+
+        let mut postsolve = Postsolve::new(nr_rows, nr_columns);
+        postsolve.set_survivors((0..nr_rows).collect(), (0..nr_columns).collect());
 
         let general_form = Self {
             objective,
@@ -240,17 +245,101 @@ impl<F: LinearAlgebraElement<F> + SparseComparator> GeneralForm<F> {
             b,
             fixed_cost,
             variables,
-            original_variables: variable_names
-                .into_iter()
-                .enumerate()
-                .map(|(j, name)| (name, OriginalVariable::Active(j)))
-                .collect(),
-            from_active_to_original: (0..nr_active_variables).collect(),
+            variable_names,
+            constraint_names,
+            postsolve,
+            standardization: (0..nr_columns).map(StandardizedColumn::Single).collect(),
+            objective_was_flipped: false,
+            row_destination: (0..nr_rows).collect(),
+            negated_rows: vec![false; nr_rows],
         };
 
         debug_assert!(is_consistent(&general_form));
 
         general_form
+    }
+
+    /// What presolving did to this problem.
+    pub fn postsolve(&self) -> &Postsolve<F> {
+        &self.postsolve
+    }
+
+    /// The names of the constraints, in order. For checking a solution against this problem.
+    pub(crate) fn constraint_names_for_verification(&self) -> &[String] {
+        &self.constraint_names
+    }
+
+    /// The names of the variables, in order. For checking a solution against this problem.
+    pub(crate) fn variable_names_for_verification(&self) -> &[String] {
+        &self.variable_names
+    }
+
+    /// The bounds of each variable, in order. For checking a solution against this problem.
+    pub(crate) fn variable_bounds_for_verification(
+        &self,
+    ) -> impl Iterator<Item = (Option<&F>, Option<&F>)> {
+        self.variables
+            .iter()
+            .map(|variable| (variable.lower_bound.as_ref(), variable.upper_bound.as_ref()))
+    }
+
+    /// Each row, as a relation, a right hand side and its coefficients. For checking a solution.
+    pub(crate) fn rows_for_verification(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &RangedConstraintRelation<F>,
+            &F,
+            impl Iterator<Item = (usize, &F)>,
+        ),
+    > {
+        (0..self.constraints.nr_rows()).map(move |row| {
+            (
+                &self.constraint_types[row],
+                &self.b[row],
+                (0..self.constraints.nr_columns()).filter_map(move |column| {
+                    self.constraints
+                        .iter_column(column)
+                        .find(|(i, _)| *i == row)
+                        .map(|(_, value)| (column, value))
+                }),
+            )
+        })
+    }
+
+    /// The optimization direction, the constant and the costs. For checking a solution.
+    pub(crate) fn objective_for_verification(
+        &self,
+    ) -> (Objective, &F, impl Iterator<Item = &F>) {
+        (
+            self.objective,
+            &self.fixed_cost,
+            self.variables.iter().map(|variable| &variable.cost),
+        )
+    }
+
+    /// The relations of the constraints, for diagnostics.
+    #[cfg(test)]
+    pub(crate) fn constraint_types_for_test(&self) -> &[RangedConstraintRelation<F>] {
+        &self.constraint_types
+    }
+    /// The right hand sides, for diagnostics.
+    #[cfg(test)]
+    pub(crate) fn b_for_test(&self) -> &DenseVector<F> {
+        &self.b
+    }
+    /// One variable, for diagnostics.
+    #[cfg(test)]
+    pub(crate) fn variable_for_test(&self, column: usize) -> &Variable<F> {
+        &self.variables[column]
+    }
+    /// One coefficient, for diagnostics.
+    #[cfg(test)]
+    pub(crate) fn coefficient_for_test(&self, row: usize, column: usize) -> Option<&F> {
+        self.constraints
+            .iter_column(column)
+            .find(|(i, _)| *i == row)
+            .map(|(_, v)| v)
     }
 }
 
@@ -355,164 +444,193 @@ where
         self.reorder_constraints_by_type()
     }
 
-    /// Recursively analyse constraints and variable bounds and eliminating or tightning these.
+    /// Replace this problem with a smaller one that has the same answer.
     ///
-    /// In order to make the linear program easier to solve, a set of rules is applied. These rules
-    /// are cheaper than the full simplex algorithm and are aimed at making the program easier to
-    /// solve by other algorithms.
+    /// A set of rules is applied until none of them has anything left to do. Each removes a row or
+    /// a column, tightens a bound, or weakens a relation, and records what it did so that a
+    /// solution of what remains can be turned back into a solution of what was given.
     ///
-    /// A set of queues containing constraint and variable indices are maintained. Each presolve
-    /// step attempts to apply a presolve rule to either a constraint or variable, as indicated by
-    /// these indices. After a rules is applied and a change occurred, relevant constraint or
-    /// variable indices might be added to queues, because a rule might be applicable.
-    ///
-    /// TODO(ENHANCEMENT): Normalization for numerical stability of floating point types.
+    /// The constant says whether the integrality of variables has to be respected. With `false`,
+    /// every variable is treated as continuous and the result is a reduction of the relaxation;
+    /// with `true`, the reductions are ones that also hold for the integer problem.
     ///
     /// # Return value
     ///
-    /// If the linear program gets solved during this presolve operation, a `Result::Err` return
-    /// value containing the solution.
-    pub fn presolve(&mut self) -> Result<(), LinearProgramType<OF>> {
-        let Changes {
-            b,
-            constraints,
-            fixed_cost,
-            bounds,
-            removed_variables,
-            constraints_marked_removed,
-        } = self.compute_presolve_changes()?;
-
-        let variable_indices_only = removed_variables.iter().map(|&(j, _)| j).collect();
-        self.update_values_that_remain(b, constraints, fixed_cost, bounds, removed_variables);
-        self.remove_rows_and_columns(constraints_marked_removed, variable_indices_only);
-        debug_assert!(is_consistent(self));
-
-        self.compute_solution_where_possible();
-        self.get_solution().map_or(Ok(()), |solution| {
-            Err(LinearProgramType::FiniteOptimum(solution))
-        })
+    /// What could be concluded. When the answer is [`Presolved::Reduced`], this problem has been
+    /// replaced by the reduced one and its [`GeneralForm::postsolve`] says how to get back.
+    pub fn presolve<const RESPECT_INTEGRALITY: bool>(&mut self) -> Presolved<OF> {
+        self.presolve_with::<RESPECT_INTEGRALITY>(&Limits::default(), true)
     }
 
-    /// Run the presolve operation using a `PresolveIndex` and return all the proposed reductions.
+    /// Presolve, saying how much work may be done and which arguments may be used.
     ///
-    /// # Return value
-    ///
-    /// Updates for almost all fields, see method body.
-    ///
-    /// # Errors
-    ///
-    /// In case the linear program gets solved during this presolve operation, a solution.
-    fn compute_presolve_changes(&self) -> Result<Changes<OF>, LinearProgramType<OF>> {
-        let mut index = PresolveIndex::new(self)?;
-
-        let mut iterations_without_meaningful_change = 0;
-        while !index.are_queues_empty()
-            && iterations_without_meaningful_change < {
-                // It can happen that a linear program is such that it can be recursively "tightened" by
-                // presolving, arbitrarily precise, with the process never terminating. As this happens,
-                // the numbers in the problem will have increasingly large representations.
-                //
-                // To make sure that doesn't happen, this heuristic rule decides when to stop.
-                // TODO(ENHANCEMENT): When should we stop presolving?
-                index.updates.nr_variables_remaining() + index.updates.nr_constraints_remaining()
-            }
-        {
-            match index.presolve_step()? {
-                Change::Meaningful => iterations_without_meaningful_change = 0,
-                Change::None => {}
-                Change::NotMeaningful => iterations_without_meaningful_change += 1,
-            }
-        }
-
-        Ok(index.updates.into_changes())
-    }
-
-    /// Modify the values that remain after the presolve operation.
-    ///
-    /// All indices are relative to the data as it looks before the presolving started. That is,
-    /// this method should be called before any values in this problem are deleted.
-    ///
-    /// # Arguments
-    ///
-    /// * `b`: Map from constraint indices to their new values.
-    /// * `constraints`: Map from constraint indices to the new constraint type.
-    /// * `fixed_cost`: Change to the fixed cost.
-    /// * `bounds`: New or tightened bounds, by value (as opposed to change).
-    /// * `solved_variables`: Values to remove from the problem.
-    fn update_values_that_remain(
+    /// `allow_dual_reductions` permits rules that keep an optimal solution without keeping every
+    /// feasible one. They make the problem smaller, but the result is no longer a relaxation of
+    /// the original, so an infeasible reduced problem no longer proves the original infeasible,
+    /// and a dual solution of the reduced problem is not one of the original.
+    pub fn presolve_with<const RESPECT_INTEGRALITY: bool>(
         &mut self,
-        b: HashMap<usize, OF>,
-        constraints: Vec<(usize, RangedConstraintRelation<OF>)>,
-        fixed_cost: OF,
-        bounds: HashMap<(usize, BoundDirection), OF>,
-        solved_variables: Vec<(usize, RemovedVariable<OF>)>,
-    ) {
-        for (i, change) in b {
-            self.b[i] = change;
+        limits: &Limits<OF>,
+        allow_dual_reductions: bool,
+    ) -> Presolved<OF> {
+        debug_assert!(
+            self.postsolve.is_empty(),
+            "presolving twice, or after standardizing, is not supported",
+        );
+
+        let problem = Problem::from_general_form(self);
+        let mut reducer =
+            PresolveReducer::<OF, RESPECT_INTEGRALITY>::new(problem, limits, allow_dual_reductions);
+
+        let outcome = presolve::run(&mut reducer);
+        let applied_dual = reducer.postsolve.applied_dual_reduction;
+        let unbounded = reducer.unbounded_if_feasible.is_some();
+
+        match outcome {
+            Err(PresolveStop::Infeasible) => {
+                // A rule that only preserves an optimal point may have removed the last feasible
+                // one, so an infeasible reduced problem no longer settles the question.
+                return if applied_dual {
+                    Presolved::InfeasibleOrUnbounded
+                } else {
+                    Presolved::Infeasible
+                };
+            }
+            Err(PresolveStop::UnboundedIfFeasible { .. }) => {
+                // Presolve found a variable that improves the objective without limit. Whether the
+                // problem is unbounded also depends on it having a feasible point at all, which
+                // presolve cannot establish in general.
+                return Presolved::Unbounded {
+                    assuming_feasible: true,
+                };
+            }
+            Ok(()) => {}
         }
 
-        for (i, constraint) in constraints {
-            self.constraint_types[i] = constraint;
+        self.adopt(reducer);
+
+        if !self.variables.is_empty() {
+            return if unbounded {
+                // A problem is left, so whether it has a feasible point is still open, and that is
+                // what stands between this and an answer.
+                Presolved::Unbounded {
+                    assuming_feasible: true,
+                }
+            } else {
+                Presolved::Reduced
+            };
         }
 
-        self.fixed_cost += fixed_cost;
-
-        for (j, variable) in solved_variables {
-            self.original_variables[j].1 = OriginalVariable::Removed(variable);
+        // Nothing is left to decide, so whatever rows remain either hold or do not. A rule being
+        // switched off can leave one behind, and reporting a solution to a problem that has none
+        // would be the worst way to find that out.
+        for (relation, right_hand_side) in self.constraint_types.iter().zip(self.b.iter()) {
+            if !empty_row_holds(relation, right_hand_side) {
+                return Presolved::Infeasible;
+            }
         }
 
-        for ((j, direction), value) in bounds {
-            let variable = &mut self.variables[j];
-            *match direction {
-                BoundDirection::Lower => &mut variable.lower_bound,
-                BoundDirection::Upper => &mut variable.upper_bound,
-            } = Some(value);
+        if unbounded {
+            return Presolved::Unbounded {
+                // Everything was determined and holds, so the problem does have a feasible point.
+                assuming_feasible: false,
+            };
         }
+
+        Presolved::Solved(self.solution_of_empty_problem())
     }
 
-    /// Remove a set of rows and columns from the constraint data.
-    ///
-    /// Constraints might have been determined redundant, or perhaps they represented a variable
-    /// bound. Those can also be represented in the `self.variables` property of `GeneralForm`. This
-    /// method is used to clean up those rows and indices that are left after the removal of those
-    /// constraints and / or variables.
-    ///
-    /// Note that this method is somewhat expensive because it removes columns from a row-major
-    /// ordered matrix.
-    fn remove_rows_and_columns(&mut self, mut constraints: Vec<usize>, mut variables: Vec<usize>) {
-        constraints.sort_unstable();
-        variables.sort_unstable();
+    /// Replace this problem with the reduced one the reducer produced.
+    fn adopt<const RESPECT_INTEGRALITY: bool>(
+        &mut self,
+        reducer: PresolveReducer<'_, OF, RESPECT_INTEGRALITY>,
+    ) {
+        let PresolveReducer {
+            problem,
+            mut postsolve,
+            statistics,
+            ..
+        } = reducer;
 
-        self.constraints.remove_columns(&variables);
-        remove_indices(&mut self.variables, &variables);
-        if !variables.is_empty() {
-            // Update the `from_active_to_original` map.
-            let mut skipped = 1;
-            let new_length = self.from_active_to_original.len() - variables.len();
-            for j in variables[0]..new_length {
-                while skipped < variables.len() && variables[skipped] == j + skipped {
-                    skipped += 1;
-                }
-                self.from_active_to_original[j] = self.from_active_to_original[j + skipped];
-            }
-            self.from_active_to_original.drain(new_length..);
+        let surviving_rows = (0..problem.rows.len())
+            .filter(|&row| problem.rows[row].is_active)
+            .collect::<Vec<_>>();
+        let surviving_columns = (0..problem.columns.len())
+            .filter(|&column| problem.columns[column].is_active)
+            .collect::<Vec<_>>();
 
-            // Update the reverse map
-            for (new_index, &variable) in self.from_active_to_original.iter().enumerate() {
-                match &mut self.original_variables[variable].1 {
-                    OriginalVariable::Active(index) => *index = new_index,
-                    OriginalVariable::ActiveFree(_, _) => unimplemented!(),
-                    _ => panic!("Should still be in the problem."),
-                }
-            }
+        // The reduced problem's own indices, for translating the matrix.
+        let mut position_of_column = vec![usize::MAX; problem.columns.len()];
+        for (position, &column) in surviving_columns.iter().enumerate() {
+            position_of_column[column] = position;
+        }
+        let mut position_of_row = vec![usize::MAX; problem.rows.len()];
+        for (position, &row) in surviving_rows.iter().enumerate() {
+            position_of_row[row] = position;
         }
 
-        self.constraints
-            .remove_rows_although_this_matrix_is_column_major(&constraints);
-        remove_indices(&mut self.constraint_types, &constraints);
-        self.b.remove_indices(&constraints);
+        self.constraints = ColumnMajor::new(
+            surviving_columns
+                .iter()
+                .map(|&column| {
+                    problem
+                        .matrix
+                        .column(column)
+                        .map(|(row, value)| (position_of_row[row], value.clone()))
+                        .collect()
+                })
+                .collect(),
+            surviving_rows.len(),
+            surviving_columns.len(),
+        );
+        self.constraint_types = surviving_rows
+            .iter()
+            .map(|&row| problem.rows[row].relation.clone())
+            .collect();
+        self.b = DenseVector::new(
+            surviving_rows
+                .iter()
+                .map(|&row| problem.rows[row].right_hand_side.clone())
+                .collect(),
+            surviving_rows.len(),
+        );
+        self.variables = surviving_columns
+            .iter()
+            .map(|&column| Variable {
+                variable_type: problem.columns[column].variable_type,
+                cost: problem.columns[column].cost.clone(),
+                lower_bound: problem.columns[column].lower_bound.clone(),
+                upper_bound: problem.columns[column].upper_bound.clone(),
+                shift: OF::zero(),
+                flipped: false,
+            })
+            .collect();
+        self.fixed_cost = problem.fixed_cost;
+
+        self.standardization = (0..surviving_columns.len())
+            .map(StandardizedColumn::Single)
+            .collect();
+        // Standardizing happens after presolving, so its record starts again from the problem that
+        // is left rather than the one that was given.
+        self.row_destination = (0..surviving_rows.len()).collect();
+        self.negated_rows = vec![false; surviving_rows.len()];
+        postsolve.set_survivors(surviving_rows, surviving_columns);
+        postsolve.statistics = statistics;
+        self.postsolve = postsolve;
 
         debug_assert!(is_consistent(self));
+    }
+
+    /// The solution of a problem that presolving left with no variables at all.
+    ///
+    fn solution_of_empty_problem(&self) -> Solution<OF> {
+        debug_assert!(self.variables.is_empty());
+
+        let values = self.postsolve.recover_primal(&[]);
+        Solution::new(
+            self.fixed_cost.clone(),
+            self.variable_names.iter().cloned().zip(values).collect(),
+        )
     }
 
     /// Split free variables and shift all variables, such that the lower bound is zero.
@@ -567,17 +685,12 @@ where
 
     /// Split all free variables.
     ///
-    /// This is done to be able to call the simplex algorithm, which can't easily handle free
-    /// variables directly.
-    ///
-    /// See also the documentation on the `OriginalVariable::ActiveFree` variant.
+    /// The simplex implementation works with variables bounded below, which a free variable is
+    /// not. Writing it as the difference of two non negative variables gives it that form; which
+    /// two columns stand for it is recorded so that the difference can be taken again afterwards.
     fn split_free_variables(&mut self) {
-        // Select all free variables and "negative-duplicate" the column.
-        let (indices_duplicated, columns) = (0..self.nr_variables())
-            .filter(|&j| {
-                let variable = &self.variables[j];
-                variable.lower_bound.is_none() && variable.upper_bound.is_none()
-            })
+        let (free, columns) = (0..self.nr_variables())
+            .filter(|&j| self.variables[j].is_free())
             .map(|j| {
                 (
                     j,
@@ -589,29 +702,32 @@ where
             })
             .unzip::<_, _, Vec<_>, _>();
 
-        // Concatenate the existing constraints with the newly derived columns.
-        let as_matrix = ColumnMajor::new(columns, self.nr_constraints(), indices_duplicated.len());
+        let as_matrix = ColumnMajor::new(columns, self.nr_constraints(), free.len());
         self.constraints = mem::replace(
             &mut self.constraints,
             ColumnMajor::new(Vec::with_capacity(0), 0, 0),
         )
         .concatenate_horizontally(as_matrix);
 
-        // Create the new active variables and make sure the old variable is non negative.
-        for index in indices_duplicated {
-            let original_index = self.from_active_to_original[index];
-            self.original_variables[original_index].1 =
-                OriginalVariable::ActiveFree(index, self.from_active_to_original.len());
-            self.from_active_to_original.push(original_index);
+        for positive in free {
+            let negative = self.variables.len();
             self.variables.push(Variable {
-                variable_type: self.variables[index].variable_type,
-                cost: -&self.variables[index].cost,
+                variable_type: self.variables[positive].variable_type,
+                cost: -&self.variables[positive].cost,
                 lower_bound: Some(OF::zero()),
                 upper_bound: None,
                 shift: OF::zero(),
                 flipped: false,
             });
-            self.variables[index].lower_bound = Some(OF::zero());
+            self.variables[positive].lower_bound = Some(OF::zero());
+
+            // The entry to update is the one that currently points at this single column.
+            let entry = self
+                .standardization
+                .iter_mut()
+                .find(|entry| **entry == StandardizedColumn::Single(positive))
+                .expect("every column of the presolved problem has an entry");
+            *entry = StandardizedColumn::Split { positive, negative };
         }
     }
 
@@ -627,6 +743,9 @@ where
             .map(|(i, _)| i)
             .collect();
 
+        for &row in &rows_to_negate {
+            self.negated_rows[row] = true;
+        }
         self.constraints.change_row_signs(&rows_to_negate);
         for row in rows_to_negate {
             match &self.constraint_types[row] {
@@ -652,13 +771,20 @@ where
     }
 
     /// Make this a minimization problem by multiplying the cost function by `-1`.
+    ///
+    /// The constant is negated along with the coefficients, so that the whole objective, and not
+    /// just its variable part, is the negation of the one asked for. Leaving the constant alone
+    /// would make the reported objective value wrong by twice that constant, which is the kind of
+    /// error that only shows up on the problems nobody writes tests for.
     fn make_minimization_problem(&mut self) {
         if self.objective == Objective::Maximize {
             self.objective = Objective::Minimize;
+            self.objective_was_flipped = true;
 
             for variable in &mut self.variables {
                 variable.cost *= -OF::one();
             }
+            self.fixed_cost *= -OF::one();
         }
     }
 
@@ -761,265 +887,211 @@ where
             column.sort_unstable_by_key(|&(i, _)| i);
         }
 
+        // The closure above is the permutation; keeping it is what lets a dual value be carried
+        // back to the row it belongs to.
+        self.row_destination = (0..self.constraint_types.len())
+            .map(get_destination)
+            .collect();
+
         debug_assert!(is_consistent(self));
 
         [e_counter, r_counter, l_counter, g_counter]
     }
 
-    /// Compute explicit solution from slack variables where possible.
-    fn compute_solution_where_possible(&mut self) {
-        // To avoid recomputations, we store all computed intermediate values in this collection.
-        let mut new_solutions = vec![None; self.original_variables.len()];
-        let mut changed = Vec::new();
-        for (j, (_, variable)) in self.original_variables.iter().enumerate() {
-            if let OriginalVariable::Removed(FunctionOfOthers { .. }) = variable
-                && self.compute_solution_value(j, &mut new_solutions).is_some()
-            {
-                changed.push(j);
-            }
-        }
-
-        // Save all values
-        for (variable, solution) in new_solutions.into_iter().enumerate() {
-            if let Some(value) = solution {
-                self.original_variables[variable].1 = OriginalVariable::Removed(Solved(value));
-            }
-        }
-
-        // TODO: Include updating of fixed cost in case a presolved variable as a function of others
-        //  had a nonzero cost.
-    }
-
-    /// Compute the solution value for a single variable.
+    /// Turn a solution of the standardized problem into one of the problem as it was read.
     ///
-    /// This is a helper method of the `compute_solution_where_possible` function.
+    /// Two steps, in this order. First the transformations `standardize` made are undone, which
+    /// gives a value for each column of the presolved problem. Then the record of what presolving
+    /// did is walked backwards, which fills in the columns presolving removed.
     ///
     /// # Arguments
     ///
-    /// * `variable`: Index of the variable for which we try to determine an explicit solution.
-    /// * `new_solutions`: Collection containing solutions previously computed, that the computed
-    ///   solution value will also be written in to (if it is determined).
-    ///
-    /// # Return value
-    ///
-    /// The solution value, if it could be determined.
-    fn compute_solution_value<'a>(
-        &'a self,
-        variable: usize,
-        new_solutions: &'a mut Vec<Option<OF>>,
-    ) -> Option<&'a OF> {
-        match &self.original_variables[variable].1 {
-            OriginalVariable::Active(_) => None,
-            OriginalVariable::ActiveFree(_, _) => None,
-            OriginalVariable::Removed(Solved(value)) => Some(value),
-            OriginalVariable::Removed(FunctionOfOthers {
-                constant,
-                coefficients,
-            }) => {
-                if new_solutions[variable].is_none() {
-                    new_solutions[variable] = coefficients
-                        .iter()
-                        .map(|(j, coefficient)| {
-                            self.compute_solution_value(*j, new_solutions)
-                                .map(|v| coefficient * v)
-                        })
-                        .sum::<Option<OF>>()
-                        .map(|inner_product| constant - inner_product);
-                }
-
-                new_solutions[variable].as_ref()
-            }
-        }
-    }
-
-    /// If this problem is fully solved (probably by presolving), get the solution.
-    ///
-    /// All original variables need to have an explicit solution. Hint: Try calling
-    /// `compute_solution_where_possible`.
-    ///
-    /// # Return value
-    ///
-    /// If one of the variables is still undetermined, `None`.
-    pub fn get_solution(&self) -> Option<Solution<OF>> {
-        let maybe_variable_values = self
-            .original_variables
-            .iter()
-            .map(|(name, variable)| {
-                if let OriginalVariable::Removed(Solved(value)) = variable {
-                    Some((name.clone(), value.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect::<Option<Vec<_>>>();
-        maybe_variable_values
-            .map(|variable_values| Solution::new(self.fixed_cost.clone(), variable_values))
-    }
-
-    /// Transform a solution back.
-    ///
-    /// When converting the problem to standard form, and during presolving, transformations to
-    /// variables are applied that need to be undone once a solution was computed.
-    ///
-    /// # Arguments
-    ///
-    /// * `reduced_solution`: Solution values for all variables that are still marked as `Active` in
-    ///   the "original variables" of this problem.
-    pub fn reshift_solution<G>(&self, reduced_solution: &mut SparseVector<G, G>)
-    where
-        G: LinearAlgebraElement<G> + SparseComparator + PartialEq<OF> + AddAssign<OF> + From<OF>,
-        for<'r> &'r OF: Neg<Output = OF>,
-        for<'r> &'r G: Neg<Output = G>,
-    {
-        debug_assert_eq!(reduced_solution.len(), self.variables.len());
-
-        for (j, variable) in self.variables.iter().enumerate() {
-            reduced_solution.shift_value::<OF>(j, -&variable.shift);
-            if variable.flipped && reduced_solution.get(j).is_some() {
-                let flipped = -reduced_solution.get(j).unwrap();
-                reduced_solution.set(j, flipped);
-            }
-        }
-    }
-
-    /// Extend a reduced solution with already known values.
-    ///
-    /// Presolving might have determined variables explicitly or as a function of others. This
-    /// method augments the solution of the open part of the problem to a complete solution.
-    ///
-    /// # Arguments
-    ///
-    /// * `reduced_solution`: A value for each of the variables in this general form that are still
-    ///   marked as unsolved (in the `original_variables` field).
-    ///
-    /// # Returns
-    ///
-    /// A complete solution.
+    /// * `reduced_solution`: one value per column of the standardized problem.
     pub fn compute_full_solution_with_reduced_solution<G>(
-        self,
-        mut reduced_solution: SparseVector<G, G>,
+        &self,
+        reduced_solution: SparseVector<G, G>,
     ) -> Solution<G>
     where
-        // TODO: Find a suitable trait alias to avoid this many trait bounds.
-        G: Sum
-            + Neg<Output = G>
-            + AddAssign<OF>
-            + PartialEq<OF>
-            + LinearAlgebraElement<G>
-            + From<OF>
-            + Eq
-            + Ord
-            + Zero
-            + NonZero,
-        for<'r> G: Add<&'r OF, Output = G>,
-        for<'r> &'r G: Neg<Output = G>
-            + Mul<&'r OF, Output = G>
-            + Add<&'r OF, Output = G>
-            + Sub<&'r G, Output = G>,
+        G: LinearAlgebraElement<G> + SparseComparator + OrderedField + From<OF>,
+        for<'r> &'r G: OrderedFieldRef<G> + Neg<Output = G>,
     {
         debug_assert_eq!(reduced_solution.len(), self.variables.len());
 
-        let cost = reduced_solution
-            .iter()
-            .map(|(j, v)| v * &self.variables[j].cost)
-            .sum::<G>()
-            + &self.fixed_cost;
-        self.reshift_solution(&mut reduced_solution);
-
-        // To avoid recomputations, we store all computed intermediate values in this collection.
-        let mut new_solutions = vec![None; self.original_variables.len()];
-        for j in 0..self.original_variables.len() {
-            self.compute_solution_value_with_bfs::<G>(j, &mut new_solutions, &reduced_solution);
-        }
-        debug_assert!(new_solutions.iter().all(Option::is_some));
+        let objective_value = self.objective_value(&reduced_solution);
+        let presolved = self.undo_standardization(&reduced_solution);
+        let values = self.postsolve.recover_primal::<G>(&presolved);
 
         Solution::new(
-            cost,
-            self.original_variables
-                .into_iter()
-                .zip(new_solutions)
-                .map(|((name, _), value)| (name, value.unwrap()))
-                .collect(),
+            objective_value,
+            self.variable_names.iter().cloned().zip(values).collect(),
         )
     }
 
-    /// Compute the solution value for a single variable.
+    /// The objective value of a solution of the standardized problem, in the original direction.
+    fn objective_value<G>(&self, reduced_solution: &SparseVector<G, G>) -> G
+    where
+        G: LinearAlgebraElement<G> + SparseComparator + OrderedField + From<OF>,
+        for<'r> &'r G: OrderedFieldRef<G> + Neg<Output = G>,
+    {
+        // The shifts applied to the variables were folded into the constant, so this is computed
+        // before they are undone.
+        let value = reduced_solution
+            .iter()
+            .map(|(j, v)| v * &G::from(self.variables[j].cost.clone()))
+            .sum::<G>()
+            + G::from(self.fixed_cost.clone());
+
+        if self.objective_was_flipped { -&value } else { value }
+    }
+
+    /// Turn a solution of the standardized problem into one of the problem as it was read,
+    /// carrying the multipliers of the constraints with it.
     ///
-    /// This is a helper method of the `compute_full_solution_with_reduced_solution` function.
-    ///
-    /// # Arguments
-    ///
-    /// * `variable`: Index of the variable for which we try to determine an explicit solution.
-    ///   Relative to the original problem with variables solved and unsolved.
-    /// * `new_solutions`: Collection containing solutions previously computed, that the computed
-    ///   solution value will also be written in to (if it is determined).
-    /// * `reduced_solution`: Solution to the reduced problem (for all variables still active).
+    /// `constraint_duals` holds one multiplier per constraint of the standardized problem, in that
+    /// problem's own row order; [`MatrixData::constraint_duals`] produces exactly that.
     ///
     /// # Return value
     ///
-    /// The solution value for that variable. Can always be determined if the general form is
-    /// consistent (that is, there are no cycles in the original variables, see the
-    /// `is_consistent` function).
-    fn compute_solution_value_with_bfs<'a, G>(
+    /// `None` when presolving applied a reduction whose effect on the multipliers this code does
+    /// not know how to undo. The primal solution is unaffected by that and can still be had from
+    /// [`Self::compute_full_solution_with_reduced_solution`].
+    pub fn compute_full_solution_with_duals<G>(
         &self,
-        variable: usize,
-        new_solutions: &'a mut Vec<Option<G>>,
-        reduced_solution: &SparseVector<G, G>,
-    ) -> &'a G
+        reduced_solution: SparseVector<G, G>,
+        constraint_duals: Vec<G>,
+    ) -> Option<Solution<G>>
     where
-        G: LinearAlgebraElement<G> + Zero + From<OF> + Sum + Neg<Output = G> + NonZero,
-        for<'r> G: Add<&'r OF, Output = G>,
-        for<'r> &'r G: Neg<Output = G>
-            + Mul<&'r OF, Output = G>
-            + Add<&'r OF, Output = G>
-            + Sub<&'r G, Output = G>,
+        G: LinearAlgebraElement<G> + SparseComparator + OrderedField + From<OF>,
+        for<'r> &'r G: OrderedFieldRef<G> + Neg<Output = G>,
     {
-        debug_assert!(variable < new_solutions.len());
-        debug_assert_eq!(new_solutions.len(), self.original_variables.len());
-        debug_assert_eq!(reduced_solution.len(), self.variables.len());
+        let objective_value = self.objective_value(&reduced_solution);
+        let presolved = self.undo_standardization(&reduced_solution);
+        let values = self.postsolve.recover_primal::<G>(&presolved);
+        let duals = self.duals_for_original_rows(constraint_duals, &values)?;
 
-        if new_solutions[variable].is_some() {
-            return new_solutions[variable].as_ref().unwrap();
+        Some(Solution::with_duals(
+            objective_value,
+            self.variable_names.iter().cloned().zip(values).collect(),
+            self.constraint_names.iter().cloned().zip(duals).collect(),
+        ))
+    }
+
+    /// Carry the multipliers of the standardized problem back to the rows that were read.
+    ///
+    /// Three things have to be undone, in this order: the sorting of the rows by type, the
+    /// negation of the rows whose right hand side was negative, and the negation of the whole
+    /// objective if the problem asked for a maximum. Then the rows presolving removed have to be
+    /// given multipliers of their own, which also needs the reduced costs of the problem
+    /// presolving left and the primal solution of the problem that was read.
+    fn duals_for_original_rows<G>(
+        &self,
+        constraint_duals: Vec<G>,
+        values: &[G],
+    ) -> Option<Vec<G>>
+    where
+        G: LinearAlgebraElement<G> + SparseComparator + OrderedField + From<OF>,
+        for<'r> &'r G: OrderedFieldRef<G> + Neg<Output = G>,
+    {
+        debug_assert_eq!(constraint_duals.len(), self.row_destination.len());
+
+        let reduced_costs = self.reduced_costs_of_presolved_columns(&constraint_duals);
+
+        let mut presolved = Vec::with_capacity(self.row_destination.len());
+        for (row, &destination) in self.row_destination.iter().enumerate() {
+            let mut value = constraint_duals[destination].clone();
+            // Multiplying a row by `-1` multiplies its multiplier by `-1` too, leaving what the
+            // row contributes to the objective unchanged.
+            if self.negated_rows[row] {
+                value = -&value;
+            }
+            // Minimizing the negation of an objective negates every multiplier along with it.
+            if self.objective_was_flipped {
+                value = -&value;
+            }
+            presolved.push(value);
         }
 
-        let new_solution = match &self.original_variables[variable].1 {
-            OriginalVariable::Active(j) => match reduced_solution.get(*j) {
-                Some(value) => value.clone(),
-                None => G::zero(),
-            },
-            OriginalVariable::ActiveFree(j_positive, j_negative) => {
-                match (
-                    reduced_solution.get(*j_positive),
-                    reduced_solution.get(*j_negative),
-                ) {
-                    (None, None) => G::zero(),
-                    (Some(positive), None) => positive.clone(),
-                    (None, Some(negative)) => -negative,
-                    (Some(positive), Some(negative)) => positive - negative,
+        self.postsolve.recover_dual::<G>(
+            !self.objective_was_flipped,
+            &presolved,
+            &reduced_costs,
+            values,
+        )
+    }
+
+    /// The reduced costs of the problem presolving left, one per column it left.
+    ///
+    /// Computed on the standardized problem and carried back, which is where the row negations
+    /// cancel out: a row that was negated has its multiplier negated too, so what the two
+    /// contribute to `c - A^T y` is unchanged. What does not cancel is the flipping of a column
+    /// and the flipping of the whole objective, both of which negate a reduced cost.
+    fn reduced_costs_of_presolved_columns<G>(&self, constraint_duals: &[G]) -> Vec<G>
+    where
+        G: LinearAlgebraElement<G> + SparseComparator + OrderedField + From<OF>,
+        for<'r> &'r G: OrderedFieldRef<G> + Neg<Output = G>,
+    {
+        let mut standardized = self
+            .variables
+            .iter()
+            .map(|variable| G::from(variable.cost.clone()))
+            .collect::<Vec<_>>();
+        for (column, reduced_cost) in standardized.iter_mut().enumerate() {
+            for (row, coefficient) in self.constraints.iter_column(column) {
+                *reduced_cost -= &G::from(coefficient.clone()) * &constraint_duals[*row];
+            }
+        }
+
+        self.standardization
+            .iter()
+            .map(|entry| {
+                // A free variable was written as the difference of two columns, whose costs and
+                // coefficients are negations of each other; either half says the same thing.
+                let column = match entry {
+                    StandardizedColumn::Single(column) => *column,
+                    StandardizedColumn::Split { positive, .. } => *positive,
+                };
+                let value = &standardized[column];
+                if self.variables[column].flipped != self.objective_was_flipped {
+                    -value
+                } else {
+                    value.clone()
                 }
-            }
-            OriginalVariable::Removed(Solved(v)) => v.clone().into(),
-            OriginalVariable::Removed(FunctionOfOthers {
-                constant,
-                coefficients,
-            }) => {
-                -coefficients
-                    .iter()
-                    .map(|(j, coefficient)| {
-                        self.compute_solution_value_with_bfs::<G>(
-                            *j,
-                            new_solutions,
-                            reduced_solution,
-                        ) * coefficient
-                    })
-                    .sum::<G>()
-                    + constant
-            }
+            })
+            .collect()
+    }
+
+    /// Undo the shifting, flipping and splitting that `standardize` did.
+    ///
+    /// # Return value
+    ///
+    /// One value per column of the presolved problem.
+    fn undo_standardization<G>(&self, reduced_solution: &SparseVector<G, G>) -> Vec<G>
+    where
+        G: LinearAlgebraElement<G> + SparseComparator + OrderedField + From<OF>,
+        for<'r> &'r G: OrderedFieldRef<G> + Neg<Output = G>,
+    {
+        let of = |column: usize| -> G {
+            let value = reduced_solution
+                .get(column)
+                .cloned()
+                .unwrap_or_else(G::zero);
+            let variable = &self.variables[column];
+
+            // The shift moved the variable's lower bound to zero, and the flip turned a variable
+            // bounded only above into one bounded only below.
+            let value = &value - &G::from(variable.shift.clone());
+            if variable.flipped { -&value } else { value }
         };
 
-        new_solutions[variable] = Some(new_solution);
-        new_solutions[variable].as_ref().unwrap()
+        self.standardization
+            .iter()
+            .map(|entry| match entry {
+                StandardizedColumn::Single(column) => of(*column),
+                StandardizedColumn::Split { positive, negative } => &of(*positive) - &of(*negative),
+            })
+            .collect()
     }
+
 }
 
 impl<OF> GeneralForm<OF>
@@ -1049,11 +1121,6 @@ where
     /// marked for elimination in the `PresolveIndex` can only be derived using that data structure.
     fn nr_active_variables(&self) -> usize {
         self.constraints.nr_columns()
-    }
-
-    /// Number of variables at the time this object was first created.
-    fn nr_original_variables(&self) -> usize {
-        self.original_variables.len()
     }
 
     /// The number of variables in this linear program.
@@ -1105,110 +1172,11 @@ where
     OF: OrderedField,
     for<'r> &'r OF: OrderedFieldRef<OF>,
 {
-    /// Whether the variable allows only a single value.
+    /// Whether the variable is unconstrained in both directions.
     ///
-    /// # Return value
-    ///
-    /// `Some` with the value if so, `None` otherwise.
-    fn is_fixed(&self) -> Option<&OF> {
-        match (&self.lower_bound, &self.upper_bound) {
-            (Some(lower), Some(upper)) if lower == upper => Some(lower),
-            _ => None,
-        }
-    }
-
-    /// Whether a variable is unconstrained (has no bounds).
+    /// Such a variable has to be split before the simplex can work with it.
     fn is_free(&self) -> bool {
         self.lower_bound.is_none() && self.upper_bound.is_none()
-    }
-
-    /// Whether the variable admits a feasible value (and the upper bound is not below the lower
-    /// bound).
-    fn has_feasible_value(&self) -> bool {
-        match (&self.lower_bound, &self.upper_bound) {
-            (Some(lower), Some(upper)) => lower <= upper,
-            _ => true,
-        }
-    }
-
-    /// Get any feasible value, if there is one.
-    fn get_feasible_value(&self) -> Option<OF> {
-        if self.has_feasible_value() {
-            self.upper_bound
-                .as_ref()
-                .or(self.lower_bound.as_ref())
-                .cloned()
-                .or_else(|| Some(OF::zero()))
-        } else {
-            None
-        }
-    }
-
-    /// Change the lower bound if the given bound is higher.
-    ///
-    /// # Arguments
-    ///
-    /// * `new`: New value to compare the existing bound against (if there is any)
-    ///
-    /// # Return value
-    ///
-    /// `None` if the bound was not updated, `Some` if it was. If there was no bound before, a
-    /// `None`, otherwise, a `Some` with the difference between the old and new bound. This
-    /// difference is always strictly positive, as the lower bound can only be increased.
-    fn update_lower_bound(&mut self, new: &OF) -> Option<Option<OF>> {
-        Self::update_bound(&mut self.lower_bound, new, |new, existing| new > existing)
-    }
-
-    /// Change the upper bound if the given bound is lower.
-    ///
-    /// # Arguments
-    ///
-    /// * `new`: New value to compare the existing bound against (if there is any)
-    ///
-    /// # Return value
-    ///
-    /// `None` if the bound was not updated, `Some` if it was. If there was no bound before, a
-    /// `None`, otherwise, a `Some` with the difference between the old and new bound. This
-    /// difference is always strictly negative, as the upper bound can only be decreased.
-    fn update_upper_bound(&mut self, new: &OF) -> Option<Option<OF>> {
-        Self::update_bound(&mut self.upper_bound, new, |new, existing| new < existing)
-    }
-
-    /// Update either the lower or upper bound, if it makes the bound tighter.
-    ///
-    /// This is a helper method.
-    ///
-    /// # Arguments
-    ///
-    /// * `existing_bound`: Bound that could be updated.
-    /// * `new`: New bound value.
-    /// * `is_better`: A predicate indicating whether the new bound is better than the old bound, or
-    ///   not.
-    ///
-    /// # Return value
-    ///
-    /// `None` if the bound was not updated, `Some` if it was. If there was no bound before, a
-    /// `None`, otherwise, a `Some` with the difference between the old and new bound.
-    fn update_bound<P: Fn(&OF, &OF) -> bool>(
-        existing_bound: &mut Option<OF>,
-        new: &OF,
-        is_better: P,
-    ) -> Option<Option<OF>> {
-        match existing_bound {
-            Some(existing) => {
-                if is_better(new, existing) {
-                    let difference = new - &*existing;
-                    *existing = new.clone();
-                    Some(Some(difference))
-                } else {
-                    None
-                }
-            }
-            None => {
-                *existing_bound = Some(new.clone());
-                Some(None)
-            }
-        }
     }
 }
 
@@ -1223,7 +1191,7 @@ mod test {
     use crate::data::linear_program::elements::{
         Objective, RangedConstraintRelation, VariableType,
     };
-    use crate::data::linear_program::general_form::{GeneralForm, OriginalVariable, Variable};
+    use crate::data::linear_program::general_form::{GeneralForm, StandardizedColumn, Variable};
 
     /// Shifting a variable.
     #[test]
@@ -1307,14 +1275,27 @@ mod test {
                     flipped: false,
                 },
             ],
-            original_variables: vec![
-                ("XONE".to_string(), OriginalVariable::ActiveFree(0, 2)),
-                ("XTWO".to_string(), OriginalVariable::Active(1)),
-            ],
-            from_active_to_original: vec![0, 1, 0],
+            variable_names: vec!["XONE".to_string(), "XTWO".to_string()],
+            constraint_names: general_form.constraint_names.clone(),
+            postsolve: general_form.postsolve.clone(),
+            standardization: vec![],
+            objective_was_flipped: false,
+            row_destination: general_form.row_destination.clone(),
+            negated_rows: general_form.negated_rows.clone(),
         };
 
         assert_eq!(general_form, expected);
+        assert_eq!(
+            general_form.standardization,
+            vec![
+                // The free variable became the difference of the columns 0 and 2.
+                StandardizedColumn::Split {
+                    positive: 0,
+                    negative: 2,
+                },
+                StandardizedColumn::Single(1),
+            ],
+        );
     }
 
     #[test]

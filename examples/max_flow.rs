@@ -247,13 +247,16 @@ fn main() {
 
     SolveRelaxation::solve_relaxation::<Carry<S, BasisInverseRows<S>>>(&problem);
 
+    let OptimizationResult::FiniteOptimum(optimum) =
+        problem.solve_relaxation::<Carry<S, BasisInverseRows<S>>>()
+    else {
+        panic!("this problem has a finite optimum");
+    };
     assert_eq!(
-        problem.solve_relaxation::<Carry<S, BasisInverseRows<S>>>(),
-        OptimizationResult::FiniteOptimum(
-            [2, 1, 1, 1, 2, 0, 0, 0, 0, 0]
-                .iter()
-                .map(|&v| RationalBig::from(v))
-                .collect()
-        ),
+        optimum.primal,
+        [2, 1, 1, 1, 2, 0, 0, 0, 0, 0]
+            .iter()
+            .map(|&v| RationalBig::from(v))
+            .collect(),
     );
 }

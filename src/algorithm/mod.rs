@@ -6,7 +6,7 @@ use crate::algorithm::two_phase::matrix_provider::column::Column;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::InverseMaintainer;
 use crate::algorithm::two_phase::tableau::inverse_maintenance::ops as im_ops;
 use crate::algorithm::two_phase::tableau::kind::artificial::Cost as ArtificialCost;
-use crate::data::linear_algebra::vector::SparseVector;
+use crate::data::linear_algebra::vector::{DenseVector, SparseVector};
 
 pub mod two_phase;
 
@@ -40,6 +40,37 @@ pub trait SolveRelaxation: MatrixProvider {
 #[derive(Eq, PartialEq, Debug)]
 pub enum OptimizationResult<F> {
     Infeasible,
-    FiniteOptimum(SparseVector<F, F>),
+    FiniteOptimum(TableauSolution<F>),
     Unbounded,
+}
+
+/// An optimal primal and dual pair for the problem a [`MatrixProvider`] presents.
+///
+/// All indices count rows and columns of the provider as it stands, including the ones it only
+/// simulates, and including any row the algorithm found redundant and set aside.
+///
+/// [`MatrixProvider`]: crate::algorithm::two_phase::matrix_provider::MatrixProvider
+#[derive(Eq, PartialEq, Debug)]
+pub struct TableauSolution<F> {
+    /// The value of each column. Zeros are left out.
+    pub primal: SparseVector<F, F>,
+    /// The multiplier of each row: `pi = c_B^T B^-1`.
+    ///
+    /// A row the algorithm removed as redundant gets a zero, which is a valid multiplier for it:
+    /// such a row is a combination of the rows that were kept, so leaving it out of the dual
+    /// solution changes nothing that the kept rows do not already say.
+    pub dual: DenseVector<F>,
+    /// Whether each column is in the basis.
+    pub basic: Vec<bool>,
+    /// Rows set aside in the first phase because the constraint matrix did not have full rank.
+    ///
+    /// Sorted and without repeats.
+    pub redundant_rows: Vec<usize>,
+}
+
+impl<F> TableauSolution<F> {
+    /// The value of each column, leaving out the zeros.
+    pub fn primal(&self) -> &SparseVector<F, F> {
+        &self.primal
+    }
 }

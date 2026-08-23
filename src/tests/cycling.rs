@@ -85,11 +85,16 @@ fn tableau_form<'a>(
 }
 
 /// The unique optimum: `x_1 = 1 / 25`, `x_3 = 1` and a slack of `3` in the first row.
-fn optimum() -> OptimizationResult<S> {
-    OptimizationResult::FiniteOptimum(SparseVector::new(
-        vec![(0, RB!(1, 25)), (2, RB!(1)), (4, RB!(3))],
-        7,
-    ))
+fn optimum() -> SparseVector<S, S> {
+    SparseVector::new(vec![(0, RB!(1, 25)), (2, RB!(1)), (4, RB!(3))], 7)
+}
+
+/// The primal half of a result that has to be a finite optimum.
+fn primal_of(result: OptimizationResult<S>) -> SparseVector<S, S> {
+    match result {
+        OptimizationResult::FiniteOptimum(solution) => solution.primal,
+        other => panic!("expected a finite optimum, got {:?}", other),
+    }
 }
 
 /// Bland's rule: the entering half from `FirstProfitable`, the leaving half from
@@ -100,10 +105,7 @@ fn bland() {
     let data = matrix_data_form(&constraints, &b, &variables);
     let mut tableau = tableau_form(&data);
 
-    assert_eq!(
-        phase_two::primal::<_, _, FirstProfitable>(&mut tableau),
-        optimum(),
-    );
+    assert_eq!(primal_of(phase_two::primal::<_, _, FirstProfitable>(&mut tableau)), optimum());
 }
 
 /// Wrapping a rule shouldn't change the outcome, only the pivots made during a degenerate run.
@@ -113,10 +115,7 @@ fn fallback_wrapping_steepest_descent() {
     let data = matrix_data_form(&constraints, &b, &variables);
     let mut tableau = tableau_form(&data);
 
-    assert_eq!(
-        phase_two::primal::<_, _, BlandFallback<SteepestDescentAlongObjective<_>>>(&mut tableau),
-        optimum(),
-    );
+    assert_eq!(primal_of(phase_two::primal::<_, _, BlandFallback<SteepestDescentAlongObjective<_>>>(&mut tableau)), optimum());
 }
 
 /// A rule that panics when it is asked to select a column.
@@ -147,10 +146,7 @@ fn fallback_takes_over() {
     let data = matrix_data_form(&constraints, &b, &variables);
     let mut tableau = tableau_form(&data);
 
-    assert_eq!(
-        phase_two::primal::<_, _, BlandFallback<Unreachable, 0>>(&mut tableau),
-        optimum(),
-    );
+    assert_eq!(primal_of(phase_two::primal::<_, _, BlandFallback<Unreachable, 0>>(&mut tableau)), optimum());
 }
 
 /// As long as there is budget left, columns are selected with the wrapped rule.

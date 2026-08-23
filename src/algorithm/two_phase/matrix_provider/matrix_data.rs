@@ -302,6 +302,75 @@ where
     }
 }
 
+/// Where a variable sits relative to its own bounds.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum BasisStatus {
+    /// Strictly between its bounds, or between them and in the basis.
+    Basic,
+    /// At its lower bound.
+    AtLower,
+    /// At its upper bound.
+    AtUpper,
+}
+
+impl<'a, F: 'static> MatrixData<'a, F>
+where
+    F: SparseElement<F> + ColumnNumber + One + Neg<Output = F>,
+    for<'r> &'r F: FieldRef<F>,
+{
+    /// The number of constraints of the problem, excluding the rows this provider only simulates.
+    pub fn nr_constraint_rows(&self) -> usize {
+        self.row_group_end[RowType::LowerInequalityConstraint]
+    }
+
+    /// The multipliers of the constraints, out of the multipliers of every row.
+    ///
+    /// Only the first group of rows are constraints. The rest are the variable bounds and the
+    /// bounds on the range slacks, which this provider writes as rows because the algorithm works
+    /// with variables that are only bounded below. Those multipliers belong to the variables
+    /// rather than to any row of the problem.
+    ///
+    /// # Return value
+    ///
+    /// One multiplier per constraint, in the order the standardized problem has them.
+    pub fn constraint_duals<G: Clone>(&self, duals: &DenseVector<G>) -> Vec<G> {
+        debug_assert_eq!(duals.len(), self.nr_rows());
+
+        (0..self.nr_constraint_rows())
+            .map(|row| duals[row].clone())
+            .collect()
+    }
+
+    /// Where each variable of the standardized problem sits relative to its own bounds.
+    ///
+    /// This provider gives every variable a lower bound of zero and writes any upper bound as a
+    /// row, so the algorithm never holds a variable at an upper bound: it holds the slack of that
+    /// row at zero instead. A variable is therefore at its upper bound exactly when it is in the
+    /// basis while the slack of its bound row is not.
+    pub fn variable_statuses(&self, basic: &[bool]) -> Vec<BasisStatus> {
+        debug_assert_eq!(basic.len(), self.nr_columns());
+
+        (0..self.nr_normal_variables())
+            .map(|column| {
+                if !basic[column] {
+                    return BasisStatus::AtLower;
+                }
+                match self.non_slack_variable_index_to_bound_index[column] {
+                    None => BasisStatus::Basic,
+                    Some(bound) => {
+                        let slack = self.column_group_end[ColumnType::LowerInequalitySlack] + bound;
+                        if basic[slack] {
+                            BasisStatus::Basic
+                        } else {
+                            BasisStatus::AtUpper
+                        }
+                    }
+                }
+            })
+            .collect()
+    }
+}
+
 impl<'data, F: 'static> MatrixProvider for MatrixData<'data, F>
 where
     F: ColumnNumber + One + Neg<Output = F> + SparseElement<F>,

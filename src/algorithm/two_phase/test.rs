@@ -15,6 +15,17 @@ use crate::data::linear_program::elements::VariableType;
 use crate::data::linear_program::general_form::Variable;
 use crate::tests::problem_2::{create_matrix_data_data, matrix_data_form, tableau_form};
 
+/// The primal half of a result that has to be a finite optimum.
+fn primal_of<F: std::fmt::Debug>(
+    result: OptimizationResult<F>,
+) -> crate::data::linear_algebra::vector::SparseVector<F, F> {
+    match result {
+        OptimizationResult::FiniteOptimum(solution) => solution.primal,
+        other => panic!("expected a finite optimum, got {:?}", other),
+    }
+}
+
+
 #[test]
 fn simplex() {
     type T = Rational64;
@@ -37,13 +48,10 @@ fn solve_matrix() {
     let result =
         SolveRelaxation::solve_relaxation::<Carry<S, LUDecomposition<S>>>(&matrix_data_form);
     //  Optimal value: R64!(4.5)
-    assert_eq!(
-        result,
-        OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(
+    assert_eq!(primal_of(result), SparseVector::from_test_tuples(
             vec![(1, 0.5f64), (3, 2.5f64), (4, 1.5f64),],
             5
-        ))
-    );
+        ));
 }
 
 #[test]
@@ -75,13 +83,10 @@ fn solve_relaxation_1() {
     let data = MatrixData::new(&constraints, &b, vec![], 0, 0, 2, 0, &variables);
 
     let result = data.solve_relaxation::<Carry<S, LUDecomposition<S>>>();
-    assert_eq!(
-        result,
-        OptimizationResult::FiniteOptimum(SparseVector::from_test_tuples(
+    assert_eq!(primal_of(result), SparseVector::from_test_tuples(
             vec![(0, 3f64 / 2f64), (1, 1f64),],
             4
-        ))
-    );
+        ));
 }
 
 #[test]
@@ -109,10 +114,7 @@ fn redundant_row() {
 
     let matrix = MatrixData::new(&constraints, &b, vec![], 3, 0, 0, 0, &variables);
     let result = matrix.solve_relaxation::<Carry<RationalBig, BasisInverseRows<_>>>();
-    assert_eq!(
-        result,
-        OptimizationResult::FiniteOptimum([RB!(3, 4), RB!(1, 4), RB!(0)].iter().cloned().collect())
-    );
+    assert_eq!(primal_of(result), [RB!(3, 4), RB!(1, 4), RB!(0)].iter().cloned().collect());
 }
 
 #[test]
@@ -140,10 +142,7 @@ fn empty_row_at_eq() {
 
     let matrix = MatrixData::new(&constraints, &b, vec![], 2, 0, 0, 0, &variables);
     let result = matrix.solve_relaxation::<Carry<RationalBig, BasisInverseRows<_>>>();
-    assert_eq!(
-        result,
-        OptimizationResult::FiniteOptimum([RB!(3, 4), RB!(1, 4), RB!(0)].iter().cloned().collect())
-    );
+    assert_eq!(primal_of(result), [RB!(3, 4), RB!(1, 4), RB!(0)].iter().cloned().collect());
 }
 
 #[test]
@@ -171,13 +170,8 @@ fn empty_row_at_ineq() {
 
     let matrix = MatrixData::new(&constraints, &b, vec![], 1, 0, 1, 0, &variables);
     let result = matrix.solve_relaxation::<Carry<RationalBig, BasisInverseRows<_>>>();
-    assert_eq!(
-        result,
-        OptimizationResult::FiniteOptimum(
-            [RB!(3, 4), RB!(1, 4), RB!(1), RB!(0)]
+    assert_eq!(primal_of(result), [RB!(3, 4), RB!(1, 4), RB!(1), RB!(0)]
                 .iter()
                 .cloned()
-                .collect()
-        )
-    );
+                .collect());
 }

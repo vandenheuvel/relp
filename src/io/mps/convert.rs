@@ -53,15 +53,17 @@ where
     fn try_into(self) -> Result<GeneralForm<FO>, Self::Error> {
         let (variable_info, columns, variable_names) =
             compute_variable_info(self.columns, self.cost_values, self.bounds, self.rows.len())?;
+        let constraint_names = self.rows.iter().map(|row| row.name.clone()).collect();
         let (constraint_types, b) = compute_constraint_info(self.rows, self.rhss, self.ranges)?;
 
-        Ok(GeneralForm::new(
+        Ok(GeneralForm::new_named(
             self.objective,
             columns,
             constraint_types,
             b,
             variable_info,
             variable_names,
+            constraint_names,
             FO::zero(),
         ))
     }

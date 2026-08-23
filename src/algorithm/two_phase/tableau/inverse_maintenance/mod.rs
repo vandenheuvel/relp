@@ -226,6 +226,22 @@ pub trait InverseMaintainer: Display + Sized {
     /// Which basis column has a pivot in the provided row index?
     fn basis_column_index_for_row(&self, row: usize) -> usize;
 
+    /// The negated dual vector `-pi = -c_B^T B^-1` of the current basis.
+    ///
+    /// This is the form the value is kept in, because it is what computing a relative cost needs;
+    /// prefer it over [`Self::pi`] where the sign does not matter.
+    fn minus_pi(&self) -> &DenseVector<Self::F>;
+
+    /// The dual vector `pi = c_B^T B^-1` of the current basis.
+    ///
+    /// For a provider in standard form, `min c^T z` subject to `Mz = rhs` and `z >= 0`, this holds
+    /// one multiplier per row, and `c_j - <pi, M_j> >= 0` for every column once the basis is
+    /// optimal.
+    fn pi(&self) -> DenseVector<Self::F>;
+
+    /// For each row, the index of the column that is basic in it.
+    fn basis_indices(&self) -> &[usize];
+
     /// Clone the latest constraint vector.
     fn b(&self) -> DenseVector<Self::F>;
 

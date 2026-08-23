@@ -13,7 +13,7 @@ use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::basis_inver
 use relp::algorithm::two_phase::tableau::inverse_maintenance::carry::lower_upper::LUDecomposition;
 use relp::algorithm::{OptimizationResult, SolveRelaxation};
 use relp::data::linear_algebra::traits::Element;
-use relp::data::linear_program::general_form::GeneralForm;
+use relp::data::linear_program::general_form::{GeneralForm, Presolved};
 use relp::data::linear_program::solution::Solution;
 use relp::io::import;
 
@@ -40,14 +40,18 @@ fn adlittle() {
     let result = import::<T>(&path).unwrap();
 
     let mut general = result.try_into().unwrap();
-    general.presolve().unwrap();
+    assert_eq!(
+        general.presolve::<false>(),
+        Presolved::Reduced,
+        "this instance is not expected to be settled by presolving alone",
+    );
     let constraint_type_counts = general.standardize();
     let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<S, BasisInverseRows<_>>>();
 
     match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let reconstructed = data.reconstruct_solution(vector);
+        OptimizationResult::FiniteOptimum(solution) => {
+            let reconstructed = data.reconstruct_solution(solution.primal);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(
                 solution.objective_value,
@@ -64,14 +68,18 @@ fn afiro() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("afiro");
-    general.presolve().unwrap();
+    assert_eq!(
+        general.presolve::<false>(),
+        Presolved::Reduced,
+        "this instance is not expected to be settled by presolving alone",
+    );
     let constraint_type_counts = general.standardize();
     let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<_, LUDecomposition<S>>>();
 
     match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let reconstructed = data.reconstruct_solution(vector);
+        OptimizationResult::FiniteOptimum(solution) => {
+            let reconstructed = data.reconstruct_solution(solution.primal);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             let expected = Solution::new(
                 RB!(-406_659, 875), // GLPK
@@ -132,14 +140,18 @@ fn maros() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("maros");
-    general.presolve().unwrap();
+    assert_eq!(
+        general.presolve::<false>(),
+        Presolved::Reduced,
+        "this instance is not expected to be settled by presolving alone",
+    );
     let constraint_type_counts = general.standardize();
     let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<S, LUDecomposition<_>>>();
 
     match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let reconstructed = data.reconstruct_solution(vector);
+        OptimizationResult::FiniteOptimum(solution) => {
+            let reconstructed = data.reconstruct_solution(solution.primal);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(
                 solution,
@@ -164,7 +176,17 @@ fn nazareth() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("nazareth");
-    general.presolve().unwrap();
+
+    // Presolve finds the variable that nothing holds back before the simplex is reached. Whether
+    // the problem is unbounded also needs it to have a feasible point, which presolve leaves open;
+    // GLPK says it has one.
+    assert_eq!(
+        general.presolve::<false>(),
+        Presolved::Unbounded {
+            assuming_feasible: true,
+        },
+    );
+
     let constraint_type_counts = general.standardize();
     let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<S, LUDecomposition<_>>>();
@@ -177,14 +199,18 @@ fn testprob() {
     type S = RationalBig;
 
     let mut general = to_general_form::<T>("testprob");
-    general.presolve().unwrap();
+    assert_eq!(
+        general.presolve::<false>(),
+        Presolved::Reduced,
+        "this instance is not expected to be settled by presolving alone",
+    );
     let constraint_type_counts = general.standardize();
     let data = general.derive_matrix_data(constraint_type_counts);
     let result = data.solve_relaxation::<Carry<S, LUDecomposition<_>>>();
 
     match result {
-        OptimizationResult::FiniteOptimum(vector) => {
-            let reconstructed = data.reconstruct_solution(vector);
+        OptimizationResult::FiniteOptimum(solution) => {
+            let reconstructed = data.reconstruct_solution(solution.primal);
             let solution = general.compute_full_solution_with_reduced_solution(reconstructed);
             assert_eq!(
                 solution,

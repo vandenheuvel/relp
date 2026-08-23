@@ -1,161 +1,87 @@
-//! # Queues
+//! # Work lists
 //!
-//! Rules are not directly applied, but instead queued.
-use fifo_set::FIFOSet;
-use relp_num::{OrderedField, OrderedFieldRef};
+//! A rule is not tried everywhere, it is tried where something changed. Each rule has a queue of
+//! places worth trying, which other rules add to as they go.
+use std::collections::VecDeque;
+use std::collections::HashSet;
+use std::hash::Hash;
 
 use crate::data::linear_program::elements::BoundDirection;
-use crate::data::linear_program::general_form::GeneralForm;
-use crate::data::linear_program::general_form::presolve::counters::Counters;
 
-/// Which rules still need to be applied to which constraint or variable.
+/// A queue that holds each item at most once.
 ///
-/// Note that a value could be removed from a queue before the rule is actually applied. A variable
-/// might be a slack, for example, but is then removed because a bound has been adjusted.
-pub(super) struct Queues {
-    /// Variables that are fixed and need substitution.
-    ///
-    /// A fixed variable has the upper bound equal to the lower bound.
-    ///
-    /// * Start of process: Column is determined fixed.
-    /// * Insertion: Column becomes fixed after a bound was adjusted, and it is equal to the other
-    ///   bound.
-    /// * State: Column is fixed. When a bound gets adjusted again, the variable is infeasible, and
-    ///   the solving procedure should stop, making this queue irrelevant.
-    /// * Removal: Fixed value for the column is about to be substituted in the problem, effecting
-    ///   the right-hand side.
-    /// * Causes: All rows that have a small number of elements left in them to be added to the
-    ///   `empty_row` or `bound` queue, perhaps the `activity` queue if sufficient variables that are
-    ///   left in the column have the relevant bound.
-    ///
-    /// This is a stack because their order of removal does not matter because they will only be in
-    /// this queue only once.
-    pub(crate) substitution: Vec<usize>,
+/// Rules enqueue eagerly and often redundantly, so keeping duplicates out here is what stops the
+/// work lists from growing faster than they are drained.
+#[derive(Clone, Debug)]
+pub struct Queue<T> {
+    order: VecDeque<T>,
+    present: HashSet<T>,
+}
 
-    /// Constraints to check to see whether they are a bound (without a slack).
-    ///
-    /// * Start of process: Row count is 1.
-    /// * Insertion: Row count becomes 1.
-    /// * State: Row count is at most one, and row could have been removed because it became empty
-    ///   before it is reached in this queue.
-    /// * Removal: Fixed value for the column is about to be substituted in the problem, effecting
-    ///   the right-hand side.
-    /// * Causes: Row will be marked removed and the implied bound will be added to the updates.
-    ///
-    /// This is a stack because their order of removal does not matter because they will only be in
-    /// this queue only once. Check whether the constraint is still active at removal.
-    pub(crate) bound: Vec<usize>,
+impl<T> Default for Queue<T> {
+    fn default() -> Self {
+        Self {
+            order: VecDeque::new(),
+            present: HashSet::new(),
+        }
+    }
+}
 
-    /// Variables to check for slack variables.
-    ///
-    /// * Start of process: Does not appear in objective and column count is 1.
-    /// * Insertion: Does not appear in objective and column count becomes 1
-    /// * State: Does not appear in objective. Column count is at most 1, column could have been
-    ///   removed because it became empty due to the constraint being recognized as a bound (that rule
-    ///   has higher priority).
-    /// * Removal: Just before rule is attempted to be applied.
-    /// * Causes: Nothing, column gets removed, or column and row get removed.
-    ///
-    /// Columns can be inserted into this queue at most two times (they can only be re-added to this
-    /// queue when the constraint type changes from equality to inequality, which can happen only
-    /// once). Because of that, a stack is used (check whether the variable is still active at
-    /// removal).
-    pub(crate) slack: Vec<usize>,
+impl<T: Copy + Eq + Hash> Queue<T> {
+    pub fn push(&mut self, item: T) {
+        if self.present.insert(item) {
+            self.order.push_back(item);
+        }
+    }
+    pub fn pop(&mut self) -> Option<T> {
+        let item = self.order.pop_front()?;
+        self.present.remove(&item);
+        Some(item)
+    }
+    pub fn is_empty(&self) -> bool {
+        self.order.is_empty()
+    }
+}
 
-    /// Constraints to check for activity bound tightening.
-    ///
-    /// * Start of process: Number of variable bounds missing to compute the activation bounds is at
-    ///   most 1.
-    /// * Insertion: Number of variable bounds missing to compute the activation bounds is at
-    ///   reaches 1 or 0. Note that this rule might add this constraint to the queue again.
-    /// * State: Number of variable bounds missing to compute the activation bounds is at most 1.
-    ///   The constraint might have already been removed, so checking that it's still active is
-    ///   necessary.
-    /// * Removal: Just before rule is attempted to be applied (note that it might be added to the
-    ///   queue again by the same rule).
-    /// * Causes: Nothing, a constraint to be removed, or a column to be removed.
-    ///
-    /// The relevant activity counters are `.0` for `Lower`, `.1` for `Upper`.
-    /// TODO(ENHANCEMENT): Consider tracking which indices are still missing to avoid a scan when
-    ///  count is 1.
-    pub(crate) activity: FIFOSet<(usize, BoundDirection)>,
+impl<T: Copy + Eq + Hash> Extend<T> for Queue<T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, items: I) {
+        for item in items {
+            self.push(item);
+        }
+    }
+}
+
+/// One work list per rule that has one.
+#[derive(Clone, Debug, Default)]
+pub struct Queues {
+    /// Columns whose bounds leave a single value.
+    pub fixed_column: Queue<usize>,
+    /// Rows with no coefficients left.
+    pub empty_row: Queue<usize>,
+    /// Columns with no coefficients left.
+    pub empty_column: Queue<usize>,
+    /// Rows with a single coefficient left.
+    pub singleton_row: Queue<usize>,
+    /// Columns with a single coefficient left and no cost.
+    pub singleton_column: Queue<usize>,
+    /// Columns with a single coefficient left and a cost.
+    pub implied_free_singleton: Queue<usize>,
+    /// Equality rows with two coefficients left.
+    pub doubleton_equation: Queue<usize>,
+    /// Rows, and the activity end, worth propagating from.
+    pub activity: Queue<(usize, BoundDirection)>,
 }
 
 impl Queues {
-    /// Create a new instance.
-    ///
-    /// Requires iteration over all counters. This method also demonstrates, which constraints or
-    /// variables get added to which queue under which condition.
-    ///
-    /// TODO(OPTIMIZATION): Are these iterations efficiently done after compiler optimizations?
-    ///
-    /// # Arguments
-    ///
-    /// * `general_form`: Problem being presolved.
-    /// * `counters`: Counters initialized on the problem in the other argument.
-    ///
-    /// # Return value
-    ///
-    /// A new instance.
-    pub fn new<OF: OrderedField>(general_form: &GeneralForm<OF>, counters: &Counters<OF>) -> Self
-    where
-        for<'r> &'r OF: OrderedFieldRef<OF>,
-    {
-        Self {
-            bound: counters
-                .constraint
-                .iter()
-                .enumerate()
-                .filter(|&(_, &count)| count == 1)
-                .map(|(i, _)| i)
-                .collect(),
-            activity: counters
-                .activity
-                .iter()
-                .enumerate()
-                .flat_map(|(i, &(lower_count, upper_count))| {
-                    let mut sides = Vec::with_capacity(2);
-                    if counters.constraint[i] > 1 {
-                        if lower_count <= 1 {
-                            sides.push((i, BoundDirection::Lower));
-                        }
-                        if upper_count <= 1 {
-                            sides.push((i, BoundDirection::Upper));
-                        }
-                    }
-                    sides
-                })
-                .collect(),
-
-            slack: counters
-                .variable
-                .iter()
-                .enumerate()
-                .filter(|&(_, &count)| count == 1)
-                .filter(|&(j, _)| general_form.variables[j].cost.is_zero())
-                .map(|(j, _)| j)
-                .collect(),
-            substitution: general_form
-                .variables
-                .iter()
-                .enumerate()
-                // Columns with no values get substituted right away, as they removal doesn't lead
-                // to any further actions. The only values that should be put in the queue are those
-                // that lead to other actions, that is, have a nonzero counter.
-                .filter(|&(j, _)| counters.variable[j] > 0)
-                .filter_map(|(j, variable)| variable.is_fixed().map(|_| j))
-                .collect(),
-        }
-    }
-
-    /// Whether all queues are empty.
-    ///
-    /// This indicates whether the repeated application of reduction rules can be stopped.
-    pub(crate) fn are_empty(&self) -> bool {
-        // Note the reverse order w.r.t. the order in which these queues are tested in the main loop
-        self.activity.is_empty()
-            && self.slack.is_empty()
-            && self.bound.is_empty()
-            && self.substitution.is_empty()
+    /// Whether every list has been drained.
+    pub fn are_empty(&self) -> bool {
+        self.fixed_column.is_empty()
+            && self.empty_row.is_empty()
+            && self.empty_column.is_empty()
+            && self.singleton_row.is_empty()
+            && self.singleton_column.is_empty()
+            && self.implied_free_singleton.is_empty()
+            && self.doubleton_equation.is_empty()
+            && self.activity.is_empty()
     }
 }
